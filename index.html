@@ -380,8 +380,9 @@
 
   <!-- AI SERVICE INFRASTRUCTURE (Plain scripts - critically depend on window.API_KEYs) -->
   <script src="/js/services/ai_constants.js"></script>
-  <script src="/js/services/gemini_api_caller.js"></script>     <!-- Reads window.GEMINI_API_KEYs -->
-  <script src="/js/services/openai_compatible_api_caller.js"></script> <!-- Reads window.GROQ_API_KEY, etc. -->
+    <script src="/js/services/gemini_core_api.js"></script>
+  <script src="/js/services/openai_compatible_api_caller.js"></script>
+  <script src="/js/services/gemini_api_caller.js"></script>
   <script src="/js/services/groq_stt_caller.js"></script>
 
   <!-- SPECIALIZED AI SERVICES (Plain scripts) -->
