@@ -1,9 +1,10 @@
 // js/app.js
 // Main application entry point and orchestrator.
 
+console.log("app.js TOP LEVEL: VITE_TEST_VAR from import.meta.env is:", import.meta.env?.VITE_TEST_VAR);
 // Import API keys from the config.js module (which gets them from Vite's import.meta.env)
 import * as apiKeysConfig from './config.js';
-
+console.log("app.js (LOCAL DEV TEST): Imported VITE_TEST_VAR_EXPORT:", apiKeysConfig.VITE_TEST_VAR_EXPORT);
 // Set API keys on the window object immediately for other global scripts to access
 window.GEMINI_API_KEY = apiKeysConfig.GEMINI_API_KEY || undefined;
 window.GEMINI_API_KEY_ALT = apiKeysConfig.GEMINI_API_KEY_ALT || undefined;
