@@ -1,0 +1,11 @@
+/* css/views/view_find.css */
+/* Styles specific to the Find Someone View, if any beyond what hub.css provides */
+
+#find-view .view-content {
+    /* The #connector-hub takes up this space. */
+    /* You might add padding here if hub.css doesn't handle it. */
+    padding: var(--spacing-xs) 0; /* Example padding */
+}
+
+/* Any specific styling for elements within #find-view's header or content,
+   if not covered by global view styles or hub.css */

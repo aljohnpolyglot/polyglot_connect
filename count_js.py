@@ -1,0 +1,1 @@
+find . -name "*.js" -exec wc -l {} +

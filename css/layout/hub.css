@@ -1,0 +1,33 @@
+/* css/layout/hub.css */
+/* Styles for the connector grid itself, where cards are displayed */
+
+.connector-grid {
+    display: grid;
+    /* Responsive grid: min 280px width for cards, max 1fr (take available space) */
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--spacing-lg); /* Gap between cards */
+    padding: var(--spacing-xs) 0; /* Small padding around the grid, or handled by view-content */
+}
+
+/* Responsive adjustments for the hub grid */
+@media (max-width: 900px) { /* Adjust breakpoint as needed */
+    .connector-grid {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: var(--spacing-md);
+    }
+}
+
+@media (max-width: 600px) { /* Further adjustment for smaller screens */
+    .connector-grid {
+        /* Could go single column, or keep minmax for slightly wider single cards */
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: var(--spacing-md);
+    }
+}
+
+@media (max-width: 400px) { /* Single column for very small screens */
+    .connector-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+}

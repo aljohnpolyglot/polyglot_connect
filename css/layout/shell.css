@@ -1,0 +1,278 @@
+/* css/layout/shell.css */
+
+#polyglot-connect-app-shell {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    background-color: var(--bg-light); /* Main shell background for light mode */
+    transition: background-color var(--transition-normal);
+}
+
+/* ===== LEFT SIDEBAR ===== */
+#left-sidebar {
+    width: 250px; /* Slightly narrower */
+    background-color: #2c3e50; /* Dark sidebar theme */
+    color: #ecf0f1; /* Light text for dark sidebar */
+    display: flex;
+    flex-direction: column;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+    z-index: var(--z-index-sidebar);
+    transition: background-color var(--transition-normal), width var(--transition-normal); /* Added width transition */
+    flex-shrink: 0; /* Prevent shrinking */
+}
+
+.sidebar-header {
+    padding: var(--spacing-lg) var(--spacing-md);
+    text-align: center;
+    border-bottom: 1px solid #34495e; /* Separator in dark sidebar */
+}
+.sidebar-logo {
+    width: 50px; height: 50px;
+    border-radius: var(--border-radius-circle);
+    margin-bottom: var(--spacing-sm);
+    background-color: var(--bg-white); /* To make png logo visible if it has transparency */
+    padding: 2px; /* Small padding if logo is tight */
+}
+.sidebar-title-text {
+    font-size: 1.3em; font-weight: var(--font-weight-bold);
+    color: var(--text-color-light); margin: 0;
+}
+
+.main-nav { flex-grow: 1; overflow-y: auto; /* For many nav items */ }
+.main-nav ul { list-style: none; padding: var(--spacing-sm) 0; margin: 0; }
+.main-nav .nav-item a {
+    display: flex; align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    color: #bdc3c7; /* Muted light text */
+    text-decoration: none;
+    font-size: 1em; font-weight: var(--font-weight-medium);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    border-left: 3px solid transparent; /* For active indicator */
+}
+.main-nav .nav-item a i {
+    margin-right: var(--spacing-md); width: 20px; text-align: center; font-size: 1.1em;
+}
+.main-nav .nav-item a:hover { background-color: #34495e; color: var(--text-color-light); }
+.main-nav .nav-item.active a {
+    background-color: var(--primary-color); /* Active tab color */
+    color: var(--text-color-light);
+    border-left-color: var(--accent-color-2); /* Or a brighter highlight */
+}
+
+.sidebar-footer {
+    padding: var(--spacing-md);
+    text-align: center;
+    border-top: 1px solid #34495e;
+    flex-shrink: 0;
+}
+.copyright-text { font-size: 0.8em; color: #7f8c8d; margin: 0; }
+
+/* ===== MAIN CONTAINER ===== */
+#main-container {
+    flex-grow: 1;
+    background-color: var(--bg-light);
+    padding: var(--spacing-lg);
+    overflow-y: auto; /* Scroll content within main container */
+    display: flex; /* To allow .view to fill height */
+    flex-direction: column; /* .view will be the child */
+}
+
+.view {
+    display: none; /* Hidden by default, shown by JS */
+    flex-direction: column; /* For header and content stacking */
+    width: 100%;
+    height: 100%; /* Take full height of main-container */
+    animation: fadeInView 0.3s ease-out forwards;
+}
+@keyframes fadeInView { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+.view.active-view { display: flex; }
+
+.view-header {
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--border-color-light);
+}
+.view-header h1 {
+    font-size: 1.8em; /* Slightly smaller than previous */
+    font-weight: var(--font-weight-bold);
+    color: var(--text-color-dark);
+    margin: 0 0 var(--spacing-xs) 0;
+}
+.view-header p { font-size: 1em; color: var(--text-color-muted); margin: 0; }
+
+.view-content {
+    flex-grow: 1; /* Allow content to fill remaining space */
+    /* background-color: var(--bg-white); Optional for content area */
+    /* border-radius: var(--border-radius-md); */
+    /* padding: var(--spacing-lg); */
+}
+.messages-view-flex-container { /* Specific for messages view to handle placeholder/chat */
+    display: flex; flex-direction: column; height: 100%;
+}
+
+
+/* Tips Panel on Home View */
+.tips-panel {
+    background-color: var(--bg-white); padding: var(--spacing-lg);
+    border-radius: var(--border-radius-md); box-shadow: var(--shadow-md);
+}
+.tips-panel h3 {
+    margin-top: 0; color: var(--primary-color);
+    display: flex; align-items: center; font-size: 1.2em;
+}
+.tips-panel h3 i { margin-right: var(--spacing-sm); }
+#homepage-tips-list { list-style: none; padding-left: 0; }
+#homepage-tips-list li {
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px dashed var(--border-color-light);
+    font-size: 0.95em;
+}
+#homepage-tips-list li:last-child { border-bottom: none; }
+
+/* ===== RIGHT SIDEBAR ===== */
+#right-sidebar {
+    width: 400px; /* Increase width */
+    background-color: var(--bg-white);
+    padding: var(--spacing-lg);
+    border-left: 1px solid var(--border-color-light);
+    overflow-y: auto;
+    display: flex; /* To allow panels to stack and fill */
+    flex-direction: column; /* Stack panels */
+    flex-shrink: 0; /* Prevent shrinking */
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.sidebar-panel {
+    display: none; /* Hidden by default */
+    margin-bottom: var(--spacing-lg); /* Space between panels if multiple are shown (though usually one) */
+}
+.sidebar-panel:last-child { margin-bottom: 0; }
+.sidebar-panel.active-panel { display: block; animation: fadeInView 0.3s ease-out; }
+
+.sidebar-panel h4 {
+    font-size: 1.15em; font-weight: var(--font-weight-bold);
+    color: var(--text-color-dark); margin: 0 0 var(--spacing-md) 0;
+    padding-bottom: var(--spacing-sm); border-bottom: 1px solid var(--border-color-light);
+    display: flex; align-items: center;
+}
+.sidebar-panel h4 i { margin-right: var(--spacing-sm); color: var(--primary-color); font-size: 0.9em;}
+
+.filter-group { margin-bottom: var(--spacing-md); }
+.filter-group label {
+    display: block; font-size: 0.85em; font-weight: var(--font-weight-medium);
+    margin-bottom: var(--spacing-xs); color: var(--text-color-muted);
+}
+.styled-select, /* Class for select elements to style them nicely */
+.filter-group select,
+.filter-group input[type="text"] {
+    width: 100%; padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color-light); border-radius: var(--border-radius-sm);
+    font-size: 0.9em; box-sizing: border-box; background-color: var(--bg-white);
+    color: var(--text-color-dark);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.styled-select:focus,
+.filter-group select:focus,
+.filter-group input[type="text"]:focus {
+    border-color: var(--primary-color); outline: none;
+    box-shadow: 0 0 0 2px rgba(0,123,255,.2); /* Focus ring */
+}
+
+/* Chat List & Summary List in Right Sidebar */
+.sidebar-list { list-style: none; padding: 0; margin: 0; }
+.sidebar-list li .chat-list-item, /* Shared class for items in these lists */
+.sidebar-list li .summary-list-item {
+    display: flex; align-items: center;
+    padding: var(--spacing-sm) var(--spacing-xs); /* Tighter padding for list items */
+    text-decoration: none; color: var(--text-color-dark);
+    border-radius: var(--border-radius-sm);
+    transition: background-color var(--transition-fast);
+    margin-bottom: var(--spacing-xs); cursor: pointer;
+    border: 1px solid transparent; /* For hover/active state */
+}
+.sidebar-list li .chat-list-item:hover,
+.sidebar-list li .summary-list-item:hover {
+    background-color: var(--primary-color-lighter);
+    border-color: var(--primary-color);
+}
+.sidebar-list li.active-chat-item .chat-list-item { /* Example if you mark active chat in list */
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+    font-weight: var(--font-weight-medium);
+}
+.chat-list-item-avatar {
+    width: 32px; height: 32px;
+    border-radius: var(--border-radius-circle);
+    margin-right: var(--spacing-sm); object-fit: cover;
+    background-color: var(--secondary-color-lighter); /* Fallback */
+}
+.chat-list-item-name {
+    flex-grow: 1; font-size: 0.9em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* Prevent long names from breaking layout */
+}
+.chat-list-item-status { /* Green dot for active */
+    width: 8px; height: 8px; border-radius: var(--border-radius-circle);
+    background-color: var(--secondary-color); margin-left: var(--spacing-sm);
+    flex-shrink: 0; /* Don't let it shrink */
+}
+.chat-list-item-status.active { background-color: var(--success-color); }
+
+
+/* Responsive Adjustments */
+@media (max-width: 1024px) { /* Tablet */
+    #left-sidebar { width: 200px; }
+    .main-nav .nav-item a { padding: var(--spacing-md) var(--spacing-md); }
+    .main-nav .nav-item a i { margin-right: var(--spacing-sm); }
+    .main-nav .nav-item a span { /* Optionally hide text */ display: none; }
+    #main-container { padding: var(--spacing-md); }
+    #right-sidebar {
+        width: 320px; /* Adjust width for smaller screens */
+        padding: var(--spacing-md);
+    }
+    .view-header h1 { font-size: 1.6em; }
+}
+
+@media (max-width: 768px) { /* Mobile */
+    body { overflow: auto; } /* Allow body to scroll as layout stacks */
+    #polyglot-connect-app-shell { flex-direction: column; height: auto; min-height: 100vh; }
+
+    #left-sidebar {
+        width: 100%; height: 50px; /* Fixed height for top bar */
+        flex-direction: row; justify-content: space-between; align-items: center;
+        padding: 0 var(--spacing-sm); box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        position: fixed; top: 0; left: 0; z-index: var(--z-index-header); /* Ensure it's on top */
+    }
+    .sidebar-header { padding: 0; border-bottom: none; margin-bottom: 0; display: flex; align-items: center; }
+    .sidebar-logo { width: 30px; height: 30px; margin-right: var(--spacing-sm); margin-bottom: 0; }
+    .sidebar-title-text { display: none; /* Hide text title on mobile bar */ }
+    .main-nav ul { display: flex; padding: 0; }
+    .main-nav .nav-item a { padding: 0 var(--spacing-sm); height: 50px; border-left: none; border-bottom: 3px solid transparent; }
+    .main-nav .nav-item.active a { border-bottom-color: var(--accent-color-2); background-color: transparent; }
+    .main-nav .nav-item a span { display: none; } /* Icon-only for mobile top bar */
+    .main-nav .nav-item a i { margin-right: 0; font-size: 1.2em; }
+    .sidebar-footer { display: none; }
+    .theme-toggle-btn { /* Adjust theme toggle for top bar if kept */
+        margin: 0 0 0 var(--spacing-md); width: 36px; height: 36px;
+        border-color: #bdc3c7; color: #bdc3c7;
+    }
+    body.dark-mode .theme-toggle-btn { border-color: #7f8c8d; color: #7f8c8d; }
+
+
+    #main-container {
+        padding: var(--spacing-md);
+        margin-top: 50px; /* Account for fixed top bar */
+        height: auto;
+        overflow-y: visible; /* Let body scroll */
+    }
+    .view-header h1 { font-size: 1.5em; }
+
+    #right-sidebar {
+        width: 100%; /* Full width on mobile */
+        border-left: none;
+        border-top: 1px solid var(--border-color-light);
+        padding: var(--spacing-md);
+        height: auto; /* Auto height for stacking */
+        order: 3; /* Ensure it comes after main content in stacked layout */
+    }
+}

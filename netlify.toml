@@ -1,0 +1,16 @@
+# D:\website\polyglot_connect\netlify.toml
+
+[build]
+  publish = "."         # Serve static files from the project root
+  functions = "netlify/functions" # Location of your serverless functions
+
+[dev]
+  publish = "."         # Serve static files from the project root for 'netlify dev'
+  framework = "#static" # Important hint for Netlify Dev
+  targetPort = 8888    # The port Netlify Dev will run on
+  port = 8888          # The port Netlify Dev will expose
+  functionsPort = 34567 # Port for your local functions server
+
+# Comment out or remove environment variables section if not needed
+# [dev.environment]
+#   SOME_DEV_VARIABLE = "dev_value"
