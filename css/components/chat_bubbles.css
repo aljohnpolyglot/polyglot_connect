@@ -1,0 +1,187 @@
+/* --- Suggested main chat bubble styles (e.g., in components/chat_bubbles.css) --- */
+
+/* Parent container for chat messages (applies to #group-chat-log, #embedded-chat-log, etc.) */
+.chat-log-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs); /* Consistent small gap between message wrappers */
+    padding: var(--spacing-md);
+    overflow-y: auto;
+    /* Default scroll padding, can be adjusted by JS for typing indicators if they are overlays */
+    scroll-padding-bottom: 10px; 
+    transition: scroll-padding-bottom 0.2s ease-in-out; /* For dynamic changes */
+    background-color: var(--bg-white); /* Default background for chat area */
+}
+
+/* Wrapper for each message unit (avatar + bubble) */
+.chat-message-wrapper {
+    display: flex;
+    align-items: flex-end;  /* Aligns avatar with the bottom of the last line of text in bubble */
+    max-width: 80%;     /* Max width of the entire message unit */
+    width: fit-content; /* Wrapper is only as wide as its content (avatar + bubble), up to max-width */
+    position: relative;   /* For potential future absolute positioned elements */
+    margin-bottom: var(--spacing-xxs); /* Smaller bottom margin for tighter packing */
+}
+
+.chat-message-wrapper.user-wrapper {
+    align-self: flex-end; /* Aligns this wrapper to the right of .chat-log-area */
+    flex-direction: row-reverse; /* Bubble first, then avatar on the right (if shown) */
+}
+
+.chat-message-wrapper.connector-wrapper {
+    align-self: flex-start; /* Aligns this wrapper to the left of .chat-log-area */
+    flex-direction: row; /* Avatar on the left, then bubble */
+}
+
+/* Avatar Styling */
+.chat-bubble-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0; /* Prevent avatar from shrinking */
+    /* margin-bottom: 4px; /* Small margin to align with bottom of single-line text */
+}
+
+.chat-message-wrapper.has-avatar-left .chat-bubble-avatar {
+    margin-right: 8px;
+}
+
+.chat-message-wrapper.has-avatar-right .chat-bubble-avatar { /* For user avatar if you add it */
+    margin-left: 8px;
+}
+
+/* The Chat Bubble Itself */
+.chat-message-ui {
+    padding: 10px 14px;
+    border-radius: 18px;
+    line-height: 1.45;
+    word-wrap: break-word;
+    overflow-wrap: break-word; /* Ensures long words/strings break */
+    min-width: 40px; /* Prevents tiny bubbles for "ok" etc. */
+    box-shadow: var(--shadow-xs); /* Softer shadow */
+    /* No max-width here; constrained by .chat-message-wrapper */
+}
+
+/* User's Bubble */
+.chat-message-wrapper.user-wrapper .chat-message-ui {
+    background-color: var(--primary-color);
+    color: var(--text-color-on-primary, white);
+    border-bottom-right-radius: 6px; /* Speech bubble tail */
+}
+
+/* Connector/AI Bubble (General) */
+.chat-message-wrapper.connector-wrapper .chat-message-ui {
+    background-color: var(--background-alt-color); /* e.g., light grey */
+    color: var(--text-color);
+    border-bottom-left-radius: 6px; /* Speech bubble tail */
+}
+
+/* Tutor Bubble (Specific style for tutors in groups) */
+.chat-message-wrapper.connector-wrapper .chat-message-ui.tutor {
+    background-color: var(--secondary-color-lighter, #e0f2fe); /* Distinct tutor color */
+    /* border: 1px solid var(--secondary-color); */
+}
+
+/* Sender Name (Primarily for Group Chat AI bubbles) */
+.chat-message-sender-name {
+    font-weight: var(--font-weight-semibold);
+    font-size: 0.8em;
+    display: block; /* Ensures it's on its own line above the message text */
+    margin-bottom: -13px;
+    color: var(--text-muted-color); /* Default, can be overridden */
+}
+.chat-message-wrapper.connector-wrapper .chat-message-sender-name {
+    color: var(--primary-color-dark, #0056b3); /* Or a color that suits the connector bubble */
+}
+.chat-message-wrapper.connector-wrapper .chat-message-ui.tutor .chat-message-sender-name {
+    color: var(--secondary-color-dark, #0c5464); /* Tutor name color */
+}
+
+/* "Is Typing..." Bubble Styling */
+.chat-message-ui.connector-thinking {
+    color: var(--text-muted-color);
+    font-style: italic;
+    background-color: var(--background-alt-color-subtle, #f8f9fa); /* Slightly different */
+}
+
+.chat-message-ui.connector-thinking::after { /* Animated ellipsis */
+    content: '.';
+    display: inline-block;
+    animation: ellipsis-animation 1.4s infinite;
+    animation-timing-function: steps(3, end);
+    position: relative;
+    left: 1px;
+}
+
+@keyframes ellipsis-animation {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+}
+
+
+/* Image within a chat bubble */
+.chat-message-image {
+    display: block;
+    max-width: 100%;
+    border-radius: 10px; /* Softer than bubble for visual hierarchy */
+    margin-top: 6px; /* If there's text above it */
+}
+
+/* System Messages */
+.chat-message-wrapper.system-message-wrapper { /* If you choose to wrap system messages */
+    align-self: center; /* Center the wrapper itself in the chat log */
+    max-width: 90%;     /* System messages can be wider */
+    width: auto;        /* Let content decide width up to max-width */
+    justify-content: center;
+}
+.chat-message-ui.system-message {
+    background-color: transparent; /* Often system messages are just text */
+    color: var(--text-muted-color);
+    text-align: center;
+    font-style: italic;
+    font-size: 0.9em;
+    padding: 4px 0; /* Minimal padding */
+    box-shadow: none;
+}
+.chat-message-ui.system-message.error {
+    color: var(--danger-color);
+    font-weight: var(--font-weight-medium);
+    background-color: transparent;
+}
+
+
+/* Dark Mode Adjustments for general chat bubbles */
+body.dark-mode .chat-log-area {
+    background-color: var(--bg-dark-primary); /* Darker chat area background */
+}
+body.dark-mode .chat-message-wrapper.user-wrapper .chat-message-ui {
+    background-color: var(--primary-color-dark); /* Or a distinct user color for dark mode */
+}
+body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui {
+    background-color: var(--bg-dark-tertiary); /* Dark connector bubble */
+}
+body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor {
+    background-color: var(--secondary-color-darker, #1e4258); /* Dark tutor bubble */
+}
+body.dark-mode .chat-message-sender-name {
+    color: var(--text-muted-color-dark, #909090);
+}
+body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-sender-name {
+    color: var(--primary-color-lighter, #79c0ff);
+}
+body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor .chat-message-sender-name {
+    color: var(--secondary-color-lighter, #86d0fb);
+}
+body.dark-mode .chat-message-ui.connector-thinking {
+    background-color: var(--bg-dark-hover, #3a3a3a);
+    color: var(--text-muted-color-dark, #888);
+}
+body.dark-mode .chat-message-ui.system-message {
+    background-color: transparent;
+    color: var(--text-muted-color-dark, #909090);
+}
+body.dark-mode .chat-message-ui.system-message.error {
+    color: var(--danger-color-light, #ff8080);
+}

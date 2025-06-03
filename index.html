@@ -4,17 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Polyglot Connect - Immersive Language Practice</title>
-  <link rel="icon" href="images/channel_profile_aljohn_polyglot.png" type="image/png">
+  <link rel="icon" href="/images/channel_profile_aljohn_polyglot.png" type="image/png">
 
   <!-- Base CSS -->
+ <link rel="stylesheet" href="/polyglot_connect/css/base/reset.css">
+<link rel="stylesheet" href="/polyglot_connect/css/base/variables.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/base/global.css">
 
   <!-- Layout CSS -->
+  <link rel="stylesheet" href="/polyglot_connect/css/layout/shell.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/layout/hub.css">
 
   <!-- Component CSS -->
+  <link rel="stylesheet" href="/polyglot_connect/css/components/buttons.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/card.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/chat_bubbles.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/lists.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/modal_call.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/modal_message.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/modal_persona.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/modal_recap.css">
 
   <!-- Views CSS -->
+  <link rel="stylesheet" href="/polyglot_connect/css/views/view_find.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/views/view_groups.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/views/view_home.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/views/view_messages.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/views/view_summary.css">
 
   <!-- Theme CSS (Dark Mode) -->
+  <link rel="stylesheet" href="/polyglot_connect/css/theme/dark_mode.css">
 
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -23,15 +42,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <script type="module" crossorigin src="/polyglot_connect/assets/main-Cf59zzMQ.js"></script>
-  <link rel="stylesheet" crossorigin href="/polyglot_connect/assets/main-DpzU4nly.css">
+  <script type="module" crossorigin src="/polyglot_connect/assets/main-DHqTX9v5.js"></script>
 </head>
 <body>
   <div id="polyglot-connect-app-shell">
     <!-- ===== LEFT SIDEBAR (Main Navigation) ===== -->
     <aside id="left-sidebar">
         <div class="sidebar-header">
-            <img src="/polyglot_connect/assets/polyglot_connect_logo-moeG3yuJ.png" alt="Polyglot Connect Logo" class="sidebar-logo">
+            <img src="/polyglot_connect/images/polyglot_connect_logo.png" alt="Polyglot Connect Logo" class="sidebar-logo">
             <h2 class="sidebar-title-text">Polyglot Connect</h2>
         </div>
         <nav class="main-nav">
@@ -92,7 +110,7 @@
         <!-- Inside #messages-view -->
 <header class="view-header embedded-chat-main-header"> <!-- New class for styling -->
     <div class="partner-info">
-        <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgGCgkGBwoHBwYGBg8UFQYWIB0WIhURHxMYHSggGBolGx8fITEhJSkrLi4uFx8zODMsNygtLisBCgoKBQUFDgUFDisZExkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAMgAyAMBIgACEQEDEQH/xAAaAAEAAwEBAQAAAAAAAAAAAAAAAwQFAgEH/8QANBABAQACAAMGAgYLAQAAAAAAAAIBAwQREiEiMTJSYhNyBTNTgqHBI0FCUWFxgZGSk7EU/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwD6oAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8qpic1WcYmfNVM/fxV3nOIzmY/GwXNvEa9XZVc6+znxVb4+s57kTj5u1UAWP/bu/fH+t1PHbMeM6s/d5KoC/HHRnzxc/L2rWM4zjGceFMZJp33pz3c85+zrwBrDjVsnbGKn70+h2AAAAAAAAAAAAAAABnPLGc58J7wM/j9ma2/D59kT5f4qr26zV5rPjVdTxQAAAAABZ4C8zu6OfZctFkaKzO/XnHrlroAAAAAAAAAAAAAACPfnlo2fJSRHvxz0bMeygZICgAAAAADqM9NzXpqabDFbWPBAAAAAAAAAAAAAAARb9k69ec3z5V3e6lVuPxz0Yz6bkGcAoAAAAAA9xy545+DW1XOyMXPVyr1Mhp8Hjlw8e7qr8UE4AAAAAAAAAAAAACHip6+HvHpnq/smeVOKnM58KnpoGMJeI0fAqcdXVivL3USgAAAAAA19U9GqJ9MqHDcN8bHVnPKZr/JpIAAAAAAAAAAAAAAAAKv0hHVqm8fsV/wBZ7ZqcXOZrwqemmTu151bMxnt6fLXqwDgBQAABJw+v4u3E58vmr+QL/CR0aJxnxr9JX9U4IAAAAAAAAAAAAAAAADP+kfrp+T8167iJ53Uzj3MzitmNu3qnyzPTIIgFAABa+jvrq+T81VNwuzGrdiq8tT00DUHMXFzzisVj2ukAAAAAAAAAAAAAEezdr1+e5xn0z25BI52XGueq6xjClt47OeeNU8vdStV1ddVVnOfVQGy6u81Wc573d6nIKAAAAAAOtd1F4qc5x3u90tbXcbJ6orGcMd1N1FdU1nGfVKDYFDVx2ccsbZ5+6VvXu17PJc5z6a7MgkAAAAAABDxO74Mc8dt13YkHW3dGrHO6+WZ8aVL4+s/VxOPds7VWqq6zVZznNeaqeAkviNt+a88vTPYjBQAAAAAAAAAAAAABJHEbY8t55emu1PHH1j6yJz7tfYqANbVujbjnFfNNeMpGNNVFYqc5xmfLUtPht3xo557Lnu3KCYABm8dWa35x+qJmQBXAUAAAAAAAAAAAAAAAAAAFjgazO/GP1XNSCDSAB//Z" alt="Partner" id="embedded-chat-header-avatar" class="chat-header-avatar">
+        <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Partner" id="embedded-chat-header-avatar" class="chat-header-avatar">
         <div>
             <h1 id="embedded-chat-header-name">Partner Name</h1>
             <p id="embedded-chat-header-details" class="chat-header-sub-details">Location | Age</p>
@@ -163,7 +181,7 @@
     <!-- MODALS -->
     <div id="virtual-calling-screen" class="modal-overlay" style="display: none;">
         <div class="modal-content calling-modal">
-            <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgGCgkGBwoHBwYGBg8UFQYWIB0WIhURHxMYHSggGBolGx8fITEhJSkrLi4uFx8zODMsNygtLisBCgoKBQUFDgUFDisZExkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAMgAyAMBIgACEQEDEQH/xAAaAAEAAwEBAQAAAAAAAAAAAAAAAwQFAgEH/8QANBABAQACAAMGAgYLAQAAAAAAAAIBAwQREiEiMTJSYhNyBTNTgqHBI0FCUWFxgZGSk7EU/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwD6oAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8qpic1WcYmfNVM/fxV3nOIzmY/GwXNvEa9XZVc6+znxVb4+s57kTj5u1UAWP/bu/fH+t1PHbMeM6s/d5KoC/HHRnzxc/L2rWM4zjGceFMZJp33pz3c85+zrwBrDjVsnbGKn70+h2AAAAAAAAAAAAAAABnPLGc58J7wM/j9ma2/D59kT5f4qr26zV5rPjVdTxQAAAAABZ4C8zu6OfZctFkaKzO/XnHrlroAAAAAAAAAAAAAACPfnlo2fJSRHvxz0bMeygZICgAAAAADqM9NzXpqabDFbWPBAAAAAAAAAAAAAAARb9k69ec3z5V3e6lVuPxz0Yz6bkGcAoAAAAAA9xy545+DW1XOyMXPVyr1Mhp8Hjlw8e7qr8UE4AAAAAAAAAAAAACHip6+HvHpnq/smeVOKnM58KnpoGMJeI0fAqcdXVivL3USgAAAAAA19U9GqJ9MqHDcN8bHVnPKZr/JpIAAAAAAAAAAAAAAAAKv0hHVqm8fsV/wBZ7ZqcXOZrwqemmTu151bMxnt6fLXqwDgBQAABJw+v4u3E58vmr+QL/CR0aJxnxr9JX9U4IAAAAAAAAAAAAAAAADP+kfrp+T8167iJ53Uzj3MzitmNu3qnyzPTIIgFAABa+jvrq+T81VNwuzGrdiq8tT00DUHMXFzzisVj2ukAAAAAAAAAAAAAEezdr1+e5xn0z25BI52XGueq6xjClt47OeeNU8vdStV1ddVVnOfVQGy6u81Wc573d6nIKAAAAAAOtd1F4qc5x3u90tbXcbJ6orGcMd1N1FdU1nGfVKDYFDVx2ccsbZ5+6VvXu17PJc5z6a7MgkAAAAAABDxO74Mc8dt13YkHW3dGrHO6+WZ8aVL4+s/VxOPds7VWqq6zVZznNeaqeAkviNt+a88vTPYjBQAAAAAAAAAAAAABJHEbY8t55emu1PHH1j6yJz7tfYqANbVujbjnFfNNeMpGNNVFYqc5xmfLUtPht3xo557Lnu3KCYABm8dWa35x+qJmQBXAUAAAAAAAAAAAAAAAAAAFjgazO/GP1XNSCDSAB//Z" alt="Calling connector" id="calling-avatar" class="calling-avatar-large">
+            <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Calling connector" id="calling-avatar" class="calling-avatar-large">
             <h2 id="calling-name" class="modal-title">Connecting to...</h2>
             <p id="calling-status" class="modal-subtitle">Ringing...</p>
             <div class="calling-animation"><div class="calling-dot"></div><div class="calling-dot"></div><div class="calling-dot"></div></div>
@@ -176,7 +194,7 @@
     <div id="direct-call-interface" class="modal-overlay" style="display: none;">
         <div class="modal-content direct-call-modal">
             <header class="modal-header direct-call-header">
-                <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgGCgkGBwoHBwYGBg8UFQYWIB0WIhURHxMYHSggGBolGx8fITEhJSkrLi4uFx8zODMsNygtLisBCgoKBQUFDgUFDisZExkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAMgAyAMBIgACEQEDEQH/xAAaAAEAAwEBAQAAAAAAAAAAAAAAAwQFAgEH/8QANBABAQACAAMGAgYLAQAAAAAAAAIBAwQREiEiMTJSYhNyBTNTgqHBI0FCUWFxgZGSk7EU/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwD6oAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8qpic1WcYmfNVM/fxV3nOIzmY/GwXNvEa9XZVc6+znxVb4+s57kTj5u1UAWP/bu/fH+t1PHbMeM6s/d5KoC/HHRnzxc/L2rWM4zjGceFMZJp33pz3c85+zrwBrDjVsnbGKn70+h2AAAAAAAAAAAAAAABnPLGc58J7wM/j9ma2/D59kT5f4qr26zV5rPjVdTxQAAAAABZ4C8zu6OfZctFkaKzO/XnHrlroAAAAAAAAAAAAAACPfnlo2fJSRHvxz0bMeygZICgAAAAADqM9NzXpqabDFbWPBAAAAAAAAAAAAAAARb9k69ec3z5V3e6lVuPxz0Yz6bkGcAoAAAAAA9xy545+DW1XOyMXPVyr1Mhp8Hjlw8e7qr8UE4AAAAAAAAAAAAACHip6+HvHpnq/smeVOKnM58KnpoGMJeI0fAqcdXVivL3USgAAAAAA19U9GqJ9MqHDcN8bHVnPKZr/JpIAAAAAAAAAAAAAAAAKv0hHVqm8fsV/wBZ7ZqcXOZrwqemmTu151bMxnt6fLXqwDgBQAABJw+v4u3E58vmr+QL/CR0aJxnxr9JX9U4IAAAAAAAAAAAAAAAADP+kfrp+T8167iJ53Uzj3MzitmNu3qnyzPTIIgFAABa+jvrq+T81VNwuzGrdiq8tT00DUHMXFzzisVj2ukAAAAAAAAAAAAAEezdr1+e5xn0z25BI52XGueq6xjClt47OeeNU8vdStV1ddVVnOfVQGy6u81Wc573d6nIKAAAAAAOtd1F4qc5x3u90tbXcbJ6orGcMd1N1FdU1nGfVKDYFDVx2ccsbZ5+6VvXu17PJc5z6a7MgkAAAAAABDxO74Mc8dt13YkHW3dGrHO6+WZ8aVL4+s/VxOPds7VWqq6zVZznNeaqeAkviNt+a88vTPYjBQAAAAAAAAAAAAABJHEbY8t55emu1PHH1j6yJz7tfYqANbVujbjnFfNNeMpGNNVFYqc5xmfLUtPht3xo557Lnu3KCYABm8dWa35x+qJmQBXAUAAAAAAAAAAAAAAAAAAFjgazO/GP1XNSCDSAB//Z" alt="Connector Avatar" id="direct-call-active-avatar" class="direct-call-avatar-main">
+                <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Connector Avatar" id="direct-call-active-avatar" class="direct-call-avatar-main">
                 <h3 id="direct-call-active-name" class="modal-title-inline">Direct Call</h3>
                 <p id="direct-call-status-indicator" class="modal-subtitle">Connected</p>
             </header>
@@ -196,7 +214,7 @@
         <!-- Messaging Modal Header -->
         <header class="modal-header messaging-interface-header">
             <div class="partner-info">
-                <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgGCgkGBwoHBwYGBg8UFQYWIB0WIhURHxMYHSggGBolGx8fITEhJSkrLi4uFx8zODMsNygtLisBCgoKBQUFDgUFDisZExkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAMgAyAMBIgACEQEDEQH/xAAaAAEAAwEBAQAAAAAAAAAAAAAAAwQFAgEH/8QANBABAQACAAMGAgYLAQAAAAAAAAIBAwQREiEiMTJSYhNyBTNTgqHBI0FCUWFxgZGSk7EU/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwD6oAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8qpic1WcYmfNVM/fxV3nOIzmY/GwXNvEa9XZVc6+znxVb4+s57kTj5u1UAWP/bu/fH+t1PHbMeM6s/d5KoC/HHRnzxc/L2rWM4zjGceFMZJp33pz3c85+zrwBrDjVsnbGKn70+h2AAAAAAAAAAAAAAABnPLGc58J7wM/j9ma2/D59kT5f4qr26zV5rPjVdTxQAAAAABZ4C8zu6OfZctFkaKzO/XnHrlroAAAAAAAAAAAAAACPfnlo2fJSRHvxz0bMeygZICgAAAAADqM9NzXpqabDFbWPBAAAAAAAAAAAAAAARb9k69ec3z5V3e6lVuPxz0Yz6bkGcAoAAAAAA9xy545+DW1XOyMXPVyr1Mhp8Hjlw8e7qr8UE4AAAAAAAAAAAAACHip6+HvHpnq/smeVOKnM58KnpoGMJeI0fAqcdXVivL3USgAAAAAA19U9GqJ9MqHDcN8bHVnPKZr/JpIAAAAAAAAAAAAAAAAKv0hHVqm8fsV/wBZ7ZqcXOZrwqemmTu151bMxnt6fLXqwDgBQAABJw+v4u3E58vmr+QL/CR0aJxnxr9JX9U4IAAAAAAAAAAAAAAAADP+kfrp+T8167iJ53Uzj3MzitmNu3qnyzPTIIgFAABa+jvrq+T81VNwuzGrdiq8tT00DUHMXFzzisVj2ukAAAAAAAAAAAAAEezdr1+e5xn0z25BI52XGueq6xjClt47OeeNU8vdStV1ddVVnOfVQGy6u81Wc573d6nIKAAAAAAOtd1F4qc5x3u90tbXcbJ6orGcMd1N1FdU1nGfVKDYFDVx2ccsbZ5+6VvXu17PJc5z6a7MgkAAAAAABDxO74Mc8dt13YkHW3dGrHO6+WZ8aVL4+s/VxOPds7VWqq6zVZznNeaqeAkviNt+a88vTPYjBQAAAAAAAAAAAAABJHEbY8t55emu1PHH1j6yJz7tfYqANbVujbjnFfNNeMpGNNVFYqc5xmfLUtPht3xo557Lnu3KCYABm8dWa35x+qJmQBXAUAAAAAAAAAAAAAAAAAAFjgazO/GP1XNSCDSAB//Z" alt="Partner" id="message-modal-header-avatar" class="chat-header-avatar">
+                <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Partner" id="message-modal-header-avatar" class="chat-header-avatar">
                 <div>
                     <h3 id="message-modal-header-name">Chat with Partner</h3>
                     <p id="message-modal-header-details" class="chat-header-sub-details">Location | Age</p>
@@ -281,7 +299,7 @@
         <div class="modal-content persona-modal-content">
             <button id="close-persona-modal-btn" class="close-modal-button simple-close-btn">×</button>
             <div class="persona-modal-header">
-                <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgGCgkGBwoHBwYGBg8UFQYWIB0WIhURHxMYHSggGBolGx8fITEhJSkrLi4uFx8zODMsNygtLisBCgoKBQUFDgUFDisZExkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAMgAyAMBIgACEQEDEQH/xAAaAAEAAwEBAQAAAAAAAAAAAAAAAwQFAgEH/8QANBABAQACAAMGAgYLAQAAAAAAAAIBAwQREiEiMTJSYhNyBTNTgqHBI0FCUWFxgZGSk7EU/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwD6oAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8qpic1WcYmfNVM/fxV3nOIzmY/GwXNvEa9XZVc6+znxVb4+s57kTj5u1UAWP/bu/fH+t1PHbMeM6s/d5KoC/HHRnzxc/L2rWM4zjGceFMZJp33pz3c85+zrwBrDjVsnbGKn70+h2AAAAAAAAAAAAAAABnPLGc58J7wM/j9ma2/D59kT5f4qr26zV5rPjVdTxQAAAAABZ4C8zu6OfZctFkaKzO/XnHrlroAAAAAAAAAAAAAACPfnlo2fJSRHvxz0bMeygZICgAAAAADqM9NzXpqabDFbWPBAAAAAAAAAAAAAAARb9k69ec3z5V3e6lVuPxz0Yz6bkGcAoAAAAAA9xy545+DW1XOyMXPVyr1Mhp8Hjlw8e7qr8UE4AAAAAAAAAAAAACHip6+HvHpnq/smeVOKnM58KnpoGMJeI0fAqcdXVivL3USgAAAAAA19U9GqJ9MqHDcN8bHVnPKZr/JpIAAAAAAAAAAAAAAAAKv0hHVqm8fsV/wBZ7ZqcXOZrwqemmTu151bMxnt6fLXqwDgBQAABJw+v4u3E58vmr+QL/CR0aJxnxr9JX9U4IAAAAAAAAAAAAAAAADP+kfrp+T8167iJ53Uzj3MzitmNu3qnyzPTIIgFAABa+jvrq+T81VNwuzGrdiq8tT00DUHMXFzzisVj2ukAAAAAAAAAAAAAEezdr1+e5xn0z25BI52XGueq6xjClt47OeeNU8vdStV1ddVVnOfVQGy6u81Wc573d6nIKAAAAAAOtd1F4qc5x3u90tbXcbJ6orGcMd1N1FdU1nGfVKDYFDVx2ccsbZ5+6VvXu17PJc5z6a7MgkAAAAAABDxO74Mc8dt13YkHW3dGrHO6+WZ8aVL4+s/VxOPds7VWqq6zVZznNeaqeAkviNt+a88vTPYjBQAAAAAAAAAAAAABJHEbY8t55emu1PHH1j6yJz7tfYqANbVujbjnFfNNeMpGNNVFYqc5xmfLUtPht3xo557Lnu3KCYABm8dWa35x+qJmQBXAUAAAAAAAAAAAAAAAAAAFjgazO/GP1XNSCDSAB//Z" alt="Persona Avatar" id="persona-modal-avatar" class="modal-avatar-large">
+                <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Persona Avatar" id="persona-modal-avatar" class="modal-avatar-large">
                 <h2 id="persona-modal-name" class="modal-title">Persona Name</h2>
                 <p id="persona-modal-location-age" class="modal-subtitle">Location | Age</p>
                 <span id="persona-modal-active-status" class="status-dot" title="Activity Status"></span>
@@ -317,62 +335,62 @@
   <!-- and sets window.API_KEY variables. -->
 
   <!-- UTILITIES (Plain scripts - should now find window.API_KEYs if they need them immediately) -->
-  <script src="js/utils/helpers.js"></script>
-  <script src="js/utils/flagcdn.js"></script>
+  <script src="/polyglot_connect/js/utils/helpers.js"></script>
+  <script src="/polyglot_connect/js/utils/flagcdn.js"></script>
 
   <!-- DATA SOURCES (Plain scripts) -->
-  <script src="data/personas.js"></script>
-  <script src="data/groups.js"></script>
-  <script src="data/minigames.js"></script>
-  <script src="data/shared_content.js"></script>
+  <script src="/polyglot_connect/data/personas.js"></script>
+  <script src="/polyglot_connect/data/groups.js"></script>
+  <script src="/polyglot_connect/data/minigames.js"></script>
+  <script src="/polyglot_connect/data/shared_content.js"></script>
 
   <!-- AI SERVICE INFRASTRUCTURE (Plain scripts - critically depend on window.API_KEYs) -->
-  <script src="js/services/ai_constants.js"></script>
-  <script src="js/services/gemini_api_caller.js"></script>     <!-- Reads window.GEMINI_API_KEYs -->
-  <script src="js/services/openai_compatible_api_caller.js"></script> <!-- Reads window.GROQ_API_KEY, etc. -->
-  <script src="js/services/groq_stt_caller.js"></script>
+  <script src="/polyglot_connect/js/services/ai_constants.js"></script>
+  <script src="/polyglot_connect/js/services/gemini_api_caller.js"></script>     <!-- Reads window.GEMINI_API_KEYs -->
+  <script src="/polyglot_connect/js/services/openai_compatible_api_caller.js"></script> <!-- Reads window.GROQ_API_KEY, etc. -->
+  <script src="/polyglot_connect/js/services/groq_stt_caller.js"></script>
 
   <!-- SPECIALIZED AI SERVICES (Plain scripts) -->
-  <script src="js/services/gemini_tts_service.js"></script>
-  <script src="js/services/gemini_multimodal_service.js"></script>
-  <script src="js/services/gemini_live_api_service.js"></script>
-  <script src="js/services/ai_text_generation_service.js"></script> <!-- Uses other API callers -->
-  <script src="js/services/gemini_recap_service.js"></script>
-  <script src="js/services/ai_recap_service.js"></script>
+  <script src="/polyglot_connect/js/services/gemini_tts_service.js"></script>
+  <script src="/polyglot_connect/js/services/gemini_multimodal_service.js"></script>
+  <script src="/polyglot_connect/js/services/gemini_live_api_service.js"></script>
+  <script src="/polyglot_connect/js/services/ai_text_generation_service.js"></script> <!-- Uses other API callers -->
+  <script src="/polyglot_connect/js/services/gemini_recap_service.js"></script>
+  <script src="/polyglot_connect/js/services/ai_recap_service.js"></script>
 
   <!-- MAIN AI SERVICE FACADE (Plain script) -->
-  <script src="js/services/ai_service.js"></script>
+  <script src="/polyglot_connect/js/services/ai_service.js"></script>
 
   <!-- UI FOUNDATION (Plain scripts) -->
-  <script src="js/ui/dom_elements.js"></script>
-  <script src="js/ui/modal_handler.js"></script>
-  <script src="js/ui/ui_updater.js"></script>
-  <script src="js/ui/list_renderer.js"></script>
-  <script src="js/ui/card_renderer.js"></script>
+  <script src="/polyglot_connect/js/ui/dom_elements.js"></script>
+  <script src="/polyglot_connect/js/ui/modal_handler.js"></script>
+  <script src="/polyglot_connect/js/ui/ui_updater.js"></script>
+  <script src="/polyglot_connect/js/ui/list_renderer.js"></script>
+  <script src="/polyglot_connect/js/ui/card_renderer.js"></script>
 
   <!-- UI MANAGEMENT (Plain scripts) -->
-  <script src="js/ui/shell_setup.js"></script>
-  <script src="js/ui/filter_controller.js"></script>
-  <script src="js/ui/persona_modal_manager.js"></script>
-  <script src="js/ui/chat_ui_manager.js"></script>
-  <script src="js/ui/view_manager.js"></script>
+  <script src="/polyglot_connect/js/ui/shell_setup.js"></script>
+  <script src="/polyglot_connect/js/ui/filter_controller.js"></script>
+  <script src="/polyglot_connect/js/ui/persona_modal_manager.js"></script>
+  <script src="/polyglot_connect/js/ui/chat_ui_manager.js"></script>
+  <script src="/polyglot_connect/js/ui/view_manager.js"></script>
 
   <!-- CORE LOGIC (Plain scripts) -->
-  <script src="js/core/activity_manager.js"></script>
-  <script src="js/core/conversation_manager.js"></script>
-  <script src="js/core/text_message_handler.js"></script>
-  <script src="js/core/voice_memo_handler.js"></script>
-  <script src="js/core/chat_orchestrator.js"></script>
-  <script src="js/core/group_data_manager.js"></script>
-  <script src="js/core/group_ui_handler.js"></script>
-  <script src="js/core/group_interaction_logic.js"></script>
-  <script src="js/core/group_manager.js"></script>
+  <script src="/polyglot_connect/js/core/activity_manager.js"></script>
+  <script src="/polyglot_connect/js/core/conversation_manager.js"></script>
+  <script src="/polyglot_connect/js/core/text_message_handler.js"></script>
+  <script src="/polyglot_connect/js/core/voice_memo_handler.js"></script>
+  <script src="/polyglot_connect/js/core/chat_orchestrator.js"></script>
+  <script src="/polyglot_connect/js/core/group_data_manager.js"></script>
+  <script src="/polyglot_connect/js/core/group_ui_handler.js"></script>
+  <script src="/polyglot_connect/js/core/group_interaction_logic.js"></script>
+  <script src="/polyglot_connect/js/core/group_manager.js"></script>
 
   <!-- SESSION MANAGEMENT (Plain scripts) -->
-  <script src="js/sessions/session_state_manager.js"></script>
-  <script src="js/sessions/live_call_handler.js"></script>
-  <script src="js/sessions/session_history_manager.js"></script>
-  <script src="js/core/session_manager.js"></script>                    <!-- Main application bootstrap -->
+  <script src="/polyglot_connect/js/sessions/session_state_manager.js"></script>
+  <script src="/polyglot_connect/js/sessions/live_call_handler.js"></script>
+  <script src="/polyglot_connect/js/sessions/session_history_manager.js"></script>
+  <script src="/polyglot_connect/js/core/session_manager.js"></script>                    <!-- Main application bootstrap -->
   
 </body>
 </html>

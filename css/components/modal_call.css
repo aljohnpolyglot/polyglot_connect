@@ -1,0 +1,252 @@
+/* css/components/modal_call.css */
+
+/* --- General Modal Structure (from connect_interface.css, adapted) --- */
+.modal-overlay { /* This is also in shell.css for persona modal, ensure consistency or scope */
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.75); /* Darker for focus */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: var(--z-index-modal-backdrop);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition-normal), visibility 0s linear var(--transition-normal);
+    padding: var(--spacing-md);
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--transition-normal);
+}
+
+.modal-content { /* Base for all modal content boxes */
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-xl);
+    width: 100%;
+    text-align: center; /* Default for simple modals */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh; /* Prevent modal from being taller than viewport */
+    overflow: hidden; /* Content inside will scroll if needed */
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--bg-light);
+    border-bottom: 1px solid var(--border-color-light);
+    width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+.modal-header .modal-title-inline {
+    font-size: 1.25em;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-color-dark);
+    margin: 0;
+    flex-grow: 1;
+    text-align: left;
+}
+.modal-avatar-small {
+    width: 40px; height: 40px;
+    border-radius: var(--border-radius-circle);
+    margin-right: var(--spacing-md);
+    object-fit: cover;
+}
+.modal-controls { display: flex; align-items: center; gap: var(--spacing-sm); }
+
+.modal-body {
+    flex-grow: 1;
+    overflow-y: auto; /* For scrollable content like chat logs */
+    padding: var(--spacing-lg);
+}
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-top: 1px solid var(--border-color-light);
+    background-color: var(--bg-light);
+    width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+/* --- 1. Virtual Calling Screen --- */
+.calling-modal { /* Specific class for the content box of virtual-calling-screen */
+    max-width: 400px;
+    padding: var(--spacing-xl);
+    align-items: center; /* Center content vertically within the box */
+}
+.calling-avatar-large {
+    width: 120px; height: 120px;
+    border-radius: var(--border-radius-circle);
+    margin-bottom: var(--spacing-lg);
+    border: 4px solid var(--border-color-light);
+    box-shadow: var(--shadow-md);
+    object-fit: cover;
+}
+.calling-modal .modal-title { /* Reusing modal-title for #calling-name */
+    font-size: 1.8em; font-weight: var(--font-weight-bold);
+    color: var(--text-color-dark); margin-bottom: var(--spacing-xs);
+}
+.calling-modal .modal-subtitle { /* Reusing modal-subtitle for #calling-status */
+    font-size: 1.1em; color: var(--text-color-muted); margin-bottom: var(--spacing-lg);
+}
+.calling-animation { display: flex; justify-content: center; align-items: center; margin-bottom: var(--spacing-xl); }
+.calling-dot {
+    width: 12px; height: 12px; background-color: var(--primary-color);
+    border-radius: var(--border-radius-circle); margin: 0 var(--spacing-xs);
+    animation: calling-pulse 1.4s infinite ease-in-out both;
+}
+.calling-dot:nth-child(1) { animation-delay: -0.32s; }
+.calling-dot:nth-child(2) { animation-delay: -0.16s; }
+@keyframes calling-pulse { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
+
+/* --- 2. Voice-Enabled Chat Interface --- */
+.call-interface-modal { /* Content box for voice-enabled-chat-interface */
+    max-width: 650px; /* Wider for chat */
+    height: clamp(450px, 80vh, 700px); /* Responsive height */
+    padding: 0; /* Header/footer/body will have padding */
+}
+.call-interface-header .modal-title-inline { /* For #voice-chat-active-name */
+    /* Uses .modal-title-inline from above */
+}
+.call-chat-log { /* For #voice-chat-log */
+    /* Uses .chat-log-area from global.css or shell.css if defined, or define here */
+    /* This one might be specific to the modal if its bg is different */
+    background-color: var(--bg-white); /* Ensures white bg inside modal */
+}
+.call-interface-footer .chat-input-field { /* For #voice-chat-text-input */
+    flex-grow: 1; margin-right: var(--spacing-sm);
+}
+.tap-to-speak-btn {
+    /* Uses .control-btn from buttons.css */
+    background-color: var(--success-color);
+    color: var(--text-color-light);
+    width: 48px; height: 48px; /* Specific size */
+    border-radius: var(--border-radius-circle);
+    font-size: 1.3em;
+}
+.tap-to-speak-btn.listening { background-color: var(--warning-color); color: var(--text-color-dark); }
+.tap-to-speak-btn.processing { background-color: var(--info-color); animation: pulse-processing 1.5s infinite ease-in-out; }
+@keyframes pulse-processing { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+/* --- 3. Direct Call Interface --- */
+.direct-call-modal { /* Content box for direct-call-interface */
+    max-width: 380px; /* Compact for call feel */
+    min-height: 480px;
+    height: auto; /* Auto height based on content */
+    padding: 0;
+    justify-content: space-between; /* Pushes header/footer to top/bottom */
+    background-color: var(--bg-dark-secondary); /* Darker theme for call modal */
+    color: var(--text-color-light);
+}
+.direct-call-header {
+    flex-direction: column;
+    padding-top: var(--spacing-xl); padding-bottom: var(--spacing-lg);
+    border-bottom: none;
+    background: transparent; /* Inherit from .direct-call-modal */
+    text-align: center;
+}
+.direct-call-avatar-main {
+    width: 100px; height: 100px;
+    border-radius: var(--border-radius-circle);
+    margin-bottom: var(--spacing-md);
+    border: 3px solid rgba(255,255,255,0.2);
+    object-fit: cover;
+}
+.direct-call-header .modal-title-inline { /* For #direct-call-active-name */
+    font-size: 1.6em; margin-bottom: var(--spacing-xs); color: var(--text-color-light);
+}
+.direct-call-header .modal-subtitle { /* For #direct-call-status-indicator */
+    font-size: 0.95em; opacity: 0.8; min-height: 1.3em; color: var(--text-color-light);
+    transition: color var(--transition-fast);
+}
+.direct-call-main-content {
+    /* For #direct-call-main-content */
+    flex-grow: 1; display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    padding: var(--spacing-lg); text-align: center;
+    /* No specific bg, inherits from .direct-call-modal or is transparent */
+}
+.direct-call-footer {
+    justify-content: space-evenly;
+    background: transparent; /* Inherit from .direct-call-modal */
+    padding: var(--spacing-md);
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.direct-call-action-btn {
+    /* Uses .control-btn from buttons.css */
+    background-color: rgba(255,255,255,0.1);
+    color: var(--text-color-light);
+    width: 50px; height: 50px;
+    border-radius: var(--border-radius-circle);
+    font-size: 1.2em;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+.direct-call-action-btn:hover { background-color: rgba(255,255,255,0.2); }
+.direct-call-action-btn.mic-active { background-color: var(--success-color); color: white; }
+.direct-call-action-btn .fa-microphone-slash,
+.direct-call-action-btn .fa-volume-mute { color: var(--warning-color); }
+
+.direct-call-end-button {
+    /* Uses .modal-btn and .cancel-btn (for red color) or .primary-btn (for themed color) from buttons.css */
+    background-color: var(--danger-color);
+    color: white;
+    width: 60px; height: 60px;
+    border-radius: var(--border-radius-circle);
+    font-size: 1.6em;
+}
+.direct-call-end-button:hover { background-color: #c82333; /* Darker red */ }
+
+
+/* Common for activity areas in modals */
+.activity-area-style {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background-color: var(--bg-light); /* Or a slightly different shade */
+    text-align: center;
+    flex-shrink: 0; /* Don't shrink if content above is large */
+    border-top: 1px solid var(--border-color-light);
+    border-bottom: 1px solid var(--border-color-light);
+    margin-top: -1px; /* Overlap top border with chat log bottom border */
+}
+.activity-area-style img {
+    max-width: 100%;
+    max-height: 150px; /* Constrain height */
+    object-fit: contain;
+    border-radius: var(--border-radius-md);
+    margin: 0 auto;
+    display: block;
+}
+
+/* Dark Mode Adjustments for Call Modals */
+body.dark-mode .modal-content { background-color: var(--bg-dark-secondary); color: var(--text-color-light); }
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer {
+    background-color: var(--bg-dark-tertiary);
+    border-color: var(--border-color-dark);
+}
+body.dark-mode .modal-header .modal-title-inline,
+body.dark-mode .calling-modal .modal-title { color: var(--text-color-light); }
+body.dark-mode .calling-modal .modal-subtitle { color: #a0a3a8; }
+body.dark-mode .calling-dot { background-color: var(--primary-color-lighter); }
+body.dark-mode .call-chat-log { background-color: var(--bg-dark-primary); /* Darker for chat log bg */ }
+body.dark-mode .direct-call-modal { background-color: #202124; } /* Even darker for direct call main bg */
+body.dark-mode .direct-call-action-btn {
+    background-color: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.1);
+}
+body.dark-mode .direct-call-action-btn:hover { background-color: rgba(255,255,255,0.15); }
+body.dark-mode .activity-area-style {
+    background-color: var(--bg-dark-tertiary);
+    border-color: var(--border-color-dark);
+}

@@ -1,0 +1,142 @@
+/* Improved CSS for modal_message.css */
+
+/* General Modal Styling */
+.messaging-interface-modal {
+    max-width: 600px; /* Optimal width for text chat */
+    height: clamp(400px, 75vh, 650px); /* Responsive height */
+    padding: 0; /* Padding handled by child elements */
+    border-radius: var(--border-radius-lg); /* Smooth corners */
+    box-shadow: var(--shadow-lg); /* Add depth */
+    background-color: var(--bg-white); /* Default light background */
+    overflow: hidden; /* Prevent content overflow */
+}
+
+/* Header Styling */
+.messaging-interface-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md);
+    background-color: var(--bg-light-secondary); /* Subtle header background */
+    border-bottom: 1px solid var(--border-light); /* Separator line */
+}
+
+.messaging-interface-header .modal-title-inline {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.messaging-interface-header .modal-controls {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.messaging-interface-header .modal-btn {
+    background-color: var(--bg-light-primary);
+    color: var(--text-primary);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.messaging-interface-header .modal-btn:hover {
+    background-color: var(--bg-light-hover);
+}
+
+/* Chat Log Styling */
+.message-chat-log {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    background-color: var(--bg-white); /* Ensure white background */
+    border-bottom: 1px solid var(--border-light); /* Separator line */
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    line-height: var(--line-height-md);
+}
+
+.message-chat-log::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+}
+
+.message-chat-log::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: var(--border-radius-sm);
+}
+
+/* Footer Styling */
+.messaging-interface-footer {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md);
+    background-color: var(--bg-light-secondary); /* Subtle footer background */
+    border-top: 1px solid var(--border-light); /* Separator line */
+}
+
+.messaging-interface-footer .chat-input-field {
+    flex-grow: 1;
+    margin-right: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-md);
+    color: var(--text-primary);
+    background-color: var(--bg-white);
+}
+
+.messaging-interface-footer .chat-input-field:focus {
+    outline: 2px solid var(--focus-outline);
+}
+
+.messaging-interface-footer .send-btn {
+    background-color: var(--bg-accent-primary);
+    color: var(--text-white);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.messaging-interface-footer .send-btn:hover {
+    background-color: var(--bg-accent-hover);
+}
+
+/* Dark Mode Adjustments */
+body.dark-mode .messaging-interface-modal {
+    background-color: var(--bg-dark-primary);
+    box-shadow: var(--shadow-dark-lg);
+}
+
+body.dark-mode .messaging-interface-header {
+    background-color: var(--bg-dark-secondary);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+body.dark-mode .message-chat-log {
+    background-color: var(--bg-dark-primary);
+    color: var(--text-light);
+}
+
+body.dark-mode .messaging-interface-footer {
+    background-color: var(--bg-dark-secondary);
+    border-top: 1px solid var(--border-dark);
+}
+
+body.dark-mode .messaging-interface-footer .chat-input-field {
+    background-color: var(--bg-dark-primary);
+    color: var(--text-light);
+    border: 1px solid var(--border-dark);
+}
+
+body.dark-mode .messaging-interface-footer .send-btn {
+    background-color: var(--bg-accent-dark);
+    color: var(--text-white);
+}
+
+body.dark-mode .messaging-interface-footer .send-btn:hover {
+    background-color: var(--bg-accent-hover-dark);
+}

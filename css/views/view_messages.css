@@ -1,0 +1,216 @@
+/* css/views/view_messages.css */
+/* Styles for the Messages View, specifically the embedded 1-on-1 chat interface */
+
+#messages-view .view-content { /* This is .messages-view-flex-container */
+    display: flex; /* Allow embedded chat to fill */
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden; /* Remove scrollbar from the main area */
+}
+
+.embedded-chat-ui {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Fill available space */
+    border-radius: var(--border-radius-md);
+    background-color: var(--bg-white);
+    overflow: hidden; /* Prevent content overflow */
+    box-shadow: var(--shadow-sm);
+    position: relative; /* Ensure header and footer positioning works */
+}
+
+.embedded-chat-main-header, /* For messages-view */
+.messaging-interface-header { /* For messaging-interface modal */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky; /* Keep header fixed at the top */
+    top: 0;
+    z-index: 10; /* Ensure header stays above other content */
+    background-color: var(--bg-white); /* Match chat background */
+}
+
+.embedded-chat-footer {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-top: 1px solid var(--border-color-light);
+    background-color: var(--bg-light);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0; /* Prevent footer from shrinking */
+    position: sticky; /* Keep footer fixed at the bottom */
+    bottom: 0;
+    z-index: 10; /* Ensure footer stays above other content */
+}
+
+/* Chat log area styling */
+#embedded-chat-log {
+    flex-grow: 1;
+    overflow-y: auto; /* Enable vertical scrolling for the chat container */
+    padding: var(--spacing-md);
+    background-color: var(--bg-white);
+}
+
+/* Activity area styling */
+#embedded-message-activity-area {
+    border-top: 1px solid var(--border-color-light);
+    border-bottom: 1px solid var(--border-color-light);
+    background-color: var(--bg-light);
+}
+
+/* Input and button styling */
+#embedded-message-attach-btn {
+    margin-right: var(--spacing-xs);
+}
+
+#embedded-message-text-input {
+    flex-grow: 1;
+    margin-right: var(--spacing-sm);
+}
+
+#embedded-message-send-btn {
+    /* Base styles from buttons.css */
+}
+
+/* Dark Mode Adjustments */
+body.dark-mode .embedded-chat-ui {
+    border-color: var(--border-color-dark);
+    background-color: var(--bg-dark-secondary);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+body.dark-mode #embedded-message-activity-area {
+    border-color: var(--border-color-dark);
+}
+
+body.dark-mode .embedded-chat-footer {
+    background-color: var(--bg-dark-tertiary);
+    border-top-color: var(--border-color-dark);
+}
+
+body.dark-mode .embedded-chat-main-header {
+    background-color: var(--bg-dark-secondary);
+    border-bottom-color: var(--border-color-dark);
+}
+
+/* Header avatar and text styling */
+.partner-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.chat-header-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-circle);
+    object-fit: cover;
+    border: 1px solid var(--border-color-light);
+}
+
+#embedded-chat-header-name {
+    font-size: 1.2em;
+    font-weight: 500;
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Wrapper for chat messages */
+.chat-message-wrapper {
+    display: flex;
+    align-items: flex-start; /* Align avatar and bubble at the top */
+    margin-bottom: 10px;
+    max-width: 100%; /* Ensure wrapper takes full width */
+}
+
+/* User messages */
+.chat-message-wrapper.user-wrapper {
+    margin-left: auto; /* Aligns user messages to the right */
+    flex-direction: row-reverse; /* Avatar on the right for user */
+}
+
+/* Connector messages */
+.chat-message-wrapper.connector-wrapper {
+    margin-right: auto; /* Aligns connector messages to the left */
+    flex-direction: row; /* Avatar on the left for connector */
+}
+
+/* Avatar styling */
+.chat-bubble-avatar {
+    width: 32px; /* Adjust size */
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-top: auto; /* Align avatar to the bottom of the wrapper if bubble grows */
+}
+
+.chat-message-wrapper.has-avatar-left .chat-bubble-avatar {
+    margin-right: 8px;
+}
+
+.chat-message-wrapper.has-avatar-right .chat-bubble-avatar {
+    margin-left: 8px;
+}
+
+/* Chat bubble styling */
+.chat-message-ui {
+    padding: 8px 12px;
+    border-radius: 15px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    max-width: calc(100% - 40px); /* Ensure bubble doesn't exceed wrapper width (account for avatar) */
+    background-color: var(--bg-light);
+    color: var(--text-color);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow for bubbles */
+}
+
+/* User messages */
+.chat-message-ui.user {
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 5px; /* Speech bubble tail */
+}
+
+.chat-message-wrapper.user-wrapper .chat-message-ui {
+    margin-left: auto; /* Align bubble itself to the right */
+}
+
+/* Connector messages */
+.chat-message-ui.connector {
+    background-color: var(--background-alt-color);
+    color: var(--text-color);
+    border-bottom-left-radius: 5px; /* Speech bubble tail */
+}
+
+.chat-message-wrapper.connector-wrapper .chat-message-ui {
+    margin-right: auto; /* Align bubble itself to the left */
+}
+
+/* Sender name styling */
+
+
+.chat-message-ui.connector .chat-message-sender-name {
+    color: var(--primary-color-darker, #0056b3); /* Specific color for AI sender name */
+}
+
+/* Image styling */
+.chat-message-image {
+    max-width: 100%; /* Ensure image fits in bubble */
+    border-radius: 10px; /* Rounded corners for image */
+    margin-top: 5px; /* Space if there's text above */
+}
+
+/* System messages */
+.chat-message-ui.system-message {
+    background-color: var(--bg-light-secondary);
+    color: var(--text-color-muted);
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto; /* Center system message bubble */
+}
+
+.chat-message-wrapper.system-message {
+    justify-content: center;
+    max-width: 100%;
+}

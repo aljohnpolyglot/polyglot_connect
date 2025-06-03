@@ -1,0 +1,86 @@
+/* css/views/view_summary.css */
+/* Styles for the Summary View content area */
+
+#summary-view .view-content {
+    padding: var(--spacing-md); /* Add some padding around the summary content */
+}
+
+/* Styles for when recap content is embedded directly into the summary view */
+.recap-modal-content-embedded {
+    background-color: var(--bg-white);
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-lg);
+    max-width: 800px; /* Or let it fill view-content */
+    margin: 0 auto; /* Center if max-width is set */
+    height: 100%; /* Fill available space */
+    overflow-y: auto; /* Scroll if content exceeds height */
+}
+.recap-modal-content-embedded h3 { /* Connector Name for this summary */
+    font-size: 1.5em;
+    color: var(--primary-color);
+    margin-bottom: var(--spacing-xs);
+    text-align: center;
+}
+.recap-modal-content-embedded p {
+    font-size: 0.95em;
+    margin-bottom: var(--spacing-sm);
+    text-align: center;
+}
+.recap-modal-content-embedded p strong { font-weight: var(--font-weight-medium); }
+
+/* Re-use .recap-section styles from modal_recap.css or components/lists.css if general enough */
+.recap-modal-content-embedded .recap-section {
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px dashed var(--border-color-light);
+}
+.recap-modal-content-embedded .recap-section:last-of-type { /* Use last-of-type to select the actual last section */
+    border-bottom: none;
+    margin-bottom: 0;
+}
+.recap-modal-content-embedded .recap-section h4 {
+    font-size: 1.1em;
+    color: var(--primary-color); /* Keep consistent with modal */
+    margin-bottom: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+}
+.recap-modal-content-embedded .recap-section h4 i { margin-right: var(--spacing-sm); }
+.recap-modal-content-embedded .recap-section ul {
+    list-style: none;
+    padding-left: var(--spacing-xs);
+}
+.recap-modal-content-embedded .recap-section ul li {
+    font-size: 0.9em;
+    color: var(--text-color-muted);
+    margin-bottom: var(--spacing-xs);
+    padding-left: var(--spacing-lg);
+    position: relative;
+}
+.recap-modal-content-embedded .recap-section ul li::before {
+    content: '✓';
+    color: var(--success-color);
+    position: absolute; left: 0; top: 1px;
+    font-weight: var(--font-weight-bold);
+}
+#summary-view-download-btn {
+    display: block; /* Make button take full width or center it */
+    margin: var(--spacing-lg) auto 0 auto;
+    width: fit-content;
+}
+
+
+/* Dark Mode for Summary View Embedded Recap */
+body.dark-mode .recap-modal-content-embedded {
+    background-color: var(--bg-dark-secondary);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+body.dark-mode .recap-modal-content-embedded h3 { color: var(--primary-color-lighter); }
+body.dark-mode .recap-modal-content-embedded p { color: var(--text-color-light); }
+body.dark-mode .recap-modal-content-embedded p strong { color: var(--text-color-light); }
+body.dark-mode .recap-modal-content-embedded .recap-section { border-bottom-color: var(--border-color-dark); }
+body.dark-mode .recap-modal-content-embedded .recap-section h4 { color: var(--primary-color-lighter); }
+body.dark-mode .recap-modal-content-embedded .recap-section ul li { color: #b0b3b8; }
+body.dark-mode .recap-modal-content-embedded .recap-section ul li::before { color: #32cd32; }
+
