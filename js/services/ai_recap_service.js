@@ -223,58 +223,113 @@ Remember, ONLY return the JSON object. Ensure all string values within the JSON 
             { role: "user", content: `Please generate the JSON debrief based on the following transcript and instructions.\n\nTRANSCRIPT:\n${transcriptText}\n\nINSTRUCTIONS FOR JSON (Please adhere strictly to this structure and content guidelines):\n${recapPromptInstructions}` }
         ];
 
-        try {
+           try {
             console.log(`aiRecapService (${provider}): Requesting session recap for connector '${connector.id}'`);
             const jsonStringResponse = await callOpenAICompatibleAPI(
                 messages,
-                GROQ_MODELS.RECAP,
+                GROQ_MODELS.RECAP, // Assuming you want to use the specific RECAP model from Groq
                 provider,
-                window.GROQ_API_KEY,
+                window.GROQ_API_KEY, // Assuming GROQ_API_KEY is for Groq
                 { temperature: 0.3 }
             );
 
+            // --- START Enhanced Logging and Cleaning ---
+            console.log(`aiRecapService (${provider}): --- START RAW RESPONSE ---`);
+            console.log(jsonStringResponse);
+            console.log(`aiRecapService (${provider}): --- END RAW RESPONSE ---`);
+            console.log(`aiRecapService (${provider}): Raw Length: ${jsonStringResponse.length}`);
+            console.log(`aiRecapService (${provider}): Raw Start chars: [${jsonStringResponse.substring(0, 15)}]`); // Log more chars
+            console.log(`aiRecapService (${provider}): Raw End chars: [${jsonStringResponse.substring(jsonStringResponse.length - 15)}]`);
+
+            function cleanJsonString(str) {
+                if (typeof str !== 'string') {
+                    console.warn(`aiRecapService cleanJsonString: input was not a string, type: ${typeof str}`);
+                    return str;
+                }
+                let originalLength = str.length;
+                // Remove BOM (Byte Order Mark)
+                if (str.charCodeAt(0) === 0xFEFF || str.charCodeAt(0) === 0xFFFE) {
+                    str = str.substring(1);
+                    console.log(`aiRecapService cleanJsonString: BOM removed. Length change: ${originalLength} -> ${str.length}`);
+                    originalLength = str.length; // Update for next log
+                }
+                // Aggressively trim whitespace and control characters from start and end
+                const trimmedStr = str.replace(/^[\s\p{C}]+/u, '').replace(/[\s\p{C}]+$/u, '');
+                if (trimmedStr.length !== originalLength) {
+                    console.log(`aiRecapService cleanJsonString: Aggressive trim applied. Length change: ${originalLength} -> ${trimmedStr.length}`);
+                }
+                return trimmedStr;
+            }
+
+            let cleanedResponse = cleanJsonString(jsonStringResponse);
+            console.log(`aiRecapService (${provider}): Cleaned response length: ${cleanedResponse.length}`);
+            if (cleanedResponse.length > 0) {
+                console.log(`aiRecapService (${provider}): Cleaned Start chars: [${cleanedResponse.substring(0, 15)}]`);
+            } else {
+                console.log(`aiRecapService (${provider}): Cleaned response is empty.`);
+            }
+            // --- END Enhanced Logging and Cleaning ---
+
             let parsed;
             try {
-                parsed = JSON.parse(jsonStringResponse);
+                parsed = JSON.parse(cleanedResponse);
+                console.log(`aiRecapService (${provider}): Successfully parsed CLEANED response directly.`);
             } catch (e) {
-                console.warn(`aiRecapService (${provider}): Direct JSON.parse failed for recap, attempting to extract from markdown. Error:`, e.message);
-                const jsonMatch = jsonStringResponse.match(/```json\s*([\s\S]*?)\s*```/s);
+                console.warn(`aiRecapService (${provider}): Direct JSON.parse (of cleaned) failed. Error:`, e.message);
+                console.log(`aiRecapService (${provider}): Attempting markdown extraction from CLEANED response.`);
+
+                const jsonMatch = cleanedResponse.match(/```json\s*([\s\S]*?)\s*```/s);
                 if (jsonMatch && jsonMatch[1]) {
+                    const extractedJson = cleanJsonString(jsonMatch[1]); // Clean the extracted part too
+                    console.log(`aiRecapService (${provider}): Extracted from markdown (and cleaned again): [${extractedJson.substring(0,20)}...${extractedJson.substring(extractedJson.length-20)}]`);
                     try {
-                        parsed = JSON.parse(jsonMatch[1]);
+                        parsed = JSON.parse(extractedJson);
+                        console.log(`aiRecapService (${provider}): Successfully parsed EXTRACTED & CLEANED JSON.`);
                     } catch (e2) {
-                        console.error(`aiRecapService (${provider}): Failed to parse EXTRACTED JSON for recap. Error:`, e2);
-                        throw new Error(`Recap response from ${provider} contained malformed JSON even after extraction.`);
+                        console.error(`aiRecapService (${provider}): Failed to parse EXTRACTED & CLEANED JSON. Error:`, e2.message);
+                        console.error("Extracted content (from cleaned response) that failed parsing:", extractedJson);
+                        // Fallback: Try extracting from the ORIGINAL raw string if cleaning + markdown failed
+                        console.log(`aiRecapService (${provider}): Falling back to markdown extraction from ORIGINAL raw response.`);
+                        const originalJsonMatch = jsonStringResponse.match(/```json\s*([\s\S]*?)\s*```/s);
+                        if (originalJsonMatch && originalJsonMatch[1]) {
+                            const originalExtractedJson = cleanJsonString(originalJsonMatch[1]);
+                             console.log(`aiRecapService (${provider}): Extracted from ORIGINAL markdown (and cleaned): [${originalExtractedJson.substring(0,20)}...${originalExtractedJson.substring(originalExtractedJson.length-20)}]`);
+                            try {
+                                parsed = JSON.parse(originalExtractedJson);
+                                console.log(`aiRecapService (${provider}): Successfully parsed ORIGINAL EXTRACTED & CLEANED JSON.`);
+                            } catch (e3) {
+                                console.error(`aiRecapService (${provider}): Failed to parse ORIGINAL EXTRACTED & CLEANED JSON. Error:`, e3.message);
+                                console.error("Original extracted content that failed parsing:", originalExtractedJson);
+                                throw new Error(`Recap response from ${provider} malformed JSON after all attempts.`);
+                            }
+                        } else {
+                             console.error(`aiRecapService (${provider}): No markdown block in ORIGINAL raw response either.`);
+                             throw new Error(`Recap response from ${provider} not JSON and no markdown (all attempts).`);
+                        }
                     }
                 } else {
-                    console.error(`aiRecapService (${provider}): Recap response not valid JSON and no markdown block found. Response:`, jsonStringResponse);
-                    throw new Error(`Recap response from ${provider} was not valid JSON.`);
+                    console.error(`aiRecapService (${provider}): Recap response not valid JSON and no markdown block found in cleaned response. Full cleaned response logged above.`);
+                    throw new Error(`Recap response from ${provider} was not valid JSON (no markdown in cleaned).`);
                 }
             }
 
+            // Ensure 'parsed' has default structure if some keys are missing from LLM
             return {
-                conversationSummary: typeof parsed.conversationSummary === 'string' ? parsed.conversationSummary : "Summary not available.",
+                conversationSummary: typeof parsed.conversationSummary === 'string' ? parsed.conversationSummary : "Summary generation encountered an issue.",
                 keyTopicsDiscussed: Array.isArray(parsed.keyTopicsDiscussed) ? parsed.keyTopicsDiscussed : [],
                 newVocabularyAndPhrases: Array.isArray(parsed.newVocabularyAndPhrases) ? parsed.newVocabularyAndPhrases.filter(item => item && typeof item.term === 'string') : [],
                 goodUsageHighlights: Array.isArray(parsed.goodUsageHighlights) ? parsed.goodUsageHighlights : [],
                 areasForImprovement: Array.isArray(parsed.areasForImprovement) ? parsed.areasForImprovement.filter(item => item && typeof item.areaType === 'string') : [],
                 suggestedPracticeActivities: Array.isArray(parsed.suggestedPracticeActivities) ? parsed.suggestedPracticeActivities : [],
-                overallEncouragement: typeof parsed.overallEncouragement === 'string' ? parsed.overallEncouragement : "Great session!"
+                overallEncouragement: typeof parsed.overallEncouragement === 'string' ? parsed.overallEncouragement : "Keep practicing!"
             };
 
-        } catch (error) {
-            console.error(`aiRecapService.generateSessionRecap Error for ${connector.profileName || connector.name}:`, error.message);
-            return {
-                conversationSummary: `Debrief generation failed: ${error.message.substring(0, 70)}...`,
-                keyTopicsDiscussed: [],
-                newVocabularyAndPhrases: [],
-                goodUsageHighlights: [],
-                areasForImprovement: [],
-                suggestedPracticeActivities: [],
-                overallEncouragement: "An error occurred while generating the session debrief."
-            };
+        } catch (error) { // This catches errors from callOpenAICompatibleAPI or re-thrown errors from parsing
+            console.error(`aiRecapService.generateSessionRecap Error for ${connector.profileName || connector.name} with provider ${provider}:`, error.message);
+            // Return the defaultErrorRecap structure
+            return defaultErrorRecap(provider); // Pass the provider name to the error recap
         }
-    }
+    } // End of generateSessionRecap function
 
     console.log("services/ai_recap_service.js loaded.");
     return { generateSessionRecap };
