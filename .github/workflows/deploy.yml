@@ -1,48 +1,42 @@
 # D:\polyglot_connect\.github\workflows\deploy.yml
-name: Build and Deploy Polyglot Connect App to GitHub Pages
+name: Build and Deploy Polyglot Connect App (with Vite Define)
 
 on:
   push:
     branches:
-      - main # Deploy when changes are pushed to the main branch of THIS repo
-  workflow_dispatch: # Allows manual triggering from the Actions tab
+      - main
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required by peaceiris/actions-gh-pages to push to gh-pages
+      contents: write
 
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v4 # Checks out this repo's code
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Or your preferred Node.js LTS version
+          node-version: '20'
 
-      - name: Install Dependencies (including dotenv-cli) ⚙️
+      - name: Install Dependencies ⚙️
+        run: npm ci 
+        # No need for dotenv-cli anymore with this approach
+
+      - name: Build with Vite (using defined environment variables) 🛠️
+        env: # Set environment variables for THIS step
+          WORKFLOW_DEFINED_VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKFLOW_DEFINED_VITE_GEMINI_API_KEY_ALT: ${{ secrets.GEMINI_API_KEY_ALT }}
+          WORKFLOW_DEFINED_VITE_GEMINI_API_KEY_ALT_2: ${{ secrets.GEMINI_API_KEY_ALT_2 }}
+          WORKFLOW_DEFINED_VITE_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          WORKFLOW_DEFINED_VITE_TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          WORKFLOW_DEFINED_VITE_TEST_VAR: "HelloFromViteDefineInAction"
         run: |
-          npm ci 
-          npm install -g dotenv-cli # Install dotenv-cli globally for the runner
-
-      - name: Create .env file for Vite build 🔑
-        # This .env file is created at the root of the checked-out repository
-        run: |
-          echo "Creating .env file in repository root for Vite build..."
-          echo "VITE_GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-          echo "VITE_GEMINI_API_KEY_ALT=${{ secrets.GEMINI_API_KEY_ALT }}" >> .env
-          echo "VITE_GEMINI_API_KEY_ALT_2=${{ secrets.GEMINI_API_KEY_ALT_2 }}" >> .env
-          echo "VITE_GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
-          echo "VITE_TOGETHER_API_KEY=${{ secrets.TOGETHER_API_KEY }}" >> .env
-          echo "VITE_TEST_VAR=HelloFromActionBuildWithDotenvCli" >> .env # Unique value for this test
-          echo ".env file created. Verifying content:"
-          cat .env # Log the content of the .env file to ensure it's correct
-
-      - name: Build with Vite using dotenv-cli 🛠️
-        # Explicitly load the .env file before running the build command
-        run: dotenv -e .env -- npm run build 
+          echo "Building with explicitly set environment variables for Vite's define config..."
+          npm run build
 
       - name: Verify Build Output (Debugging) 🔍
         run: |
@@ -50,24 +44,20 @@ jobs:
           ls -R ./dist
           echo "--- Verifying index.html in dist ---"
           ls -A ./dist/index.html || echo "index.html NOT FOUND in dist"
-          echo "--- Searching for VITE_TEST_VAR in bundled JS (should NOT be import.meta.env) ---"
-          # This grep command will search for the *actual value* of VITE_TEST_VAR
-          # or the literal 'import.meta.env' in your main JavaScript bundle.
-          # Vite renames JS files with hashes, so find the main JS file.
-          # Example: find ./dist/assets -name "*.js" -exec grep -H "HelloFromActionBuildWithDotenvCli" {} \;
-          # Example: find ./dist/assets -name "*.js" -exec grep -H "import.meta.env.VITE_TEST_VAR" {} \;
-          JS_BUNDLE_FILE=$(find ./dist/assets -name "main-*.js" -type f | head -n 1)
+          echo "--- Searching for VITE_TEST_VAR value in bundled JS ---"
+          JS_BUNDLE_FILE=$(find ./dist/assets -name "*.js" -type f | head -n 1)
           if [ -n "$JS_BUNDLE_FILE" ]; then
             echo "Checking bundle: $JS_BUNDLE_FILE"
-            if grep -q "HelloFromActionBuildWithDotenvCli" "$JS_BUNDLE_FILE"; then
-              echo "✅ VITE_TEST_VAR value was correctly injected into the JS bundle."
+            if grep -q "HelloFromViteDefineInAction" "$JS_BUNDLE_FILE"; then
+              echo "✅ VITE_TEST_VAR value was correctly injected via define."
             else
-              echo "⚠️ VITE_TEST_VAR value was NOT found in the JS bundle."
+              echo "❌ VITE_TEST_VAR value was NOT found in the JS bundle (define method)."
             fi
+            # We no longer expect 'import.meta.env' literally for these defined vars
             if grep -q "import.meta.env.VITE_TEST_VAR" "$JS_BUNDLE_FILE"; then
-              echo "❌ ERROR: 'import.meta.env.VITE_TEST_VAR' found literally in JS bundle. Vite did not replace it."
+              echo "⚠️ 'import.meta.env.VITE_TEST_VAR' might still be literally in bundle, check define."
             else
-              echo "✅ 'import.meta.env.VITE_TEST_VAR' was correctly replaced by Vite (or not present)."
+              echo "✅ 'import.meta.env.VITE_TEST_VAR' likely replaced by define (GOOD)."
             fi
           else
             echo "Could not find main JS bundle in dist/assets/ to verify."
@@ -77,6 +67,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist # Deploy the entire 'dist' folder created by Vite
-          force_orphan: true  # Creates a fresh gh-pages branch history
-          keep_files: false   # Ensures old files are removed from the branch
+          publish_dir: ./dist 
+          force_orphan: true 
+          keep_files: false
