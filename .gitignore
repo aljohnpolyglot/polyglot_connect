@@ -1,14 +1,16 @@
-# Vite / Node
+# Vite / Node specific
 node_modules/
 dist/
 .env
 *.local
+
+# API Keys file (if you were to ever manually create one with real keys locally, though .env is preferred)
+js/config/api_keys.js 
+
+# OS specific
 .DS_Store
 Thumbs.db
-*.log
-.vscode/ # If you don't want to share VS Code settings for this specific project
 
-# Python cache (if you still have those .py files here for utility)
-__pycache__/
-*.pyc
-*.pyo
+# Logs and temp files
+*.log
+*.swp
