@@ -4,128 +4,190 @@
 window.geminiMultimodalService = (() => {
     'use strict';
 
-    // CORRECTED DEPENDENCY CHECK: Use _aiApiConstants
+    // --- Robust Dependency Check ---
     if (!window._geminiInternalApiCaller || !window._aiApiConstants) {
-        console.error("Gemini Multimodal Service: Core API utilities (_geminiInternalApiCaller or _aiApiConstants) not found.");
-        const errorFn = async (errorMessage = "Multimodal Service not initialized due to missing core utilities.") => {
-            console.error("Gemini Multimodal Service Call Failed:", errorMessage);
-            throw new Error(errorMessage);
+        console.error("Gemini Multimodal Service: CRITICAL - Core API utilities (_geminiInternalApiCaller or _aiApiConstants) not found at load time. Service will be non-functional.");
+        // Define dummy functions that will throw, so any accidental calls are caught.
+        const errorFn = async (errorMessagePrefix = "Multimodal Service") => {
+            const errorMsg = `${errorMessagePrefix} not initialized due to missing core utilities. Please check script loading order and ensure ai_constants.js and gemini_api_caller.js (defining _geminiInternalApiCaller) are loaded first.`;
+            console.error("Gemini Multimodal Service Call Failed:", errorMsg);
+            throw new Error(errorMsg);
         };
         return {
-            generateTextFromAudioForCallModal: () => errorFn("generateTextFromAudioForCallModal called on uninitialized service."),
-            generateTextFromImageAndText: () => errorFn("generateTextFromImageAndText called on uninitialized service."),
-            transcribeAudioToText: () => errorFn("transcribeAudioToText called on uninitialized service.")
+            generateTextFromAudioForCallModal: () => errorFn("generateTextFromAudioForCallModal"),
+            generateTextFromImageAndText: () => errorFn("generateTextFromImageAndText"),
+            transcribeAudioToText: () => errorFn("transcribeAudioToText")
         };
     }
 
     const callGeminiAPIInternal = window._geminiInternalApiCaller;
-    // Use the constants from _aiApiConstants
-    const { GEMINI_MODELS, STANDARD_SAFETY_SETTINGS_GEMINI } = window._aiApiConstants;
+    const { GEMINI_MODELS, STANDARD_SAFETY_SETTINGS_GEMINI } = window._aiApiConstants; // Destructure after ensuring it exists
 
     async function transcribeAudioToText(base64AudioString, mimeType, languageHint = "en-US") {
-        // console.log(`geminiMultimodalService: transcribeAudioToText called. Lang hint: ${languageHint}, MimeType: ${mimeType}`);
+        console.log(`GeminiMultimodalService: transcribeAudioToText called. Lang hint: ${languageHint}, MimeType: ${mimeType.substring(0,30)}`);
         if (!base64AudioString) {
-            console.error("geminiMultimodalService.transcribeAudioToText: Audio data missing.");
+            console.error("GeminiMultimodalService.transcribeAudioToText: Audio data (base64AudioString) is missing or empty.");
             throw new Error("Audio data missing for transcription.");
         }
+        if (!mimeType) {
+            console.error("GeminiMultimodalService.transcribeAudioToText: MimeType is missing.");
+            throw new Error("MimeType missing for transcription.");
+        }
 
-        // This prompt structure is more aligned with typical multimodal requests for Gemini
         const contents = [{
             role: "user",
             parts: [
-                { text: `Please transcribe the following audio. The primary language spoken is likely ${languageHint}.` },
+                { text: `Please transcribe the following audio. The primary language spoken is likely ${languageHint}. Focus on accurate transcription.` },
                 { inlineData: { mimeType: mimeType, data: base64AudioString } }
             ]
         }];
 
         const payload = {
             contents: contents,
-            safetySettings: STANDARD_SAFETY_SETTINGS_GEMINI // Use Gemini-specific safety settings
+            // safetySettings are applied by _geminiInternalApiCaller
+            generationConfig: {
+                // Temperature might be lower for more factual transcription
+                temperature: 0.2 
+            } 
         };
-        // console.log("geminiMultimodalService.transcribeAudioToText: Payload:", JSON.stringify(payload).substring(0, 300) + "...");
+        // console.debug("GeminiMultimodalService.transcribeAudioToText: Payload:", JSON.stringify(payload).substring(0, 300) + "...");
 
         try {
-            // Use the specific multimodal model if different, otherwise GEMINI_MODELS.TEXT can often handle it
-            const transcription = await callGeminiAPIInternal(payload, GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT, "generateContent");
-            // console.log("geminiMultimodalService: Transcription API call successful. Result:", transcription);
+            const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT; // Fallback if MULTIMODAL not defined
+            console.log(`GeminiMultimodalService: Calling Gemini for STT with model ${modelToUse}.`);
+            const transcription = await callGeminiAPIInternal(payload, modelToUse, "generateContent");
+            
             if (typeof transcription !== 'string') {
-                console.warn("geminiMultimodalService: Transcription result was not a string:", transcription);
-                return ""; // Return empty string for non-string results
+                console.warn("GeminiMultimodalService: Transcription result was not a string:", transcription);
+                // If it's an object indicating blocking, propagate that info if possible
+                if (transcription && typeof transcription === 'object' && transcription.startsWith?.("(My response was blocked")) {
+                    throw new Error(transcription); // Let facade handle this user-facing message
+                }
+                throw new Error("Transcription result from API was not in the expected text format.");
             }
+            console.log("GeminiMultimodalService: Transcription successful. Length:", transcription.length);
             return transcription;
         } catch (error) {
-            console.error(`geminiMultimodalService.transcribeAudioToText Error:`, error.message, error);
-            throw error;
+            console.error(`GeminiMultimodalService.transcribeAudioToText Error:`, error.message, error);
+            // Re-throw the error so the facade (ai_service.js) can catch it and provide a human-like message
+            throw error; 
         }
     }
 
     async function generateTextFromAudioForCallModal(base64AudioString, mimeType, connector, modalCallHistory) {
-        // console.log("geminiMultimodalService: generateTextFromAudioForCallModal called.");
-        if (!connector) throw new Error("Connector info missing for audio call modal.");
-        if (!base64AudioString) throw new Error("Audio data missing for audio call modal.");
+        console.log(`GeminiMultimodalService: generateTextFromAudioForCallModal called for connector: ${connector?.id}`);
+        if (!connector || !connector.profileName || !connector.language) {
+            console.error("GeminiMultimodalService: Connector info (id, profileName, language) missing for audio call modal.");
+            throw new Error("Connector information missing for generating text from audio.");
+        }
+        if (!base64AudioString) {
+            console.error("GeminiMultimodalService: Audio data (base64AudioString) missing for audio call modal.");
+            throw new Error("Audio data missing for audio call modal.");
+        }
 
-        // This function is specific to the Live API context, where text is generated from audio.
-        // The system prompt and history structure are tailored for Gemini's generateContent for this.
-        let lastConnectorText = modalCallHistory.filter(t => t.sender === 'connector' && typeof t.text === 'string' && t.text.trim() !== "").pop()?.text || 'This is the start of our conversation.';
-        const systemPrompt = `You are ${connector.profileName}... (Your existing system prompt for this scenario)... process the user's audio:`; // Keep your detailed prompt
+        // Construct a concise system prompt specific for this task
+        // The full persona prompt is already in the `modalCallHistory` or `existingGeminiHistory`
+        // This is more of an instruction for *this specific turn* involving audio.
+        const turnInstruction = `You are ${connector.profileName}. The user has just spoken. Their audio has been transcribed (you will process it internally). Respond naturally in ${connector.language} based on what they said. Maintain your persona. This is a voice call, so avoid emojis and parenthetical remarks.`;
+        
+        let contents = [];
+        // Add the system-like instruction for this turn
+        contents.push({ role: "user", parts: [{ text: turnInstruction }] });
+        contents.push({ role: "model", parts: [{ text: `Okay, I understand. I am ${connector.profileName}. I will listen to the user's audio and respond in ${connector.language}.` }] });
 
-        let contents = [
-            { role: "user", parts: [{ text: systemPrompt }] },
-            { role: "model", parts: [{ text: `Okay, I am ${connector.profileName}. I'm listening and will respond in ${connector.language}.` }] }
-        ];
-        const MAX_TEXT_HISTORY_WITH_MODAL_AUDIO = 3;
-        const recentTextTurns = modalCallHistory.filter(t => typeof t.text === 'string').slice(-(MAX_TEXT_HISTORY_WITH_MODAL_AUDIO * 2));
-        recentTextTurns.forEach(turn => {
-            contents.push({ role: turn.sender.startsWith('user') ? 'user' : 'model', parts: [{ text: turn.text }] });
-        });
-        contents.push({ role: "user", parts: [{ inlineData: { mimeType: mimeType, data: base64AudioString } }] }); // Audio part
 
-        const payload = { contents: contents, safetySettings: STANDARD_SAFETY_SETTINGS_GEMINI };
-        // console.log("geminiMultimodalService.generateTextFromAudioForCallModal: Payload:", JSON.stringify(payload).substring(0, 300) + "...");
+        // Add recent textual history if available
+        const MAX_TEXT_HISTORY_FOR_AUDIO_CONTEXT = 4; // User turns + Model turns
+        if (Array.isArray(modalCallHistory)) {
+            modalCallHistory.slice(-MAX_TEXT_HISTORY_FOR_AUDIO_CONTEXT).forEach(turn => {
+                if (turn && typeof turn.text === 'string') { // Only add text turns to this part of context
+                    contents.push({ 
+                        role: turn.sender?.toLowerCase().startsWith('user') ? 'user' : 'model', 
+                        parts: [{ text: turn.text }] 
+                    });
+                }
+            });
+        }
+        
+        // Add the user's audio data
+        contents.push({ role: "user", parts: [{ inlineData: { mimeType: mimeType, data: base64AudioString } }] });
+
+        const payload = { 
+            contents: contents,
+            // safetySettings applied by _geminiInternalApiCaller
+            generationConfig: { temperature: 0.7 }
+        };
+        // console.debug("GeminiMultimodalService.generateTextFromAudioForCallModal: Payload Preview:", JSON.stringify(payload.contents.slice(-3)).substring(0, 300) + "...");
 
         try {
-            // Using MULTIMODAL model here which is usually the same as TEXT for this kind of combined input with Gemini 1.5 Flash
-            const response = await callGeminiAPIInternal(payload, GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT, "generateContent");
-            // console.log("geminiMultimodalService: Audio processing (for call modal) successful. Response:", response);
+            const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT;
+            console.log(`GeminiMultimodalService: Calling Gemini for call modal audio-to-text with model ${modelToUse}.`);
+            const response = await callGeminiAPIInternal(payload, modelToUse, "generateContent");
+            console.log("GeminiMultimodalService: Audio processing (for call modal) successful. Response preview:", typeof response === 'string' ? response.substring(0, 50) + "..." : response);
+            if (typeof response !== 'string') {
+                 throw new Error("Response from audio processing was not in expected text format.");
+            }
             return response;
         } catch (error) {
-            console.error(`geminiMultimodalService.generateTextFromAudioForCallModal Error for ${connector.profileName}:`, error);
-            return `(Audio Processing Error during call: ${error.message.substring(0, 30)}...)`;
+            console.error(`GeminiMultimodalService.generateTextFromAudioForCallModal Error for ${connector.profileName}:`, error.message, error);
+            throw error; // Re-throw for facade handling
         }
     }
 
     async function generateTextFromImageAndText(base64ImageString, mimeType, connector, existingGeminiHistory, optionalUserText) {
-        // console.log("geminiMultimodalService: generateTextFromImageAndText called.");
-        if (!connector) throw new Error("Connector info missing for image chat.");
-        if (!base64ImageString) throw new Error("Image data missing for image chat.");
+        console.log(`GeminiMultimodalService: generateTextFromImageAndText called for connector: ${connector?.id}`);
+        if (!connector || !connector.profileName || !connector.language) {
+            console.error("GeminiMultimodalService: Connector info (id, profileName, language) missing for image chat.");
+            throw new Error("Connector information missing for image processing.");
+        }
+        if (!base64ImageString) {
+            console.error("GeminiMultimodalService: Image data (base64ImageString) missing for image chat.");
+            throw new Error("Image data missing for image processing.");
+        }
 
         const userQueryText = optionalUserText || `The user sent this image. Please describe it or ask a relevant question about it in ${connector.language}.`;
 
-        // Gemini 'contents' format
-        let currentHistoryForThisCall = [...existingGeminiHistory]; // existingGeminiHistory is already in Gemini format
-        const userImagePromptParts = [
-            { text: userQueryText },
-            { inlineData: { mimeType: mimeType, data: base64ImageString } }
-        ];
+        // Ensure existingGeminiHistory is an array. It should contain the full conversation context,
+        // including the system prompt for the persona.
+        let currentHistoryForThisCall = Array.isArray(existingGeminiHistory) ? [...existingGeminiHistory] : [];
+        
+        // Add the new user turn with text and image
+        const userImagePromptParts = [];
+        if (userQueryText.trim() !== "") { // Only add text part if there's actual text
+            userImagePromptParts.push({ text: userQueryText });
+        }
+        userImagePromptParts.push({ inlineData: { mimeType: mimeType, data: base64ImageString } });
+        
         currentHistoryForThisCall.push({ role: "user", parts: userImagePromptParts });
 
         const payload = {
             contents: currentHistoryForThisCall,
-            safetySettings: STANDARD_SAFETY_SETTINGS_GEMINI
+            // safetySettings applied by _geminiInternalApiCaller
+            generationConfig: { temperature: 0.7 }
         };
-        // console.log("geminiMultimodalService.generateTextFromImageAndText: Payload:", JSON.stringify(payload).substring(0, 300) + "...");
+        // console.debug("GeminiMultimodalService.generateTextFromImageAndText: Payload Preview:", JSON.stringify(payload.contents.slice(-1)).substring(0, 300) + "...");
 
         try {
-            const response = await callGeminiAPIInternal(payload, GEMINI_MODELS.MULTIMODAL, "generateContent");
-            // console.log("geminiMultimodalService: Image processing successful. Response:", response);
+            const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT;
+            console.log(`GeminiMultimodalService: Calling Gemini for image-to-text with model ${modelToUse}.`);
+            const response = await callGeminiAPIInternal(payload, modelToUse, "generateContent");
+            console.log("GeminiMultimodalService: Image processing successful. Response preview:", typeof response === 'string' ? response.substring(0, 50) + "..." : response);
+             if (typeof response !== 'string') {
+                 throw new Error("Response from image processing was not in expected text format.");
+            }
             return response;
         } catch (error) {
-            console.error(`geminiMultimodalService.generateTextFromImageAndText Error for ${connector.profileName}:`, error);
-            return `(I had trouble with the image: ${error.message.substring(0, 30)}...)`;
+            console.error(`GeminiMultimodalService.generateTextFromImageAndText Error for ${connector.profileName}:`, error.message, error);
+            throw error; // Re-throw for facade handling
         }
     }
 
-    console.log("services/gemini_multimodal_service.js loaded (dependency check updated).");
+    if (window._geminiInternalApiCaller && window._aiApiConstants) { // Re-check after definitions
+        console.log("services/gemini_multimodal_service.js loaded successfully with dependencies and error propagation.");
+    } else {
+         console.error("services/gemini_multimodal_service.js loaded but critical dependencies are STILL MISSING post-IIFE. This is a serious issue.");
+    }
+
     return {
         generateTextFromAudioForCallModal,
         generateTextFromImageAndText,
