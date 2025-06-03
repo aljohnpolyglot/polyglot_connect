@@ -11,7 +11,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Required for peaceiris/actions-gh-pages
 
     steps:
       - name: Checkout 🛎️
@@ -22,45 +22,45 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Dependencies (including dotenv-cli) ⚙️
-        run: |
-          npm ci 
-          npm install -g dotenv-cli
+      - name: Install Dependencies ⚙️
+        run: npm ci # Use npm ci for consistent installs in CI environments
 
-      - name: Create .env file for Vite build from Secrets 🔑
-        run: |
-          echo "VITE_GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-          echo "VITE_GEMINI_API_KEY_ALT=${{ secrets.GEMINI_API_KEY_ALT }}" >> .env
-          echo "VITE_GEMINI_API_KEY_ALT_2=${{ secrets.GEMINI_API_KEY_ALT_2 }}" >> .env
-          echo "VITE_GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
-          echo "VITE_TOGETHER_API_KEY=${{ secrets.TOGETHER_API_KEY }}" >> .env
-          echo "VITE_TEST_VAR=HelloFromActionBuildWithDotenvCli" >> .env
-          echo "Action .env file created. Contents:"
-          cat .env 
+      # Removed dotenv-cli install and .env creation steps
 
-      - name: Build with Vite using dotenv-cli 🛠️
-        run: dotenv -e .env -- npm run build 
+      - name: Build with Vite 🛠️
+        env: # Pass secrets directly as environment variables
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY_ALT: ${{ secrets.GEMINI_API_KEY_ALT }}
+          VITE_GEMINI_API_KEY_ALT_2: ${{ secrets.GEMINI_API_KEY_ALT_2 }}
+          VITE_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          VITE_TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          VITE_TEST_VAR: "HelloFromActionBuildDirectEnv" # UPDATED test variable content
+        run: npm run build
 
       - name: Verify Build Output (Check if VITE_TEST_VAR was injected) 🔍
         run: |
           echo "Listing contents of ./dist/ directory:"
           ls -R ./dist
-          JS_BUNDLE_FILE=$(find ./dist/assets -name "index-*.js" -o -name "main-*.js" | head -n 1)
+          # Try to find any main JS bundle (name can vary slightly)
+          JS_BUNDLE_FILE=$(find ./dist/assets -name "index-*.js" -o -name "main-*.js" -o -name "app-*.js" | head -n 1)
           if [ -n "$JS_BUNDLE_FILE" ]; then
             echo "Checking bundle: $JS_BUNDLE_FILE"
-            if grep -q "HelloFromActionBuildWithDotenvCli" "$JS_BUNDLE_FILE"; then
+            # Ensure this grep matches the VITE_TEST_VAR value set in the 'env:' block above
+            if grep -q "HelloFromActionBuildDirectEnv" "$JS_BUNDLE_FILE"; then
               echo "✅ VITE_TEST_VAR value was correctly injected into the JS bundle."
             else
-              echo "❌ VITE_TEST_VAR value was NOT found in the JS bundle."
+              echo "❌ VITE_TEST_VAR value was NOT found in the JS bundle. This indicates a problem with env var injection."
+              # exit 1 # Optionally fail the build if the test var isn't found
             fi
           else
             echo "Could not find main JS bundle in dist/assets/ to verify."
+            # exit 1 # Optionally fail if bundle not found
           fi
 
       - name: Deploy to gh-pages branch 🚀
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist 
-          force_orphan: true 
-          keep_files: false
+          publish_dir: ./dist
+          # force_orphan: true # keep if you prefer a clean history for gh-pages
+          # keep_files: false # keep if you want to ensure old files are removed
