@@ -72,7 +72,37 @@ window.uiUpdater = (() => {
         requestAnimationFrame(() => { logElement.scrollTop = logElement.scrollHeight; });
         return messageWrapper; // Return the wrapper
     }
+function scrollChatLogToBottom(chatLogElement) {
+        if (chatLogElement) {
+            // Use requestAnimationFrame for smoother scrolling after DOM updates
+            requestAnimationFrame(() => {
+                chatLogElement.scrollTop = chatLogElement.scrollHeight;
+                // console.debug("uiUpdater: Scrolled chat log to bottom:", chatLogElement.id);
+            });
+        } else {
+            console.warn("uiUpdater.scrollChatLogToBottom: Provided chatLogElement is null or undefined.");
+        }
+    }
 
+    // Specific function for embedded chat (calls the generic one)
+    function scrollEmbeddedChatToBottom() {
+        const { domElements } = getDeps(); // Or window.domElements
+        if (domElements?.embeddedChatLog) {
+            scrollChatLogToBottom(domElements.embeddedChatLog);
+        } else {
+            console.warn("uiUpdater.scrollEmbeddedChatToBottom: domElements.embeddedChatLog not found.");
+        }
+    }
+
+    // Specific function for modal chat (calls the generic one)
+    function scrollMessageModalToBottom() {
+        const { domElements } = getDeps(); // Or window.domElements
+        if (domElements?.messageChatLog) { // This is the ID for the modal's chat log
+            scrollChatLogToBottom(domElements.messageChatLog);
+        } else {
+            console.warn("uiUpdater.scrollMessageModalToBottom: domElements.messageChatLog not found.");
+        }
+    }
     function showImageInActivityArea(activityAreaElement, imageDisplayElement, logElementToScroll, imageUrl) {
         if (!activityAreaElement || !imageDisplayElement || !logElementToScroll) {
             console.warn("showImageInActivityArea: Missing one or more DOM elements.");

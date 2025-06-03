@@ -43,7 +43,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <script type="module" crossorigin src="/polyglot_connect/assets/main-DHqTX9v5.js"></script>
+  <script type="module" crossorigin src="/polyglot_connect/assets/main-DWGAONFE.js"></script>
 </head>
 <body>
   <div id="polyglot-connect-app-shell">
@@ -331,68 +331,96 @@
 
   <!-- Configuration -->
 <!-- Configuration -->
-  <!-- APP ENTRY POINT & API KEY SETUP (Module - Vite processed) -->
-  <!-- This script imports config.js (which reads import.meta.env) -->
-  <!-- and sets window.API_KEY variables. -->
-
-  <!-- UTILITIES (Plain scripts - should now find window.API_KEYs if they need them immediately) -->
+   <!-- APP ENTRY POINT & API KEY SETUP (Module - Vite processed) -->
+  <!-- This src path is relative to your index.html for Vite's build process -->
+   <!-- APP ENTRY POINT & API KEY SETUP (Module - Vite processed) -->
+  <!-- This src path is relative to your index.html for Vite's build process -->
+  
+  <!-- ===================================================================== -->
+  <!-- 1. CORE UTILITIES & HELPERS -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/js/utils/helpers.js"></script>
   <script src="/polyglot_connect/js/utils/flagcdn.js"></script>
 
-  <!-- DATA SOURCES (Plain scripts) -->
+  <!-- ===================================================================== -->
+  <!-- 2. DATA SOURCES -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/data/personas.js"></script>
   <script src="/polyglot_connect/data/groups.js"></script>
   <script src="/polyglot_connect/data/minigames.js"></script>
   <script src="/polyglot_connect/data/shared_content.js"></script>
 
-  <!-- AI SERVICE INFRASTRUCTURE (Plain scripts - critically depend on window.API_KEYs) -->
+  <!-- ===================================================================== -->
+  <!-- 3. AI SERVICE INFRASTRUCTURE & FACADE -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/js/services/ai_constants.js"></script>
-    <script src="/polyglot_connect/js/services/gemini_core_api.js"></script>
-  <script src="/polyglot_connect/js/services/openai_compatible_api_caller.js"></script>
   <script src="/polyglot_connect/js/services/gemini_api_caller.js"></script>
+  <script src="/polyglot_connect/js/services/openai_compatible_api_caller.js"></script>
   <script src="/polyglot_connect/js/services/groq_stt_caller.js"></script>
-
-  <!-- SPECIALIZED AI SERVICES (Plain scripts) -->
   <script src="/polyglot_connect/js/services/gemini_tts_service.js"></script>
   <script src="/polyglot_connect/js/services/gemini_multimodal_service.js"></script>
   <script src="/polyglot_connect/js/services/gemini_live_api_service.js"></script>
-  <script src="/polyglot_connect/js/services/ai_text_generation_service.js"></script> <!-- Uses other API callers -->
   <script src="/polyglot_connect/js/services/gemini_recap_service.js"></script>
   <script src="/polyglot_connect/js/services/ai_recap_service.js"></script>
-
-  <!-- MAIN AI SERVICE FACADE (Plain script) -->
+  <script src="/polyglot_connect/js/services/ai_text_generation_service.js"></script>
   <script src="/polyglot_connect/js/services/ai_service.js"></script>
 
-  <!-- UI FOUNDATION (Plain scripts) -->
+  <!-- ===================================================================== -->
+  <!-- 4. UI FOUNDATION (Mostly self-contained or only need DOM/helpers) -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/js/ui/dom_elements.js"></script>
   <script src="/polyglot_connect/js/ui/modal_handler.js"></script>
   <script src="/polyglot_connect/js/ui/ui_updater.js"></script>
   <script src="/polyglot_connect/js/ui/list_renderer.js"></script>
   <script src="/polyglot_connect/js/ui/card_renderer.js"></script>
-
-  <!-- UI MANAGEMENT (Plain scripts) -->
   <script src="/polyglot_connect/js/ui/shell_setup.js"></script>
-  <script src="/polyglot_connect/js/ui/filter_controller.js"></script>
   <script src="/polyglot_connect/js/ui/persona_modal_manager.js"></script>
-  <script src="/polyglot_connect/js/ui/chat_ui_manager.js"></script>
-  <script src="/polyglot_connect/js/ui/view_manager.js"></script>
 
-  <!-- CORE LOGIC (Plain scripts) -->
+  <!-- ===================================================================== -->
+  <!-- 5. CORE LOGIC MODULES (Define their window objects) -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/js/core/activity_manager.js"></script>
+  <script src="/polyglot_connect/js/core/convo_data_store.js"></script>
+  <script src="/polyglot_connect/js/core/convo_prompt_builder.js"></script>
+  <script src="/polyglot_connect/js/core/convo_turn_manager.js"></script>
   <script src="/polyglot_connect/js/core/conversation_manager.js"></script>
-  <script src="/polyglot_connect/js/core/text_message_handler.js"></script>
-  <script src="/polyglot_connect/js/core/voice_memo_handler.js"></script>
-  <script src="/polyglot_connect/js/core/chat_orchestrator.js"></script>
+  <script src="/polyglot_connect/js/core/chat_active_target_manager.js"></script>
+  <script src="/polyglot_connect/js/core/text_message_handler.js"></script> <!-- DEFINES window.textMessageHandler -->
+  <script src="/polyglot_connect/js/core/voice_memo_handler.js"></script> <!-- DEFINES window.voiceMemoHandler -->
+  <script src="/polyglot_connect/js/core/chat_session_handler.js"></script>
   <script src="/polyglot_connect/js/core/group_data_manager.js"></script>
   <script src="/polyglot_connect/js/core/group_ui_handler.js"></script>
   <script src="/polyglot_connect/js/core/group_interaction_logic.js"></script>
   <script src="/polyglot_connect/js/core/group_manager.js"></script>
+  
+  <!-- ===================================================================== -->
+  <!-- 6. UI MANAGERS (These might use core logic modules from above, -->
+  <!--    and will be used by ChatOrchestrator's *methods* later) -->
+  <!-- ===================================================================== -->
+  <script src="/polyglot_connect/js/ui/chat_view_manager.js"></script>   <!-- Defines window.chatViewManager -->
+  <script src="/polyglot_connect/js/ui/chat_ui_manager.js"></script>     <!-- Defines window.chatUiManager -->
+  <script src="/polyglot_connect/js/ui/view_manager.js"></script>         <!-- Defines window.viewManager -->
+  <script src="/polyglot_connect/js/ui/filter_controller.js"></script>     <!-- Defines window.filterController -->
 
-  <!-- SESSION MANAGEMENT (Plain scripts) -->
+  <!-- ===================================================================== -->
+  <!-- 7. CENTRAL ORCHESTRATOR -->
+  <!-- ===================================================================== -->
+  <!-- chat_orchestrator loads now. window.textMessageHandler, voiceMemoHandler, viewManager, chatUiManager etc. should be defined. -->
+  <script src="/polyglot_connect/js/core/chat_orchestrator.js"></script> <!-- DEFINES window.chatOrchestrator -->
+
+  <!-- ===================================================================== -->
+  <!-- 8. UI EVENT LISTENERS (Needs polyglotApp and fully defined chatOrchestrator) -->
+  <!-- ===================================================================== -->
+  <script src="/polyglot_connect/js/ui/chat_event_listeners.js"></script>
+  
+  <!-- ===================================================================== -->
+  <!-- 9. SESSION MANAGEMENT -->
+  <!-- ===================================================================== -->
   <script src="/polyglot_connect/js/sessions/session_state_manager.js"></script>
   <script src="/polyglot_connect/js/sessions/live_call_handler.js"></script>
   <script src="/polyglot_connect/js/sessions/session_history_manager.js"></script>
-  <script src="/polyglot_connect/js/core/session_manager.js"></script>                    <!-- Main application bootstrap -->
-  
+  <script src="/polyglot_connect/js/core/session_manager.js"></script>
+
+  <!-- APP.JS (type="module") - Runs last among scripts to orchestrate initializations -->
 </body>
 </html>
