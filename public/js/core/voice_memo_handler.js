@@ -1,271 +1,280 @@
 // js/core/voice_memo_handler.js
-// Handles "Tap-to-Speak" voice memo functionality for chat interfaces.
+// Handles voice memo recording, sending to STT, and AI response.
+
+console.log("voice_memo_handler.js: Script execution STARTED.");
+if (window.voiceMemoHandler) {
+    console.warn("voice_memo_handler.js: window.voiceMemoHandler ALREADY DEFINED. This is unexpected.");
+}
 
 window.voiceMemoHandler = (() => {
     'use strict';
-
-    const getDeps = () => ({
-        domElements: window.domElements,
-        uiUpdater: window.uiUpdater,
-        aiService: window.aiService,
-        conversationManager: window.conversationManager,
-        polyglotHelpers: window.polyglotHelpers,
-        chatOrchestrator: window.chatOrchestrator,
-        aiApiConstants: window._aiApiConstants
-    });
+    console.log("voice_memo_handler.js: IIFE (module definition) STARTING.");
 
     let mediaRecorder = null;
     let audioChunks = [];
-    let currentRecordingInterfaceType = null;
-    let currentRecordingButtonElement = null;
-    let isRecording = false;
-    let userMicStreamForMemo = null;
-    let isProcessingVoiceMemo = false;
-    let currentMemoPlaceholderElement = null;
-    let currentTargetIdForMemo = null;
+    let currentRecordingTargetId = null;
+    let currentRecordingUIContext = null; // 'embedded' or 'modal'
+    let currentMicButtonElement = null;
+    let isCurrentlyRecording = false;
 
-    function initializeVoiceMemoControls() {
-        console.log("VoiceMemoHandler: Controls are typically initialized by chatUiManager attaching to handleNewVoiceMemoInteraction.");
+    const getDeps = () => {
+        console.log("voice_memo_handler.js: getDeps() called.");
+        const deps = {
+            domElements: window.domElements,
+            uiUpdater: window.uiUpdater,
+            aiService: window.aiService,
+            conversationManager: window.conversationManager,
+            chatOrchestrator: window.chatOrchestrator,
+            polyglotHelpers: window.polyglotHelpers
+        };
+        // Log critical dependencies
+        console.log("voice_memo_handler.js: getDeps() - uiUpdater:", !!deps.uiUpdater);
+        console.log("voice_memo_handler.js: getDeps() - aiService:", !!deps.aiService);
+        console.log("voice_memo_handler.js: getDeps() - conversationManager:", !!deps.conversationManager);
+        console.log("voice_memo_handler.js: getDeps() - chatOrchestrator:", !!deps.chatOrchestrator);
+        return deps;
+    };
+
+    function updateMicButtonVisuals(state, text = '') {
+        console.log("VoiceMemoHandler: updateMicButtonVisuals - State:", state, "Button Element:", !!currentMicButtonElement, "Text:", text);
+        if (!currentMicButtonElement) {
+            console.warn("VoiceMemoHandler: Cannot update mic button visuals, currentMicButtonElement is null.");
+            return;
+        }
+        const { polyglotHelpers } = getDeps(); // Get helpers for sanitization
+
+        currentMicButtonElement.classList.remove('listening', 'processing');
+        currentMicButtonElement.disabled = false;
+        let buttonContent = '';
+
+        switch (state) {
+            case 'listening':
+                currentMicButtonElement.classList.add('listening');
+                buttonContent = `<i class="fas fa-stop"></i> ${polyglotHelpers?.sanitizeTextForDisplay(text) || 'Stop'}`;
+                currentMicButtonElement.title = "Tap to Stop Recording";
+                break;
+            case 'processing':
+                currentMicButtonElement.classList.add('processing');
+                buttonContent = `<i class="fas fa-spinner fa-spin"></i> ${polyglotHelpers?.sanitizeTextForDisplay(text) || 'Processing...'}`;
+                currentMicButtonElement.disabled = true;
+                currentMicButtonElement.title = "Processing Audio";
+                break;
+            case 'error': // Added error state
+                buttonContent = '<i class="fas fa-exclamation-triangle"></i> Error';
+                currentMicButtonElement.title = "Error with recording";
+                break;
+            default: // idle
+                buttonContent = '<i class="fas fa-microphone"></i>';
+                currentMicButtonElement.title = "Send Voice Message";
+                break;
+        }
+        currentMicButtonElement.innerHTML = buttonContent;
+        console.log("VoiceMemoHandler: Mic button updated to state:", state);
     }
 
-    async function handleNewVoiceMemoInteraction(interfaceType, buttonElement, currentChatTargetId) {
-        console.log(`VoiceMemoHandler: handleNewVoiceMemoInteraction for ${interfaceType}. Currently recording: ${isRecording}. Target ID: ${currentChatTargetId}`);
-        if (!currentChatTargetId) {
-            console.error("VoiceMemoHandler: No currentChatTargetId provided for voice memo interaction.");
-            alert("Please open a chat to send a voice memo.");
+    async function startRecording(targetId, uiContext, micButtonElement) {
+        console.log("VoiceMemoHandler: startRecording - START. TargetID:", targetId, "UIContext:", uiContext);
+        if (isCurrentlyRecording) {
+            console.warn("VoiceMemoHandler: startRecording - Already recording. Ignoring request.");
             return;
         }
-        if (isRecording) {
-            await stopRecording(buttonElement);
-        } else {
-            currentRecordingInterfaceType = interfaceType;
-            currentRecordingButtonElement = buttonElement;
-            currentTargetIdForMemo = currentChatTargetId; // Store the target ID
-            await startRecording(buttonElement); // No need to pass targetId here, it's stored
-        }
-    }
 
-    async function startRecording(buttonElement) {
-        if (isRecording) {
-            console.warn("VoiceMemoHandler: startRecording called while already recording.");
-            return;
-        }
-        if (!currentTargetIdForMemo) {
-            console.error("VoiceMemoHandler: startRecording - currentTargetIdForMemo is not set.");
-            return;
-        }
-        console.log("VoiceMemoHandler: Attempting to start voice memo recording for target:", currentTargetIdForMemo);
-
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.error("VoiceMemoHandler: getUserMedia not supported!");
-            alert("Your browser doesn't support audio recording.");
-            if (buttonElement) { /* Reset button UI if needed */ }
-            return;
-        }
+        currentRecordingTargetId = targetId;
+        currentRecordingUIContext = uiContext;
+        currentMicButtonElement = micButtonElement;
+        audioChunks = [];
 
         try {
-            userMicStreamForMemo = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             console.log("VoiceMemoHandler: Microphone stream obtained for memo.");
-            isRecording = true;
-            audioChunks = [];
-
-            if (buttonElement) {
-                buttonElement.classList.add('recording'); // Add 'recording' class
-                buttonElement.innerHTML = '<i class="fas fa-stop"></i>';
-                buttonElement.title = "Stop Recording";
+            
+            const options = { mimeType: 'audio/webm;codecs=opus' }; // Prefer Opus for quality and compatibility
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                console.warn(`VoiceMemoHandler: MIME type ${options.mimeType} not supported. Trying default.`);
+                delete options.mimeType; // Fallback to browser default
             }
+            console.log("VoiceMemoHandler: Using MIME type for MediaRecorder:", options.mimeType || "browser default");
 
-            const mimeTypesToTry = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac', 'audio/wav'];
-            const supportedMimeType = mimeTypesToTry.find(type => MediaRecorder.isTypeSupported(type)) || 'audio/webm'; // Default to webm
-            console.log("VoiceMemoHandler: Using MIME type for MediaRecorder:", supportedMimeType);
-
-            mediaRecorder = new MediaRecorder(userMicStreamForMemo, { mimeType: supportedMimeType });
+            mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunks.push(event.data);
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                    // console.log("VoiceMemoHandler: Audio chunk received, size:", event.data.size);
+                }
             };
 
             mediaRecorder.onstop = async () => {
                 console.log("VoiceMemoHandler: MediaRecorder onstop event.");
-                const wasRecording = isRecording;
-                isRecording = false;
-                
-                if (userMicStreamForMemo) {
-                    userMicStreamForMemo.getTracks().forEach(track => track.stop());
-                    userMicStreamForMemo = null;
-                }
-                
-                if (currentRecordingButtonElement) {
-                    currentRecordingButtonElement.classList.remove('recording');
-                    currentRecordingButtonElement.innerHTML = '<i class="fas fa-microphone"></i>';
-                    currentRecordingButtonElement.title = "Send Voice Message";
-                }
+                isCurrentlyRecording = false;
+                updateMicButtonVisuals('processing', 'Processing...');
 
-                if (!wasRecording || audioChunks.length === 0) {
-                    console.warn("VoiceMemoHandler: No audio data recorded or recording was already stopped.");
-                    audioChunks = [];
+                if (audioChunks.length === 0) {
+                    console.warn("VoiceMemoHandler: No audio data recorded.");
+                    updateMicButtonVisuals('idle'); // Reset button
+                    stream.getTracks().forEach(track => track.stop()); // Stop stream tracks
                     return;
                 }
 
-                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-                audioChunks = [];
+                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                audioChunks = []; // Clear for next recording
+                console.log("VoiceMemoHandler: Audio blob created, size:", audioBlob.size, "type:", audioBlob.type);
+                stream.getTracks().forEach(track => track.stop()); // Stop stream tracks after blob creation
 
-                const { uiUpdater, conversationManager } = getDeps();
-                const placeholderText = "[Processing your voice message...]";
-                let localTargetId = currentTargetIdForMemo;
-
-                const convoRecord = conversationManager.getConversation(localTargetId);
-                const connectorForMemo = convoRecord?.connector;
-
-                if (!connectorForMemo) {
-                    console.error("VoiceMemoHandler: onstop - Connector not found for stored target ID:", localTargetId);
-                    isProcessingVoiceMemo = false;
+                // Get dependencies needed for processing
+                const { uiUpdater, aiService, conversationManager, chatOrchestrator, polyglotHelpers } = getDeps();
+                if (!uiUpdater || !aiService || !conversationManager || !chatOrchestrator || !polyglotHelpers) {
+                    console.error("VoiceMemoHandler: onstop - Missing critical dependencies for processing. Aborting.");
+                    updateMicButtonVisuals('error');
                     return;
                 }
 
-                if (currentRecordingInterfaceType === 'embedded') {
-                    currentMemoPlaceholderElement = uiUpdater.appendToEmbeddedChatLog(placeholderText, 'user-thinking');
-                } else if (currentRecordingInterfaceType === 'modal') {
-                    currentMemoPlaceholderElement = uiUpdater.appendToMessageLogModal(placeholderText, 'user-thinking');
-                }
+                const appendToLog = uiContext === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal;
+                
+                try {
+                    console.log("VoiceMemoHandler: Transcribing audio...");
+                    const transcript = await aiService.transcribeAudioToText(audioBlob);
+                    console.log("VoiceMemoHandler: Transcription received:", transcript);
 
-                // Pass audioBlob directly to processAndSend
-                await processAndSend(audioBlob, connectorForMemo, currentRecordingInterfaceType, localTargetId);
+                    if (!transcript || transcript.trim() === "") {
+                        console.warn("VoiceMemoHandler: Empty transcript received.");
+                        appendToLog("No speech detected in voice message.", 'system-message', { isError: true });
+                        updateMicButtonVisuals('idle');
+                        return;
+                    }
+
+                    appendToLog(`You (voice): ${transcript}`, 'user-audio', { timestamp: Date.now() });
+                    // For 1-on-1 chats, add user's transcribed voice message to conversation history
+                    // The role for Gemini history needs to be 'user'
+                    conversationManager.addMessageToConversation(currentRecordingTargetId, 'user-voice-transcript', transcript, 'text');
+                    console.log("VoiceMemoHandler: User voice transcript added to UI and conversation history.");
+
+
+                    // Prepare for AI response
+                    const { conversation: convo } = conversationManager.ensureConversationRecord(currentRecordingTargetId);
+                    if (!convo || !convo.connector) {
+                        console.error(`VoiceMemoHandler: Invalid conversation or connector for target ID: ${currentRecordingTargetId}`);
+                        appendToLog("Error: Could not process AI response.", 'system-message', { isError: true });
+                        updateMicButtonVisuals('idle');
+                        return;
+                    }
+                    
+                    const thinkingMsgOptions = { 
+                        senderName: convo.connector.profileName.split(' ')[0],
+                        avatarUrl: convo.connector.avatarModern,
+                        isThinking: true 
+                    };
+                    const thinkingMsg = appendToLog("", 'connector-thinking', thinkingMsgOptions);
+                    console.log("VoiceMemoHandler: AI thinking indicator shown for voice response.");
+
+                    const aiResponseText = await aiService.generateTextMessage(
+                        transcript, // User's transcribed message
+                        convo.connector,
+                        convo.geminiHistory // Pass the updated history
+                    );
+                    console.log("VoiceMemoHandler: AI response to voice memo received:", typeof aiResponseText === 'string' ? aiResponseText.substring(0,50) + "..." : "[Non-string response]");
+
+                    if (thinkingMsg?.remove) thinkingMsg.remove();
+                    appendToLog(aiResponseText, 'connector', { avatarUrl: convo.connector.avatarModern, senderName: convo.connector.profileName, timestamp: Date.now() });
+                    conversationManager.addModelResponseMessage(currentRecordingTargetId, aiResponseText);
+                    console.log("VoiceMemoHandler: AI response to voice memo added to UI and history.");
+
+                    if (chatOrchestrator.notifyNewActivityInConversation) {
+                        chatOrchestrator.notifyNewActivityInConversation(currentRecordingTargetId);
+                    }
+
+                } catch (error) {
+                    console.error("VoiceMemoHandler: Error during transcription or AI response:", error);
+                    appendToLog(`Error processing voice: ${polyglotHelpers.sanitizeTextForDisplay(error.message || "Unknown error")}`, 'system-message', { isError: true });
+                } finally {
+                    updateMicButtonVisuals('idle');
+                    console.log("VoiceMemoHandler: onstop processing finished, mic button reset to idle.");
+                }
             };
-            mediaRecorder.onerror = (err) => {
-                console.error("VoiceMemoHandler: MediaRecorder error:", err.name, err.message);
-                isRecording = false; // Ensure recording state is reset
-                if (userMicStreamForMemo) userMicStreamForMemo.getTracks().forEach(track => track.stop());
-                if (currentRecordingButtonElement) { /* Reset button UI */ }
-                alert(`Audio recording error: ${err.name}`);
-                isProcessingVoiceMemo = false; // Reset processing flag
+
+            mediaRecorder.onerror = (event) => {
+                console.error("VoiceMemoHandler: MediaRecorder onerror event:", event.error);
+                isCurrentlyRecording = false;
+                updateMicButtonVisuals('error'); // Show error on button
+                stream.getTracks().forEach(track => track.stop()); // Stop stream tracks
+                const { uiUpdater } = getDeps();
+                 const appendToLog = uiContext === 'embedded' ? uiUpdater?.appendToEmbeddedChatLog : uiUpdater?.appendToMessageLogModal;
+                 appendToLog?.(`Recording error: ${event.error.name || "Unknown recording error"}`, 'system-message', { isError: true });
+
             };
 
             mediaRecorder.start();
-            console.log("VoiceMemoHandler: MediaRecorder started for target:", currentTargetIdForMemo);
+            isCurrentlyRecording = true;
+            updateMicButtonVisuals('listening', 'Stop');
+            console.log("VoiceMemoHandler: MediaRecorder started for target:", targetId);
+
         } catch (err) {
-            console.error("VoiceMemoHandler: Error starting recording:", err);
-            isRecording = false; // Ensure recording state is reset
-            if (userMicStreamForMemo) userMicStreamForMemo.getTracks().forEach(track => track.stop());
-            if (buttonElement) { /* Reset button UI */ }
-            alert("Could not start audio recording. Please check microphone permissions.");
-            isProcessingVoiceMemo = false; // Reset processing flag
-        }
-    }
-
-    async function stopRecording(buttonElement) {
-        console.log("VoiceMemoHandler: stopRecording called. MediaRecorder state:", mediaRecorder?.state);
-        if (mediaRecorder && isRecording && mediaRecorder.state === "recording") {
-            mediaRecorder.stop(); // This will trigger the 'onstop' handler where processing happens
-        } else {
-            console.warn("VoiceMemoHandler: stopRecording called but not actively recording or mediaRecorder issue.");
-            isRecording = false; // Ensure state is correct
-            if (userMicStreamForMemo) { userMicStreamForMemo.getTracks().forEach(track => track.stop()); userMicStreamForMemo = null; }
-            if (buttonElement) { // Reset UI if stop is called unexpectedly
-                buttonElement.classList.remove('recording');
-                buttonElement.innerHTML = '<i class="fas fa-microphone"></i>';
-                buttonElement.title = "Send Voice Message";
+            console.error("VoiceMemoHandler: Error accessing microphone or starting MediaRecorder:", err);
+            isCurrentlyRecording = false; // Ensure flag is reset
+            updateMicButtonVisuals('error'); // Show error on button
+            const { uiUpdater, polyglotHelpers } = getDeps();
+            const appendToLog = uiContext === 'embedded' ? uiUpdater?.appendToEmbeddedChatLog : uiUpdater?.appendToMessageLogModal;
+            let userMessage = "Could not start voice recording. Please ensure microphone access is granted and try again.";
+            if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+                userMessage = "No microphone found. Please connect a microphone and try again.";
+            } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                userMessage = "Microphone access was denied. Please enable it in your browser settings and try again.";
             }
+            appendToLog?.(userMessage, 'system-message', {isError: true});
+        }
+        console.log("VoiceMemoHandler: startRecording - FINISHED.");
+    }
+
+    function stopRecording() {
+        console.log("VoiceMemoHandler: stopRecording called.");
+        if (mediaRecorder && isCurrentlyRecording) { // Check isCurrentlyRecording as well
+            console.log("VoiceMemoHandler: Stopping MediaRecorder. Current state:", mediaRecorder.state);
+            if (mediaRecorder.state !== "inactive") { // Only stop if not already inactive
+                mediaRecorder.stop(); // This will trigger the 'onstop' event
+            } else {
+                console.warn("VoiceMemoHandler: stopRecording called, but MediaRecorder was already inactive.");
+                isCurrentlyRecording = false; // Ensure flag is consistent
+                updateMicButtonVisuals('idle'); // Reset UI if somehow stuck
+            }
+        } else {
+            console.warn("VoiceMemoHandler: stopRecording called but no active MediaRecorder or not currently recording.");
+            isCurrentlyRecording = false; // Ensure flag is consistent
+            updateMicButtonVisuals('idle'); // Reset UI if somehow stuck
         }
     }
 
-    async function processAndSend(audioBlob, connector, interfaceType, targetId) {
-        if (isProcessingVoiceMemo) {
-            console.warn("VoiceMemoHandler: processAndSend already in progress for target:", targetId);
+    function handleNewVoiceMemoInteraction(uiContext, micButtonElement, targetId) {
+        console.log("VoiceMemoHandler: handleNewVoiceMemoInteraction for", uiContext, ". Currently recording:", isCurrentlyRecording, ". Target ID:", targetId);
+        if (!targetId) {
+            console.error("VoiceMemoHandler: Target ID is missing for voice memo interaction.");
+            alert("Cannot start voice message: chat target is not identified.");
             return;
         }
-        isProcessingVoiceMemo = true;
-        console.log("VoiceMemoHandler: processAndSend START for connector:", connector.id, "TargetID:", targetId);
-
-        try {
-            const { aiService, conversationManager, chatOrchestrator, uiUpdater, aiApiConstants } = getDeps();
-            const languageHint = connector.languageCode || 'en-US';
-            
-            console.log("VoiceMemoHandler: Calling aiService.transcribeAudioToText. Lang hint:", languageHint);
-            const transcribedText = await aiService.transcribeAudioToText(
-                audioBlob,
-                languageHint,
-                aiApiConstants.PROVIDERS.GROQ
-            );
-
-            if (currentMemoPlaceholderElement?.remove) {
-                currentMemoPlaceholderElement.remove();
-                currentMemoPlaceholderElement = null;
-            }
-
-            if (!transcribedText || transcribedText.trim() === "") {
-                console.warn("VoiceMemoHandler: Transcription was empty for target:", targetId);
-                uiUpdater.appendSystemMessage(
-                    interfaceType === 'embedded' ? getDeps().domElements.embeddedChatLog : getDeps().domElements.messageChatLog,
-                    "Could not understand audio. Please try again."
-                );
-                isProcessingVoiceMemo = false;
-                return;
-            }
-            console.log("VoiceMemoHandler: Transcription successful for target:", targetId, "Text:", transcribedText.substring(0, 50) + "...");
-
-            const messageType = sender => sender.startsWith('user') ? 'user-audio' : 'connector';
-            if (interfaceType === 'embedded') {
-                uiUpdater.appendToEmbeddedChatLog(transcribedText, messageType('user-voice-transcript'));
-            } else if (interfaceType === 'modal') {
-                uiUpdater.appendToMessageLogModal(transcribedText, messageType('user-voice-transcript'));
-            }
-            conversationManager.addMessageToConversation(targetId, 'user-voice-transcript', transcribedText, 'text');
-
-            const { conversation: convo } = conversationManager.ensureConversationRecord(targetId);
-            if (!convo) {
-                console.error("VoiceMemoHandler: Conversation record disappeared for target:", targetId);
-                isProcessingVoiceMemo = false;
-                return;
-            }
-
-            let thinkingMsgAI;
-            if (interfaceType === 'embedded') {
-                thinkingMsgAI = uiUpdater.appendToEmbeddedChatLog(`${connector.profileName.split(' ')[0]} is typing...`, 'connector-thinking');
-            } else {
-                thinkingMsgAI = uiUpdater.appendToMessageLogModal(`${connector.profileName.split(' ')[0]} is typing...`, 'connector-thinking');
-            }
-
-            const aiResponse = await aiService.generateTextMessage(
-                transcribedText,
-                connector,
-                convo.geminiHistory,
-                aiApiConstants.PROVIDERS.GROQ
-            );
-
-            if (thinkingMsgAI?.remove) thinkingMsgAI.remove();
-
-            if (interfaceType === 'embedded') {
-                uiUpdater.appendToEmbeddedChatLog(aiResponse, 'connector');
-            } else if (interfaceType === 'modal') {
-                uiUpdater.appendToMessageLogModal(aiResponse, 'connector');
-            }
-            conversationManager.addModelResponseMessage(targetId, aiResponse, convo.geminiHistory);
-
-            if (chatOrchestrator) chatOrchestrator.notifyNewActivityInConversation(targetId);
-            console.log("VoiceMemoHandler: Voice memo processed and AI response handled for target:", targetId);
-
-        } catch (error) {
-            console.error("VoiceMemoHandler: Error in processAndSend for target:", targetId, error);
-            if (currentMemoPlaceholderElement?.remove) currentMemoPlaceholderElement.remove();
-            const { uiUpdater, domElements } = getDeps();
-            uiUpdater.appendSystemMessage(
-                interfaceType === 'embedded' ? domElements.embeddedChatLog : domElements.messageChatLog,
-                `Error processing voice: ${error.message.substring(0, 70)}...`,
-                true
-            );
-        } finally {
-            isProcessingVoiceMemo = false;
-            currentTargetIdForMemo = null;
-            currentRecordingInterfaceType = null;
-            currentRecordingButtonElement = null;
+        if (isCurrentlyRecording) {
+            stopRecording();
+        } else {
+            startRecording(targetId, uiContext, micButtonElement);
         }
     }
+    
+    console.log("voice_memo_handler.js: Initial dependency check for load message.");
+    const initialVoiceDeps = getDeps(); // Call to log initial state of dependencies
+    if (initialVoiceDeps.uiUpdater && initialVoiceDeps.aiService && initialVoiceDeps.conversationManager && initialVoiceDeps.chatOrchestrator) {
+        console.log("voice_memo_handler.js: Loaded successfully and initial core dependencies (uiUpdater, aiService, conversationManager, chatOrchestrator) appear present.");
+    } else {
+        console.error("voice_memo_handler.js: Loaded, but one or more CRITICAL core dependencies were missing during initial check. Voice memo functionality will be severely impaired.");
+    }
 
-    console.log("js/core/voice_memo_handler.js loaded and updated for aiService.");
+    console.log("voice_memo_handler.js: IIFE (module definition) FINISHED. Returning exported object.");
     return {
-        // initializeVoiceMemoControls, // Not strictly needed if chatUiManager calls handleNewVoiceMemoInteraction
         handleNewVoiceMemoInteraction
+        // No need to expose start/stop directly if handleNew is the only entry point
     };
 })();
+
+if (window.voiceMemoHandler && typeof window.voiceMemoHandler.handleNewVoiceMemoInteraction === 'function') {
+    console.log("voice_memo_handler.js: SUCCESSFULLY assigned to window.voiceMemoHandler and core method is present.");
+} else {
+    console.error("voice_memo_handler.js: CRITICAL ERROR - window.voiceMemoHandler IS UNDEFINED or core method missing after IIFE execution.");
+}
+console.log("voice_memo_handler.js: Script execution FINISHED.");
