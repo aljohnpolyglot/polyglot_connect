@@ -130,12 +130,13 @@ window.groupDataManager = (() => {
         return currentGroupDataInternal;
     }
 
-    function getAllGroupDataWithLastActivity() {
-        const { polyglotHelpers } = getDeps();
-        console.log(`GDM_getAllActivity: START. Current Active Group ID (internal): ${currentGroupIdInternal}`);
+   function getAllGroupDataWithLastActivity() {
+        const { polyglotHelpers } = getDeps(); // Ensure polyglotHelpers is available if used in logging
+        const functionName = "getAllGroupDataWithLastActivity"; // For clearer logs
+        // console.log(`GDM (${functionName}): START. Current Active Group ID (internal): ${currentGroupIdInternal}`);
 
         if (!polyglotHelpers || !window.polyglotGroupsData) {
-            console.warn("GDM_getAllActivity: polyglotHelpers or window.polyglotGroupsData missing.");
+            console.warn(`GDM (${functionName}): polyglotHelpers or window.polyglotGroupsData missing.`);
             return [];
         }
 
@@ -143,42 +144,44 @@ window.groupDataManager = (() => {
         const activeGroupChats = [];
 
         window.polyglotGroupsData.forEach(groupDef => {
+            if (!groupDef || !groupDef.id) { // Skip invalid group definitions
+                console.warn(`GDM (${functionName}): Skipping invalid groupDef:`, groupDef);
+                return;
+            }
+
             let historyToUseForListItem;
             let lastActivityForListItem;
             let lastMessageForListItem;
             let shouldIncludeThisGroup = false;
-            let sourceForLog = "";
+            // let sourceForLog = ""; // Optional for debugging
 
             if (groupDef.id === currentGroupIdInternal) {
-                historyToUseForListItem = groupChatHistoryInternal;
-                shouldIncludeThisGroup = true; // Always include the currently active group in the sidebar
-                sourceForLog = "LIVE/IN-MEMORY";
+                historyToUseForListItem = groupChatHistoryInternal; // Use live in-memory history
+                shouldIncludeThisGroup = true;
+                // sourceForLog = "LIVE/IN-MEMORY";
             } else {
                 historyToUseForListItem = allStoredHistories[groupDef.id];
                 if (historyToUseForListItem && historyToUseForListItem.length > 0) {
-                    shouldIncludeThisGroup = true; // Include inactive groups only if they have persisted messages
+                    shouldIncludeThisGroup = true;
                 }
-                sourceForLog = "STORED/LOCALSTORAGE";
+                // sourceForLog = "STORED/LOCALSTORAGE";
             }
 
-            console.log(`GDM_getAllActivity: Processing group ${groupDef.id} ('${groupDef.name}'). Source: ${sourceForLog}. History candidate length: ${historyToUseForListItem?.length || 0}. ShouldInclude: ${shouldIncludeThisGroup}`);
+            // console.log(`GDM (${functionName}): Processing group ${groupDef.id} ('${groupDef.name}'). Source: ${sourceForLog}. History length: ${historyToUseForListItem?.length || 0}. ShouldInclude: ${shouldIncludeThisGroup}`);
 
             if (shouldIncludeThisGroup) {
                 if (historyToUseForListItem && historyToUseForListItem.length > 0) {
                     lastMessageForListItem = historyToUseForListItem[historyToUseForListItem.length - 1];
                     if (!lastMessageForListItem || typeof lastMessageForListItem.timestamp !== 'number') {
-                        console.warn(`GDM_getAllActivity: Group ${groupDef.id} - Last message invalid or no timestamp. Using fallback. Message:`, lastMessageForListItem);
-                        lastActivityForListItem = groupDef.creationTime || (Date.now() - 604800000); // 1 week ago as fallback
-                        lastMessageForListItem = { text: "[Error in last message]", speakerId: "system", speakerName: "", timestamp: lastActivityForListItem };
+                        lastActivityForListItem = groupDef.creationTime || (Date.now() - 7 * 24 * 60 * 60 * 1000); // Fallback
+                        lastMessageForListItem = { text: "[Error in last message data]", speakerId: "system", speakerName: "", timestamp: lastActivityForListItem };
                     } else {
                         lastActivityForListItem = lastMessageForListItem.timestamp;
                     }
                 } else {
-                    // This case handles the currently active group (currentGroupIdInternal === groupDef.id)
-                    // when its in-memory history (groupChatHistoryInternal) is empty (e.g., just joined).
-                    console.log(`GDM_getAllActivity: Group ${groupDef.id} is active (or just joined) but its current history is empty. Using placeholder.`);
-                    lastActivityForListItem = Date.now(); // Show as "just now"
-                    lastMessageForListItem = { text: "Joining group...", speakerId: "system", speakerName: "", timestamp: lastActivityForListItem };
+                    // Active group but no messages yet (e.g., just joined)
+                    lastActivityForListItem = Date.now();
+                    lastMessageForListItem = { text: "Just joined!", speakerId: "system", speakerName: "", timestamp: lastActivityForListItem };
                 }
 
                 let speakerNamePreview = "";
@@ -192,39 +195,26 @@ window.groupDataManager = (() => {
                 const groupItemForSidebar = {
                     id: groupDef.id,
                     name: groupDef.name,
-                    language: groupDef.language,
-                    description: groupDef.description,
+                    language: groupDef.language,         // Already included
+                    groupPhotoUrl: groupDef.groupPhotoUrl, // <<< --- ADD THIS LINE ---
+                    description: groupDef.description,   // Keep for potential future use
+                    // You might not need full members or isJoined for the active chat list item,
+                    // but include them if your listRenderer or click handlers expect them.
+                    // members: groupDef.members,
+                    // isJoined: isGroupJoined(groupDef.id), // isGroupJoined might be re-calculated if needed
                     lastActivity: lastActivityForListItem,
-                    messages: [{
+                    messages: [{ // Simplified message for preview
                         text: lastMessageForListItem.text || "",
                         speakerId: lastMessageForListItem.speakerId || "system",
-                        speakerName: speakerNamePreview,
+                        speakerName: speakerNamePreview, // Use the determined preview name
                         timestamp: lastMessageForListItem.timestamp || lastActivityForListItem
                     }],
                     isGroup: true
                 };
-
-                // Detailed validation logging
-                console.log(`GDM_getAllActivity: PRE-PUSH for Group ${groupDef.name}:`, {
-                    id: groupItemForSidebar.id,
-                    name: groupItemForSidebar.name,
-                    lastActivity: {
-                        raw: groupItemForSidebar.lastActivity,
-                        formatted: new Date(groupItemForSidebar.lastActivity).toISOString(),
-                        relative: polyglotHelpers.formatRelativeTimestamp(groupItemForSidebar.lastActivity)
-                    },
-                    message: {
-                        text: groupItemForSidebar.messages[0].text,
-                        speakerId: groupItemForSidebar.messages[0].speakerId,
-                        speakerName: groupItemForSidebar.messages[0].speakerName,
-                        timestamp: new Date(groupItemForSidebar.messages[0].timestamp).toISOString()
-                    }
-                });
-
                 activeGroupChats.push(groupItemForSidebar);
             }
         });
-        console.log("GDM_getAllActivity: END. Returning groups for sidebar:", activeGroupChats.map(g=> ({name: g.name, lastActivityRel: polyglotHelpers ? polyglotHelpers.formatRelativeTimestamp(g.lastActivity) : g.lastActivity })));
+        // console.log(`GDM (${functionName}): END. Returning ${activeGroupChats.length} groups for sidebar.`);
         return activeGroupChats;
     }
 

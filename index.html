@@ -330,6 +330,7 @@
 
   <!-- Configuration -->
 <!-- Configuration -->
+ <audio id="ringtone-audio" src="./sounds/ringtone.mp3" preload="auto" loop style="display: none;"></audio> 
 <script type="module">
   async function loadAndAssignSdk() {
     try {
@@ -367,7 +368,7 @@
   <!-- This src path is relative to your index.html for Vite's build process -->
    <!-- APP ENTRY POINT & API KEY SETUP (Module - Vite processed) -->
   <!-- This src path is relative to your index.html for Vite's build process -->
-  
+  <script type="module" src="./js/app.js"></script>
   <!-- ===================================================================== -->
   <!-- 1. CORE UTILITIES & HELPERS -->
   <!-- ===================================================================== -->
@@ -449,11 +450,13 @@
   <!-- 9. SESSION MANAGEMENT -->
   <!-- ===================================================================== -->
   <script src="/js/sessions/session_state_manager.js"></script>
-  <script src="/js/sessions/live_call_handler.js"></script>
+  <script src="/js/sessions/live_api_mic_input.js"></script>
+  <script src="/js/sessions/live_api_audio_output.js"></script>
+  <script src="/js/sessions/live_api_text_coordinator.js"></script>
+  <script src="/js/sessions/live_call_handler.js"></script> <!-- Now a Facade -->
   <script src="/js/sessions/session_history_manager.js"></script>
-  <script src="/js/core/session_manager.js"></script>
-
+  <script src="/js/core/session_manager.js"></script> <!-- Main Session Facade -->
   <!-- APP.JS (type="module") - Runs last among scripts to orchestrate initializations -->
-  <script type="module" src="./js/app.js"></script>
+  
 </body>
 </html>

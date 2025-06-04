@@ -7,71 +7,164 @@ window.uiUpdater = (() => {
         polyglotHelpers: window.polyglotHelpers
     });
 
-    function appendChatMessage(logElement, text, senderClass, options = {}) {
-        // options can now include: senderName, imageUrl, isThinking, isError, avatarUrl
-        const { polyglotHelpers, domElements } = getDeps(); // domElements for placeholder
+    /**
+     * Append a chat message to the provided log element.
+     * @param {Element} logElement - The log element to append the message to.
+     * @param {string} text - The text of the message to append.
+     * @param {string} senderClass - The class to apply to the message (user, connector, system-message).
+     * @param {object} options - Optional parameters:
+     *   - senderName: The name of the sender (for AI/Connector messages).
+     *   - imageUrl: The URL of an image to display with the message.
+     *   - isThinking: Whether the message is a thinking indicator.
+     *   - isError: Whether the message is an error message.
+     *   - avatarUrl: The URL of the avatar to display with the message.
+     * @returns {Element} - The newly appended message wrapper.
+     */
+  function appendChatMessage(logElement, text, senderClass, options = {}) {
+        const functionName = "appendChatMessage";
+        const { polyglotHelpers, domElements } = getDeps();
+
         if (!logElement || !polyglotHelpers) {
-            console.warn("appendChatMessage: Log element or polyglotHelpers not found.");
+            console.warn(`UI Updater (${functionName}): Log element or polyglotHelpers not found. Cannot append.`);
             return null;
         }
 
         const messageWrapper = document.createElement('div');
-        messageWrapper.classList.add('chat-message-wrapper', senderClass.includes('user') ? 'user-wrapper' : 'connector-wrapper');
-
         const messageDiv = document.createElement('div');
-        messageDiv.classList.add('chat-message-ui'); // Base bubble style
 
-        // Add specific sender classes to the bubble itself
-        if (senderClass && typeof senderClass === 'string') {
-            const classes = senderClass.split(' ').filter(cls => cls.trim() !== '');
-            if (classes.length > 0) {
-                messageDiv.classList.add(...classes);
+        // --- START: Call Event Message Rendering ---
+        if (options.type === 'call_event' || senderClass === 'system-call-event') {
+            messageWrapper.classList.add('system-event-wrapper'); // For centering
+            messageDiv.classList.add('call-event-message');     // Main styling for the event block
+
+            let eventIconHtml = '';
+            let callActionHtml = ''; // For "CALL BACK" or "CALL AGAIN"
+
+            // Determine icon and action based on eventType
+            switch (options.eventType) {
+                case 'call_started':
+                    eventIconHtml = '<i class="fas fa-phone-alt call-event-icon call-started"></i> ';
+                    // No action button for "call started" typically
+                    break;
+                case 'call_ended':
+                    eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-ended"></i> ';
+                    
+                    // Ensure options.callSessionId is available here.
+                    // It should be passed from chat_session_handler.js when rendering messages.
+                    let sessionIdForButton = options.callSessionId || ''; 
+
+                    callActionHtml = `
+                        <button class="call-event-action-btn" data-action="call_back" data-connector-id="${options.connectorId || ''}" data-session-id="${sessionIdForButton}">CALL BACK</button>
+                        <button class="call-event-action-btn summary-btn" data-action="view_summary" data-session-id="${sessionIdForButton}">VIEW SUMMARY</button>
+                    `;
+                    break;
+                case 'call_failed_user_attempt': // User tried to call, but it failed to connect or was cancelled by user
+                    eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> '; // Using 'missed' style for now
+                    // Add "CALL AGAIN" button/link
+                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorId || ''}">CALL AGAIN</button>`;
+                    break;
+                case 'call_missed_connector': // Connector didn't pick up (hypothetical, harder to detect client-side)
+                    eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> ';
+                    text = `${options.connectorName || 'Partner'} missed your call.`; // Override text
+                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorId || ''}">CALL AGAIN</button>`;
+                    break;
+                default:
+                    eventIconHtml = '<i class="fas fa-info-circle call-event-icon"></i> '; // Generic event
             }
-        }
 
-        if (options.isThinking) messageDiv.classList.add('connector-thinking');
-        if (options.isError) {
-            // Simplified error class directly on the bubble
-            messageDiv.classList.add('error-message-bubble');
-        }
+            let mainText = polyglotHelpers.sanitizeTextForDisplay(text || "Call event occurred.");
+            let detailsHtml = '';
 
-        let avatarHtml = '';
-        if (!senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl) {
-            // AI/Connector message - Avatar on the left
-            avatarHtml = `<img src="${polyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${polyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner')}" class="chat-bubble-avatar left-avatar" onerror="this.src='${domElements?.placeholderAvatar?.src || 'images/placeholder_avatar.png'}';">`;
-            messageWrapper.classList.add('has-avatar-left');
-        }
+            if (options.duration) {
+                detailsHtml += `<span class="call-event-detail duration"><i class="far fa-clock"></i> ${polyglotHelpers.sanitizeTextForDisplay(options.duration)}</span>`;
+            }
 
-        let contentHtml = '';
-        if (options.senderName && !senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('connector-thinking')) {
-            contentHtml += `<strong class="chat-message-sender-name">${polyglotHelpers.sanitizeTextForDisplay(options.senderName)}:</strong><br>`;
-        }
-        if (text) {
-            let processedText = polyglotHelpers.sanitizeTextForDisplay(text);
-            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
-            contentHtml += `<span class="chat-message-text">${processedText}</span>`;
-        }
+            const eventTime = new Date(options.timestamp || Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+           if (detailsHtml && eventTime) { // If duration was added, and we have eventTime
+            detailsHtml += ' | '; // Add a separator
+            }
+            if (eventTime) { // Ensure eventTime is valid before adding
+            detailsHtml += `<span class="call-event-detail time">${eventTime}</span>`;
+            }
 
-        if (options.imageUrl) {
-            if (text) contentHtml += '<br>';
-            contentHtml += `<img src="${polyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
-        }
+            messageDiv.innerHTML = `
+                <div class="call-event-main-text">${eventIconHtml}${mainText}</div>
+                <div class="call-event-details-container">${detailsHtml}</div>
+                ${callActionHtml ? `<div class="call-event-actions">${callActionHtml}</div>` : ''}
+            `;
+            
+            messageWrapper.appendChild(messageDiv);
 
-        messageDiv.innerHTML = contentHtml;
+        } else { // --- START: Regular Chat Message Rendering ---
+            messageWrapper.classList.add('chat-message-wrapper');
+            // Determine alignment based on sender
+            if (senderClass.includes('user')) {
+                messageWrapper.classList.add('user-wrapper');
+            } else if (senderClass.includes('system-message')) {
+                 messageWrapper.classList.add('system-message-wrapper'); // For centering system messages
+            } 
+            else {
+                messageWrapper.classList.add('connector-wrapper');
+            }
 
-        if (avatarHtml && messageWrapper.classList.contains('has-avatar-left')) {
-            messageWrapper.innerHTML = avatarHtml; // Add avatar first
-            messageWrapper.appendChild(messageDiv); // Then add message bubble
-        } else {
-            messageWrapper.appendChild(messageDiv); // Just the message bubble
-        }
 
-        if (options.messageId) messageWrapper.dataset.messageId = options.messageId; // Apply to wrapper
+            messageDiv.classList.add('chat-message-ui');
+            if (senderClass && typeof senderClass === 'string') {
+                const classes = senderClass.split(' ').filter(cls => cls.trim() !== '');
+                if (classes.length > 0) messageDiv.classList.add(...classes);
+            }
+
+            if (options.isThinking) messageDiv.classList.add('connector-thinking');
+            if (options.isError) messageDiv.classList.add('error-message-bubble');
+
+            let avatarHtml = '';
+            // Add avatar for connector messages, but not for system messages or user messages
+            if (!senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl) {
+                avatarHtml = `<img src="${polyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" 
+                                   alt="${polyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner')}" 
+                                   class="chat-bubble-avatar left-avatar" 
+                                   onerror="this.src='${domElements?.placeholderAvatar?.src || 'images/placeholder_avatar.png'}';">`;
+                messageWrapper.classList.add('has-avatar-left');
+            }
+
+            let contentHtml = '';
+            if (options.senderName && !senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('connector-thinking') && options.showSenderName !== false) {
+                contentHtml += `<strong class="chat-message-sender-name">${polyglotHelpers.sanitizeTextForDisplay(options.senderName)}:</strong><br>`;
+            }
+
+            if (text) {
+                let processedText = polyglotHelpers.sanitizeTextForDisplay(text);
+                // Basic markdown for bold and italics
+                processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+                contentHtml += `<span class="chat-message-text">${processedText}</span>`;
+            }
+
+            if (options.imageUrl) {
+                if (text || contentHtml) contentHtml += '<br>'; // Add line break if there's text before image
+                contentHtml += `<img src="${polyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
+            }
+
+            messageDiv.innerHTML = contentHtml;
+
+            if (avatarHtml && messageWrapper.classList.contains('has-avatar-left')) {
+                messageWrapper.innerHTML = avatarHtml; // Add avatar first
+                messageWrapper.appendChild(messageDiv);  // Then add message bubble
+            } else {
+                messageWrapper.appendChild(messageDiv); // Just the message bubble
+            }
+            if (options.messageId) messageWrapper.dataset.messageId = options.messageId;
+        } // --- END: Regular Chat Message Rendering ---
+
         logElement.appendChild(messageWrapper);
-
-        requestAnimationFrame(() => { logElement.scrollTop = logElement.scrollHeight; });
-        return messageWrapper; // Return the wrapper
+        // Scroll to bottom
+        requestAnimationFrame(() => {
+            if (logElement.scrollHeight > logElement.clientHeight) {
+                 logElement.scrollTop = logElement.scrollHeight;
+            }
+        });
+        return messageWrapper;
     }
+    
 function scrollChatLogToBottom(chatLogElement) {
         if (chatLogElement) {
             // Use requestAnimationFrame for smoother scrolling after DOM updates
@@ -120,58 +213,97 @@ function scrollChatLogToBottom(chatLogElement) {
         }
     }
 
-    const populateListInRecap = (ulElement, itemsArray, itemType = 'simple') => {
+     const populateListInRecap = (ulElement, itemsArray, itemType = 'simple') => {
+        const functionName = "populateListInRecap";
         const { polyglotHelpers } = getDeps();
-        if (!ulElement || !polyglotHelpers) {
-            console.warn("populateListInRecap: Missing ulElement or polyglotHelpers");
-            if (ulElement) ulElement.innerHTML = '<li>Error loading details.</li>'; // Provide feedback in UI
+
+        if (!ulElement) {
+            // console.warn(`UI Updater (${functionName}): ulElement is MISSING for itemType '${itemType}'. Cannot populate list.`);
+            return; // Silently return if the UL element itself is not found
+        }
+        if (!polyglotHelpers) {
+            console.error(`UI Updater (${functionName}): polyglotHelpers IS MISSING for itemType '${itemType}'. Cannot populate list correctly.`);
+            ulElement.innerHTML = '<li>Error: UI Helper missing.</li>';
             return;
         }
-        ulElement.innerHTML = ''; // Clear previous items
+        
+        ulElement.innerHTML = ''; // Clear previous items FIRST
 
-        if (itemsArray && itemsArray.length > 0) {
-            itemsArray.forEach(itemData => {
-                const li = document.createElement('li');
-                if (itemType === 'simple' && typeof itemData === 'string') {
-                    li.innerHTML = `<i class="fas fa-check-circle recap-item-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(itemData)}`;
-                } else if (itemType === 'vocabulary' && typeof itemData === 'object' && itemData.term) {
-                    let vocabHtml = `<i class="fas fa-book-open recap-item-icon"></i> <strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.term)}</strong>`;
-                    if (itemData.translation) {
-                        vocabHtml += `: ${polyglotHelpers.sanitizeTextForDisplay(itemData.translation)}`;
+        if (!itemsArray || !Array.isArray(itemsArray) || itemsArray.length === 0) {
+            // Handle empty or invalid itemsArray gracefully
+            const li = document.createElement('li');
+            li.classList.add('recap-list-placeholder-item'); // Add a class for styling placeholders
+            switch (itemType) {
+                case 'vocabulary':
+                case 'improvementArea':
+                    li.textContent = 'None noted for this session.';
+                    break;
+                case 'simple': // For keyTopics, goodUsage, practiceActivities
+                default:
+                    li.textContent = 'N/A'; // Or "No specific items noted."
+                    break;
+            }
+            ulElement.appendChild(li);
+            // console.log(`UI Updater (${functionName}): Populated placeholder for empty/invalid itemsArray for itemType '${itemType}'.`);
+            return;
+        }
+
+        // If we reach here, itemsArray is a non-empty array
+        // console.log(`UI Updater (${functionName}): Populating list for itemType '${itemType}' with ${itemsArray.length} items.`);
+        itemsArray.forEach((itemData, index) => {
+            const li = document.createElement('li');
+            try {
+                if (itemType === 'simple') {
+                    if (typeof itemData === 'string') {
+                        li.innerHTML = `<i class="fas fa-check-circle recap-item-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(itemData)}`;
+                    } else {
+                        console.warn(`UI Updater (${functionName}): Expected string for 'simple' item type, got:`, itemData);
+                        li.innerHTML = `<i class="fas fa-question-circle recap-item-icon"></i> Invalid data format`;
                     }
-                    if (itemData.exampleSentence) {
-                        vocabHtml += `<br><em class="recap-example">E.g.: "${polyglotHelpers.sanitizeTextForDisplay(itemData.exampleSentence)}"</em>`;
+                } else if (itemType === 'vocabulary') {
+                    if (typeof itemData === 'object' && itemData !== null && itemData.term) {
+                        let vocabHtml = `<i class="fas fa-book-open recap-item-icon"></i> <strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.term)}</strong>`;
+                        if (itemData.translation) vocabHtml += `: ${polyglotHelpers.sanitizeTextForDisplay(itemData.translation)}`;
+                        if (itemData.exampleSentence) vocabHtml += `<br><em class="recap-example">E.g.: "${polyglotHelpers.sanitizeTextForDisplay(itemData.exampleSentence)}"</em>`;
+                        li.innerHTML = vocabHtml;
+                    } else {
+                         // Handle case where itemData might be "N/A - Short conversation" if ai_recap_service wasn't updated
+                        if (typeof itemData === 'string') {
+                            li.innerHTML = `<i class="fas fa-info-circle recap-item-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(itemData)}`;
+                        } else {
+                            console.warn(`UI Updater (${functionName}): Invalid format for 'vocabulary' item [${index}]:`, itemData);
+                            li.innerHTML = `<i class="fas fa-exclamation-triangle recap-item-icon"></i> Malformed vocabulary entry`;
+                        }
                     }
-                    li.innerHTML = vocabHtml;
-                } else if (itemType === 'improvementArea' && typeof itemData === 'object' && itemData.areaType) {
-                    let improvementHtml = `<div class="improvement-item">`;
-                    improvementHtml += `<div class="improvement-area-header"><i class="fas fa-pencil-alt recap-item-icon"></i> <strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.areaType)}:</strong></div>`;
-                    if (itemData.userInputExample && itemData.userInputExample.trim() !== "") { // Check if not empty
-                        improvementHtml += `<div class="recap-user-input">You said: "<em>${polyglotHelpers.sanitizeTextForDisplay(itemData.userInputExample)}</em>"</div>`;
+                } else if (itemType === 'improvementArea') {
+                     if (typeof itemData === 'object' && itemData !== null && itemData.areaType) {
+                        let improvementHtml = `<div class="improvement-item">`;
+                        improvementHtml += `<div class="improvement-area-header"><i class="fas fa-pencil-alt recap-item-icon"></i> <strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.areaType)}:</strong></div>`;
+                        if (itemData.userInputExample && String(itemData.userInputExample).trim() !== "") improvementHtml += `<div class="recap-user-input">You said: "<em>${polyglotHelpers.sanitizeTextForDisplay(itemData.userInputExample)}</em>"</div>`;
+                        if (itemData.coachSuggestion) improvementHtml += `<div class="recap-coach-suggestion">Suggestion: "<strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.coachSuggestion)}</strong>"</div>`;
+                        if (itemData.explanation) improvementHtml += `<div class="recap-explanation">Why: ${polyglotHelpers.sanitizeTextForDisplay(itemData.explanation)}</div>`;
+                        if (itemData.exampleWithSuggestion) improvementHtml += `<div class="recap-example">Example: "<em>${polyglotHelpers.sanitizeTextForDisplay(itemData.exampleWithSuggestion)}</em>"</div>`;
+                        improvementHtml += `</div>`;
+                        li.innerHTML = improvementHtml;
+                        li.classList.add('improvement-list-item'); // Keep your class for styling
+                    } else {
+                        // Handle case where itemData might be "N/A - Short conversation"
+                        if (typeof itemData === 'string') {
+                            li.innerHTML = `<i class="fas fa-info-circle recap-item-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(itemData)}`;
+                        } else {
+                            console.warn(`UI Updater (${functionName}): Invalid format for 'improvementArea' item [${index}]:`, itemData);
+                            li.innerHTML = `<i class="fas fa-exclamation-triangle recap-item-icon"></i> Malformed improvement entry`;
+                        }
                     }
-                    if (itemData.coachSuggestion) {
-                        improvementHtml += `<div class="recap-coach-suggestion">Suggestion: "<strong>${polyglotHelpers.sanitizeTextForDisplay(itemData.coachSuggestion)}</strong>"</div>`;
-                    }
-                    if (itemData.explanation) {
-                        improvementHtml += `<div class="recap-explanation">Why: ${polyglotHelpers.sanitizeTextForDisplay(itemData.explanation)}</div>`;
-                    }
-                    if (itemData.exampleWithSuggestion) {
-                        improvementHtml += `<div class="recap-example">Example: "<em>${polyglotHelpers.sanitizeTextForDisplay(itemData.exampleWithSuggestion)}</em>"</div>`;
-                    }
-                    improvementHtml += `</div>`;
-                    li.innerHTML = improvementHtml;
-                    li.classList.add('improvement-list-item');
-                } else {
+                } else { // Fallback for unknown itemType
                     li.textContent = typeof itemData === 'string' ? polyglotHelpers.sanitizeTextForDisplay(itemData) : JSON.stringify(itemData);
                 }
-                ulElement.appendChild(li);
-            });
-        } else {
-            const li = document.createElement('li');
-            li.textContent = itemType === 'improvementArea' ? 'No specific areas for improvement noted this time. Great job!' : 'None noted.';
-            li.style.fontStyle = 'italic';
+            } catch (error) {
+                console.error(`UI Updater (${functionName}): Error processing item [${index}] for type '${itemType}':`, error, "Item data:", itemData);
+                li.innerHTML = `<i class="fas fa-exclamation-triangle recap-item-icon"></i> Error displaying item`;
+            }
             ulElement.appendChild(li);
-        }
+        });
     };
 
     function appendSystemMessage(logElement, text, isError = false) {
@@ -304,16 +436,34 @@ function scrollChatLogToBottom(chatLogElement) {
             if (domElements?.directCallActivityImageDisplay) domElements.directCallActivityImageDisplay.src = '';
         },
         appendToMessageLogModal: (text, senderClass, options = {}) => {
-            const { domElements, chatOrchestrator } = getDeps();
-            let finalOptions = { ...options };
-            if (!senderClass.includes('user') && !senderClass.includes('system-message')) {
-                const connector = chatOrchestrator?.getCurrentModalMessageTarget();
-                if (connector) {
-                    finalOptions.avatarUrl = connector.avatarModern;
-                }
+    const { domElements, chatOrchestrator } = getDeps(); // chatOrchestrator might not be needed here if directly using active target
+    let finalOptions = { ...options };
+
+    // If it's a connector message, try to get avatar
+    if (!senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('system-call-event')) {
+        // const connector = chatOrchestrator?.getCurrentModalMessageTarget(); // Alternative
+        const connectorId = domElements.messagingInterface?.dataset.currentConnectorId;
+        const connector = window.polyglotConnectors?.find(c => c.id === connectorId);
+
+        if (connector) {
+            finalOptions.avatarUrl = connector.avatarModern;
+            if (options.type !== 'call_event') {
+                finalOptions.senderName = connector.profileName;
             }
-            return appendChatMessage(domElements?.messageChatLog, text, senderClass, finalOptions);
-        },
+        }
+    }
+
+    // If it IS a call event, ensure connectorId and connectorName
+    if (options.type === 'call_event') {
+        const connectorId = domElements.messagingInterface?.dataset.currentConnectorId;
+        const connector = window.polyglotConnectors?.find(c => c.id === connectorId);
+        if (connector) {
+            finalOptions.connectorId = connector.id;
+            finalOptions.connectorName = connector.profileName;
+        }
+    }
+    return appendChatMessage(domElements?.messageChatLog, text, senderClass, finalOptions);
+},
         showImageInMessageModal: (imageUrl) => {
             const { domElements } = getDeps();
             showImageInActivityArea(domElements?.messageActivityArea, domElements?.messageActivityImageDisplay, domElements?.messageChatLog, imageUrl);
@@ -349,18 +499,37 @@ function scrollChatLogToBottom(chatLogElement) {
             if (domElements?.messageActivityArea) domElements.messageActivityArea.style.display = 'none';
             if (domElements?.messageActivityImageDisplay) domElements.messageActivityImageDisplay.src = '';
         },
-        appendToEmbeddedChatLog: (text, senderClass, options = {}) => {
-            const { domElements } = getDeps();
-            let finalOptions = { ...options };
-            if (!senderClass.includes('user') && !senderClass.includes('system-message')) {
-                const connectorId = domElements.embeddedChatContainer?.dataset.currentConnectorId;
-                const connector = window.polyglotConnectors?.find(c => c.id === connectorId);
-                if (connector) {
-                    finalOptions.avatarUrl = connector.avatarModern;
-                }
+       appendToEmbeddedChatLog: (text, senderClass, options = {}) => {
+    const { domElements } = getDeps();
+    let finalOptions = { ...options }; // Start with whatever options were passed in (type, eventType, duration, etc.)
+
+    // If it's a regular connector message, get avatar and name
+    if (senderClass === 'connector') { 
+        const connectorId = domElements.embeddedChatContainer?.dataset.currentConnectorId;
+        const connector = window.polyglotConnectors?.find(c => c.id === connectorId);
+        if (connector) {
+            finalOptions.avatarUrl = connector.avatarModern;
+            // Only set senderName if it's not a call event, as call events don't typically show sender name
+            if (options.type !== 'call_event') { 
+                 finalOptions.senderName = connector.profileName;
             }
-            return appendChatMessage(domElements?.embeddedChatLog, text, senderClass, finalOptions);
-        },
+        }
+    }
+    
+    // If it IS a call event, ensure connectorId and connectorName are set from the active chat context
+    // options.type, options.eventType, options.duration should already be on 'options'
+    // if the calling code (e.g., chat_session_handler) put them there from the message object.
+    if (options.type === 'call_event') {
+        const connectorId = domElements.embeddedChatContainer?.dataset.currentConnectorId;
+        const currentConnector = window.polyglotConnectors?.find(c => c.id === connectorId);
+        if (currentConnector) {
+            finalOptions.connectorId = currentConnector.id; // Essential for the button in appendChatMessage
+            finalOptions.connectorName = currentConnector.profileName; // For "Chloé missed your call"
+        }
+    }
+    
+    return appendChatMessage(domElements?.embeddedChatLog, text, senderClass, finalOptions);
+},
         showImageInEmbeddedChat: (imageUrl) => {
             const { domElements } = getDeps();
             showImageInActivityArea(domElements?.embeddedMessageActivityArea, domElements?.embeddedMessageActivityImage, domElements?.embeddedChatLog, imageUrl);
@@ -466,60 +635,176 @@ function scrollChatLogToBottom(chatLogElement) {
             if (domElements?.groupChatLogDiv) domElements.groupChatLogDiv.innerHTML = '';
         },
         populateRecapModal: (recapData) => {
+            const functionName = "populateRecapModal";
+            console.log(`UI Updater (${functionName}): Populating recap modal. Data received:`, recapData);
             const { domElements, polyglotHelpers } = getDeps();
-            if (!domElements?.sessionRecapScreen || !recapData || !polyglotHelpers) return;
-            if (domElements.recapConnectorName) domElements.recapConnectorName.textContent = `With ${polyglotHelpers.sanitizeTextForDisplay(recapData.connectorName || 'your Partner')}`;
-            if (domElements.recapDate) domElements.recapDate.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.date || new Date().toLocaleDateString());
-            if (domElements.recapDuration) domElements.recapDuration.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.duration || 'N/A');
-            const recapSummaryEl = domElements.sessionRecapScreen.querySelector('#recap-conversation-summary-text');
-            if (recapSummaryEl) recapSummaryEl.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.conversationSummary || "No summary.");
-            populateListInRecap(domElements.recapTopicsList, recapData.keyTopicsDiscussed, 'simple');
-            const recapGoodUsageEl = domElements.sessionRecapScreen.querySelector('#recap-good-usage-list');
-            if (recapGoodUsageEl) populateListInRecap(recapGoodUsageEl, recapData.goodUsageHighlights, 'simple');
-            populateListInRecap(domElements.recapVocabularyList, recapData.newVocabularyAndPhrases, 'vocabulary');
-            populateListInRecap(domElements.recapFocusAreasList, recapData.areasForImprovement, 'improvementArea');
-            const recapPracticeEl = domElements.sessionRecapScreen.querySelector('#recap-practice-activities-list');
-            if (recapPracticeEl) populateListInRecap(recapPracticeEl, recapData.suggestedPracticeActivities, 'simple');
-            const recapEncouragementEl = domElements.sessionRecapScreen.querySelector('#recap-overall-encouragement-text');
-            if (recapEncouragementEl) recapEncouragementEl.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.overallEncouragement || "Keep practicing!");
-            domElements.sessionRecapScreen.dataset.sessionIdForDownload = recapData.sessionId || '';
-        },
-        displaySummaryInView: (sessionData) => {
-            const { domElements, polyglotHelpers } = getDeps();
-            if (!domElements?.summaryViewContent || !domElements.summaryTabHeader || !domElements.summaryPlaceholder || !polyglotHelpers) return;
-            if (!sessionData) {
-                domElements.summaryTabHeader.textContent = "Learning Summary";
-                domElements.summaryPlaceholder.innerHTML = "Select a session from the history to view its detailed debrief.";
-                domElements.summaryPlaceholder.style.display = 'block';
-                domElements.summaryViewContent.innerHTML = '';
-                domElements.summaryViewContent.appendChild(domElements.summaryPlaceholder);
+
+            if (!domElements || !domElements.sessionRecapScreen) {
+                console.error(`UI Updater (${functionName}): domElements not found or domElements.sessionRecapScreen not found.`); return;
+            }
+            if (!recapData) {
+                console.error(`UI Updater (${functionName}): recapData is null/undefined.`);
+                if (domElements.recapConnectorName) domElements.recapConnectorName.textContent = "Error";
+                const recapSummaryEl = domElements.sessionRecapScreen.querySelector('#recap-conversation-summary-text');
+                if (recapSummaryEl) recapSummaryEl.textContent = "Could not load recap details.";
                 return;
             }
-            domElements.summaryTabHeader.textContent = `Summary: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.connectorName)} (${polyglotHelpers.sanitizeTextForDisplay(sessionData.date)})`;
-            domElements.summaryPlaceholder.style.display = 'none';
-            let summaryHtml = `<div class="recap-modal-content-embedded styled-scrollbar">`;
-            summaryHtml += `<p><strong>Duration:</strong> ${polyglotHelpers.sanitizeTextForDisplay(sessionData.duration || 'N/A')}</p>`;
-            if (sessionData.conversationSummary) summaryHtml += `<div class="recap-section"><h4><i class="fas fa-info-circle"></i> Overview:</h4><p id="emb-recap-summary-text">${polyglotHelpers.sanitizeTextForDisplay(sessionData.conversationSummary)}</p></div>`;
-            summaryHtml += `<div class="recap-section"><h4><i class="fas fa-list-alt"></i> Topics:</h4><ul id="emb-recap-topics-view"></ul></div>`;
-            if (sessionData.goodUsageHighlights?.length) summaryHtml += `<div class="recap-section"><h4><i class="fas fa-thumbs-up"></i> Well Done!:</h4><ul id="emb-recap-good-usage-view"></ul></div>`;
-            summaryHtml += `<div class="recap-section"><h4><i class="fas fa-book-open"></i> Vocabulary:</h4><ul id="emb-recap-vocab-view"></ul></div>`;
-            summaryHtml += `<div class="recap-section"><h4><i class="fas fa-pencil-ruler"></i> To Improve:</h4><ul id="emb-recap-focus-view"></ul></div>`;
-            if (sessionData.suggestedPracticeActivities?.length) summaryHtml += `<div class="recap-section"><h4><i class="fas fa-dumbbell"></i> Practice:</h4><ul id="emb-recap-practice-view"></ul></div>`;
-            if (sessionData.overallEncouragement) summaryHtml += `<div class="recap-section"><h4><i class="fas fa-comment-dots"></i> Coach's Note:</h4><p id="emb-recap-encouragement-text">${polyglotHelpers.sanitizeTextForDisplay(sessionData.overallEncouragement)}</p></div>`;
-            summaryHtml += `<button id="summary-view-download-btn" class="action-btn primary-btn" data-session-id="${polyglotHelpers.sanitizeTextForDisplay(sessionData.sessionId)}"><i class="fas fa-download"></i> Download</button></div>`;
-            domElements.summaryViewContent.innerHTML = summaryHtml;
-            populateListInRecap(document.getElementById('emb-recap-topics-view'), sessionData.keyTopicsDiscussed, 'simple');
-            populateListInRecap(document.getElementById('emb-recap-good-usage-view'), sessionData.goodUsageHighlights, 'simple');
-            populateListInRecap(document.getElementById('emb-recap-vocab-view'), sessionData.newVocabularyAndPhrases, 'vocabulary');
-            populateListInRecap(document.getElementById('emb-recap-focus-view'), sessionData.areasForImprovement, 'improvementArea');
-            populateListInRecap(document.getElementById('emb-recap-practice-view'), sessionData.suggestedPracticeActivities, 'simple');
-            const downloadBtn = document.getElementById('summary-view-download-btn');
-            if (downloadBtn && window.sessionManager?.downloadTranscriptForSession) {
-                const newBtn = downloadBtn.cloneNode(true);
-                downloadBtn.parentNode.replaceChild(newBtn, downloadBtn);
-                newBtn.addEventListener('click', () => window.sessionManager.downloadTranscriptForSession(sessionData.sessionId));
+            if (!polyglotHelpers) {
+                console.error(`UI Updater (${functionName}): polyglotHelpers not found.`);
+                if (domElements.recapConnectorName) domElements.recapConnectorName.textContent = "Error (UI helper missing)";
+                return;
+            }
+
+            try {
+                // Populate basic info
+                if (domElements.recapConnectorName) domElements.recapConnectorName.textContent = `With ${polyglotHelpers.sanitizeTextForDisplay(recapData.connectorName || 'your Partner')}`;
+                if (domElements.recapDate) domElements.recapDate.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.date || new Date().toLocaleDateString());
+                if (domElements.recapDuration) domElements.recapDuration.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.duration || 'N/A');
+                if (domElements.recapDate) { // You might want a new element for start time specifically
+                let displayDate = recapData.date || new Date().toLocaleDateString();
+                if (recapData.startTimeISO) {
+                    displayDate = new Date(recapData.startTimeISO).toLocaleString(undefined, { 
+                        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                    });
+                }
+                domElements.recapDate.textContent = polyglotHelpers.sanitizeTextForDisplay(displayDate);
+                }    
+                // Populate text content sections
+                const recapSummaryEl = domElements.sessionRecapScreen.querySelector('#recap-conversation-summary-text');
+                if (recapSummaryEl) recapSummaryEl.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.conversationSummary || "No summary provided.");
+
+                const recapEncouragementEl = domElements.sessionRecapScreen.querySelector('#recap-overall-encouragement-text');
+                if (recapEncouragementEl) recapEncouragementEl.textContent = polyglotHelpers.sanitizeTextForDisplay(recapData.overallEncouragement || "Keep up the great work!");
+
+                // Populate list sections
+                // Ensure domElements provide the correct UL elements directly (e.g., domElements.recapTopicsListUL)
+                populateListInRecap(domElements.recapTopicsList, recapData.keyTopicsDiscussed, 'simple');
+                populateListInRecap(domElements.sessionRecapScreen.querySelector('#recap-good-usage-list'), recapData.goodUsageHighlights, 'simple');
+                populateListInRecap(domElements.recapVocabularyList, recapData.newVocabularyAndPhrases, 'vocabulary');
+                populateListInRecap(domElements.recapFocusAreasList, recapData.areasForImprovement, 'improvementArea');
+                populateListInRecap(domElements.sessionRecapScreen.querySelector('#recap-practice-activities-list'), recapData.suggestedPracticeActivities, 'simple');
+                
+                domElements.sessionRecapScreen.dataset.sessionIdForDownload = recapData.sessionId || '';
+                console.log(`UI Updater (${functionName}): Recap modal population complete for session ID: ${recapData.sessionId}`);
+            } catch (e) {
+                console.error(`UI Updater (${functionName}): Error populating recap modal:`, e);
             }
         },
+        
+        // Inside ui_updater.js
+// ...
+
+displaySummaryInView: (sessionData) => {
+    const functionName = "displaySummaryInView";
+    const { domElements, polyglotHelpers } = getDeps();
+
+    if (!domElements?.summaryViewContent || !domElements.summaryTabHeader || !domElements.summaryPlaceholder || !polyglotHelpers) {
+        console.error(`UI Updater (${functionName}): Missing critical DOM elements or helpers.`);
+        return;
+    }
+
+    if (!sessionData || !sessionData.sessionId) { // Check for sessionId to ensure it's a valid session object
+        domElements.summaryTabHeader.textContent = "Learning Summary";
+        domElements.summaryPlaceholder.innerHTML = "Select a session from the history to view its detailed debrief.";
+        domElements.summaryPlaceholder.style.display = 'block';
+        domElements.summaryViewContent.innerHTML = ''; // Clear previous content
+        if (domElements.summaryViewContent.firstChild !== domElements.summaryPlaceholder) { // Avoid appending if already there
+             domElements.summaryViewContent.appendChild(domElements.summaryPlaceholder);
+        }
+        console.log(`UI Updater (${functionName}): No session data provided, displaying placeholder.`);
+        return;
+    }
+
+    // --- Format Date and Time ---
+    let displayDateTime = sessionData.date || 'Unknown Date'; // Fallback to existing date
+    if (sessionData.startTimeISO) {
+        try {
+            displayDateTime = new Date(sessionData.startTimeISO).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        } catch (e) {
+            console.warn(`UI Updater (${functionName}): Could not parse startTimeISO '${sessionData.startTimeISO}'. Using fallback date.`);
+        }
+    }
+    // --- End Format Date and Time ---
+
+    domElements.summaryTabHeader.textContent = `Summary: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.connectorName || 'Partner')} (${polyglotHelpers.sanitizeTextForDisplay(displayDateTime)})`;
+    domElements.summaryPlaceholder.style.display = 'none';
+
+    let summaryHtml = `<div class="recap-modal-content-embedded styled-scrollbar">`; // Using recap styles, which is fine
+
+    // --- ADD START TIME AND DURATION ---
+    summaryHtml += `<p><strong>Session Started:</strong> ${polyglotHelpers.sanitizeTextForDisplay(displayDateTime)}</p>`;
+    summaryHtml += `<p><strong>Duration:</strong> ${polyglotHelpers.sanitizeTextForDisplay(sessionData.duration || 'N/A')}</p>`;
+    // --- END START TIME AND DURATION ---
+
+    if (sessionData.conversationSummary) {
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-info-circle"></i> Overview:</h4><p id="emb-recap-summary-text">${polyglotHelpers.sanitizeTextForDisplay(sessionData.conversationSummary)}</p></div>`;
+    }
+    if (sessionData.keyTopicsDiscussed && Array.isArray(sessionData.keyTopicsDiscussed) && sessionData.keyTopicsDiscussed.length > 0 && !(sessionData.keyTopicsDiscussed.length === 1 && sessionData.keyTopicsDiscussed[0].toLowerCase().includes("n/a")) ) {
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-list-alt"></i> Topics:</h4><ul id="emb-recap-topics-view"></ul></div>`;
+    } else if (sessionData.keyTopicsDiscussed) { // It exists but might be ["N/A - Short conversation"]
+         summaryHtml += `<div class="recap-section"><h4><i class="fas fa-list-alt"></i> Topics:</h4><p class="recap-list-placeholder-item">${polyglotHelpers.sanitizeTextForDisplay(sessionData.keyTopicsDiscussed[0] || 'N/A')}</p></div>`;
+    }
+
+
+    if (sessionData.goodUsageHighlights && Array.isArray(sessionData.goodUsageHighlights) && sessionData.goodUsageHighlights.length > 0 && !(sessionData.goodUsageHighlights.length === 1 && sessionData.goodUsageHighlights[0].toLowerCase().includes("n/a")) ) {
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-thumbs-up"></i> Well Done!:</h4><ul id="emb-recap-good-usage-view"></ul></div>`;
+    } else if (sessionData.goodUsageHighlights) {
+         summaryHtml += `<div class="recap-section"><h4><i class="fas fa-thumbs-up"></i> Well Done!:</h4><p class="recap-list-placeholder-item">${polyglotHelpers.sanitizeTextForDisplay(sessionData.goodUsageHighlights[0] || 'None noted.')}</p></div>`;
+    }
+
+    // For vocabulary and improvement areas, we expect arrays of objects or empty arrays from the consistent recap.
+    // The populateListInRecap should handle empty arrays by showing "None noted...".
+    summaryHtml += `<div class="recap-section"><h4><i class="fas fa-book-open"></i> Vocabulary:</h4><ul id="emb-recap-vocab-view"></ul></div>`;
+    summaryHtml += `<div class="recap-section"><h4><i class="fas fa-pencil-ruler"></i> To Improve:</h4><ul id="emb-recap-focus-view"></ul></div>`;
+
+    if (sessionData.suggestedPracticeActivities && Array.isArray(sessionData.suggestedPracticeActivities) && sessionData.suggestedPracticeActivities.length > 0 && !(sessionData.suggestedPracticeActivities.length === 1 && sessionData.suggestedPracticeActivities[0].toLowerCase().includes("n/a"))) {
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-dumbbell"></i> Practice:</h4><ul id="emb-recap-practice-view"></ul></div>`;
+    } else if (sessionData.suggestedPracticeActivities){
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-dumbbell"></i> Practice:</h4><p class="recap-list-placeholder-item">${polyglotHelpers.sanitizeTextForDisplay(sessionData.suggestedPracticeActivities[0] || 'None suggested.')}</p></div>`;
+    }
+
+
+    if (sessionData.overallEncouragement) {
+        summaryHtml += `<div class="recap-section"><h4><i class="fas fa-comment-dots"></i> Coach's Note:</h4><p id="emb-recap-encouragement-text">${polyglotHelpers.sanitizeTextForDisplay(sessionData.overallEncouragement)}</p></div>`;
+    }
+    summaryHtml += `<button id="summary-view-download-btn" class="action-btn primary-btn" data-session-id="${polyglotHelpers.sanitizeTextForDisplay(sessionData.sessionId || '')}"><i class="fas fa-download"></i> Download Transcript</button>`;
+    summaryHtml += `</div>`; // Close recap-modal-content-embedded
+
+    domElements.summaryViewContent.innerHTML = summaryHtml;
+
+    // Now populate the ULs if they were created
+    if (document.getElementById('emb-recap-topics-view')) {
+        populateListInRecap(document.getElementById('emb-recap-topics-view'), sessionData.keyTopicsDiscussed, 'simple');
+    }
+    if (document.getElementById('emb-recap-good-usage-view')) {
+        populateListInRecap(document.getElementById('emb-recap-good-usage-view'), sessionData.goodUsageHighlights, 'simple');
+    }
+    // Vocabulary and Improvement Areas will be populated; populateListInRecap handles empty arrays.
+    populateListInRecap(document.getElementById('emb-recap-vocab-view'), sessionData.newVocabularyAndPhrases, 'vocabulary');
+    populateListInRecap(document.getElementById('emb-recap-focus-view'), sessionData.areasForImprovement, 'improvementArea');
+
+    if (document.getElementById('emb-recap-practice-view')) {
+        populateListInRecap(document.getElementById('emb-recap-practice-view'), sessionData.suggestedPracticeActivities, 'simple');
+    }
+
+    const downloadBtn = document.getElementById('summary-view-download-btn');
+    if (downloadBtn && window.sessionManager?.downloadTranscriptForSession) {
+        // Clone and replace to ensure fresh event listener if this view is re-rendered
+        const newBtn = downloadBtn.cloneNode(true);
+        if (downloadBtn.parentNode) { // Ensure parent exists before replacing
+            downloadBtn.parentNode.replaceChild(newBtn, downloadBtn);
+            newBtn.addEventListener('click', () => window.sessionManager.downloadTranscriptForSession(sessionData.sessionId));
+        } else {
+            console.warn(`UI Updater (${functionName}): Download button parent not found for session ${sessionData.sessionId}`);
+        }
+    } else if (downloadBtn) {
+        console.warn(`UI Updater (${functionName}): window.sessionManager.downloadTranscriptForSession not available.`);
+    }
+    // console.log(`UI Updater (${functionName}): Summary view updated for session ${sessionData.sessionId}`);
+}, // End of displaySummaryInView
         updateTTSToggleButtonVisual: (buttonElement, isMuted) => {
             if (buttonElement) {
                 buttonElement.innerHTML = isMuted ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>';

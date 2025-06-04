@@ -189,113 +189,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn("app.js: Unknown sessionType in initiateSession:", sessionTypeWithContext);
         }
         console.log("app.js: initiateSession - Switch statement finished.");
-    };
-    console.log("app.js: polyglotApp.initiateSession assignment complete. window.polyglotApp is now:", window.polyglotApp);
+      };
+        console.log("app.js: polyglotApp.initiateSession assignment complete. window.polyglotApp is now:", window.polyglotApp);
 
-    function setupGlobalModalButtonListeners() {
+     function setupGlobalModalButtonListeners() {
         console.log("app.js: setupGlobalModalButtonListeners - STARTING.");
         const domElements = window.domElements;
         const sessionManager = window.sessionManager;
-        const chatManager = window.chatManager; // Use aliased chatManager
+        const chatManager = window.chatManager;
         const modalHandler = window.modalHandler;
 
-        console.log("app.js: setupGlobalModalButtonListeners - Dependencies: domElements:", !!domElements, "sessionManager:", !!sessionManager, "chatManager:", !!chatManager, "modalHandler:", !!modalHandler);
-
         if (!domElements || !sessionManager || !chatManager || !modalHandler) {
-            console.error("App.js setupGlobalModalButtonListeners: One or more core dependencies MISSING!");
+            console.error("App.js setupGlobalModalButtonListeners: One or more core dependencies MISSING! Cannot setup all modal listeners.");
             return;
         }
 
         // Recap Modal
-        if (domElements.closeRecapBtn) {
-            console.log("app.js: Adding listener to closeRecapBtn");
-            domElements.closeRecapBtn.addEventListener('click', () => {
-                console.log("app.js: Close Recap Button CLICKED!");
-                modalHandler.close(domElements.sessionRecapScreen);
-            });
-        } else {
-            console.warn("app.js: domElements.closeRecapBtn not found for listener.");
-        }
+        if (domElements.closeRecapBtn) domElements.closeRecapBtn.addEventListener('click', () => modalHandler.close(domElements.sessionRecapScreen));
+        else console.warn("app.js: domElements.closeRecapBtn not found.");
 
         if (domElements.downloadTranscriptBtn) {
-            console.log("app.js: Adding listener to downloadTranscriptBtn");
             domElements.downloadTranscriptBtn.addEventListener('click', () => {
-                console.log("app.js: Download Transcript Button (Modal) CLICKED!");
                 const sessionId = domElements.sessionRecapScreen?.dataset.sessionIdForDownload;
-                console.log("app.js: downloadTranscriptBtn - sessionId:", sessionId);
-                if (sessionId && sessionManager.downloadTranscriptForSession) {
-                    sessionManager.downloadTranscriptForSession(sessionId);
-                } else {
-                    console.warn("app.js: No session ID on recap-download-transcript-btn or sessionManager.downloadTranscriptForSession missing. Session ID:", sessionId, "sessionRecapScreen dataset:", domElements.sessionRecapScreen?.dataset);
-                }
+                if (sessionId) sessionManager.downloadTranscriptForSession?.(sessionId);
+                else console.warn("app.js: No session ID for transcript download.");
             });
-        } else {
-            console.warn("app.js: domElements.downloadTranscriptBtn not found for listener.");
-        }
+        } else console.warn("app.js: domElements.downloadTranscriptBtn not found.");
 
         // Direct Call Modal
-        if (domElements.cancelCallBtn) {
-            console.log("app.js: Adding listener to cancelCallBtn");
-            domElements.cancelCallBtn.addEventListener('click', () => {
-                console.log("app.js: Cancel Call Button CLICKED!");
-                if (sessionManager.cancelModalCallAttempt) sessionManager.cancelModalCallAttempt();
-                else console.error("app.js: sessionManager.cancelModalCallAttempt is not defined!");
-            });
-        } else console.warn("app.js: domElements.cancelCallBtn not found.");
+        if (domElements.cancelCallBtn) domElements.cancelCallBtn.addEventListener('click', () => sessionManager.cancelModalCallAttempt?.());
+        else console.warn("app.js: domElements.cancelCallBtn not found.");
 
-        if (domElements.directCallEndBtn) {
-            console.log("app.js: Adding listener to directCallEndBtn");
-            domElements.directCallEndBtn.addEventListener('click', () => {
-                console.log("app.js: Direct Call End Button CLICKED!");
-                if (sessionManager.endCurrentModalSession) sessionManager.endCurrentModalSession(true);
-                else console.error("app.js: sessionManager.endCurrentModalSession is not defined!");
-            });
-        } else console.warn("app.js: domElements.directCallEndBtn not found.");
+        if (domElements.directCallEndBtn) domElements.directCallEndBtn.addEventListener('click', () => sessionManager.endCurrentModalSession?.(true));
+        else console.warn("app.js: domElements.directCallEndBtn not found.");
+        
+        if (domElements.directCallSpeakerToggleBtn) domElements.directCallSpeakerToggleBtn.addEventListener('click', () => sessionManager.toggleDirectCallSpeaker?.());
+        else console.warn("app.js: domElements.directCallSpeakerToggleBtn not found.");
 
-        if (domElements.directCallSpeakerToggleBtn) {
-            console.log("app.js: Adding listener to directCallSpeakerToggleBtn");
-            domElements.directCallSpeakerToggleBtn.addEventListener('click', () => {
-                console.log("app.js: Direct Call Speaker Toggle Button CLICKED!");
-                if (sessionManager.toggleDirectCallSpeaker) sessionManager.toggleDirectCallSpeaker();
-                else console.error("app.js: sessionManager.toggleDirectCallSpeaker is not defined!");
-            });
-        } else console.warn("app.js: domElements.directCallSpeakerToggleBtn not found.");
-
-        if (domElements.directCallMuteBtn) {
-            console.log("app.js: Adding listener to directCallMuteBtn");
-            domElements.directCallMuteBtn.addEventListener('click', () => {
-                console.log("app.js: Direct Call Mute Button CLICKED!");
-                if (sessionManager.handleDirectCallMicToggle) sessionManager.handleDirectCallMicToggle();
-                else console.error("app.js: sessionManager.handleDirectCallMicToggle is not defined!");
-            });
-        } else console.warn("app.js: domElements.directCallMuteBtn not found.");
-
-        if (domElements.directCallActivityBtn) {
-            console.log("app.js: Adding listener to directCallActivityBtn");
-            domElements.directCallActivityBtn.addEventListener('click', () => {
-                console.log("app.js: Direct Call Activity Button CLICKED!");
-                if (sessionManager.handleDirectCallActivityRequest) sessionManager.handleDirectCallActivityRequest();
-                else console.error("app.js: sessionManager.handleDirectCallActivityRequest is not defined!");
-            });
-        } else console.warn("app.js: domElements.directCallActivityBtn not found.");
-
-
+        if (domElements.directCallMuteBtn) domElements.directCallMuteBtn.addEventListener('click', () => sessionManager.handleDirectCallMicToggle?.());
+        else console.warn("app.js: domElements.directCallMuteBtn not found.");
+        
+      
         // Messaging Modal
         if (domElements.closeMessagingModalBtn) {
-            console.log("app.js: Adding listener to closeMessagingModalBtn");
             domElements.closeMessagingModalBtn.addEventListener('click', () => {
-                console.log("app.js: Close Messaging Modal Button CLICKED!");
-                // Delegate to chatSessionHandler as per refactor plan
-                if (window.chatSessionHandler?.endActiveModalMessagingSession) {
-                    window.chatSessionHandler.endActiveModalMessagingSession();
-                } else {
-                    console.error("app.js: window.chatSessionHandler.endActiveModalMessagingSession is not defined!");
-                }
+                window.chatSessionHandler?.endActiveModalMessagingSession?.();
             });
-        } else {
-            console.warn("app.js: domElements.closeMessagingModalBtn not found for listener.");
+        } else console.warn("app.js: domElements.closeMessagingModalBtn not found.");
+        
+        console.log("app.js: Global modal button listeners setup process finished.");
         }
-
         // Listeners for message modal send button and text input are now set up in chat_event_listeners.js
         // because they depend on chatSessionHandler which in turn might use chatOrchestrator methods.
         // This avoids direct DOM manipulation for these from app.js.
@@ -305,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
         console.log("app.js: Global modal button listeners setup process finished.");
-    }
+      
 
     // Initialize core managers in dependency order
     console.log("app.js: Initializing core managers (after critical checks)...");
