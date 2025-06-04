@@ -9,7 +9,7 @@ window.listRenderer = (() => {
         viewManager: window.viewManager
     });
 
-    function createListItemHTML(itemData, itemTypeContext) {
+     function createListItemHTML(itemData, itemTypeContext) {
         const { polyglotHelpers, activityManager, flagLoader } = getDeps();
         if (!itemData || !polyglotHelpers || !activityManager || !flagLoader) {
             console.warn(`createListItemHTML: Missing itemData or dependencies for context '${itemTypeContext}'. Data:`, itemData);
@@ -24,39 +24,59 @@ window.listRenderer = (() => {
         try {
             if (itemTypeContext === 'activeChat' && itemData.isGroup) {
                 name = itemData.name || "Unnamed Group";
-                avatarHtml = `<div class="list-item-avatar group-avatar-icon"><i class="fas fa-users"></i></div>`;
-                const lastMsg = itemData.messages?.[0]; // We expect messages to be an array with one item
+
+                // --- START AVATAR FIX FOR ACTIVE GROUP CHATS ---
+                // This logic is copied and adapted from your 'groupDiscovery' case
+                if (itemData.groupPhotoUrl) {
+                    avatarHtml = `<img src="${polyglotHelpers.sanitizeTextForDisplay(itemData.groupPhotoUrl)}" alt="${polyglotHelpers.sanitizeTextForDisplay(name)}" class="list-item-avatar group-photo" onerror="this.src='images/placeholder_group_avatar.png'">`;
+                } else if (itemData.language) {
+                    const langDef = (window.polyglotFilterLanguages || []).find(l => l.name === itemData.language || l.value === itemData.language);
+                    const langSub = typeof itemData.language === 'string' ? itemData.language.substring(0, 2).toLowerCase() : '';
+                    const flagCodeToUse = langDef?.flagCode || langSub || 'xx';
+                    
+                    if (flagLoader && typeof flagLoader.getFlagUrl === 'function' && flagCodeToUse && flagCodeToUse !== 'xx') {
+                        // You might want a smaller class for flags in this list, e.g., 'lang-flag-sm'
+                        // For now, using 'lang-flag' which might be the same as groupDiscovery.
+                        avatarHtml = `<img src="${flagLoader.getFlagUrl(flagCodeToUse)}" alt="${polyglotHelpers.sanitizeTextForDisplay(itemData.language)} flag" class="list-item-avatar lang-flag" onerror="this.src='${flagLoader.getFlagUrl('globe')}'">`;
+                    } else {
+                        avatarHtml = `<div class="list-item-avatar group-avatar-icon"><i class="fas fa-users"></i></div>`;
+                    }
+                } else {
+                    avatarHtml = `<div class="list-item-avatar group-avatar-icon"><i class="fas fa-users"></i></div>`;
+                }
+                // --- END AVATAR FIX ---
+
+                const lastMsg = itemData.messages?.[0]; // Assuming messages[0] is the latest for preview
                 let plainPreview = "";
                 if (lastMsg && typeof lastMsg.text === 'string' && typeof lastMsg.speakerName === 'string') {
-                    let speakerNameForDisplay = lastMsg.speakerName || "System"; // Default if speakerName is empty
+                    let speakerNameForDisplay = lastMsg.speakerName || "System";
                     if (lastMsg.speakerId === "user_player") speakerNameForDisplay = "You";
-
                     let textPreview = lastMsg.text;
                     plainPreview = `${speakerNameForDisplay}: ${textPreview}`;
                     plainPreview = plainPreview.length > 25 ? `${plainPreview.substring(0, 22)}...` : plainPreview;
                 } else {
                     plainPreview = "No messages yet in group.";
-                    console.warn("ListRenderer: Group item has no lastMsg or invalid lastMsg structure:", itemData);
+                    // console.warn("ListRenderer: Group item has no lastMsg or invalid lastMsg structure:", itemData); // Keep this if useful
                 }
 
                 if (itemData.lastActivity) {
                     subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span> <span class="list-item-timestamp">${polyglotHelpers.formatRelativeTimestamp(itemData.lastActivity)}</span>`;
                 } else {
-                    subTextOutput = polyglotHelpers.sanitizeTextForDisplay(plainPreview);
+                    // Ensure consistency for styling even if no timestamp
+                    subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span>`;
                 }
                 itemClass = 'chat-list-item group-chat-list-item';
                 if (itemData.id) dataIdAttr = `data-group-id="${polyglotHelpers.sanitizeTextForDisplay(itemData.id)}"`;
 
-
             } else if (itemTypeContext === 'activeChat' && !itemData.isGroup) {
+                // ... (your existing 1-on-1 active chat logic) ...
+                // This part seemed correct for 1-on-1 avatars.
                 const connector = itemData.connector || itemData;
                 if (!connector || !connector.id) {
-                     console.warn(`createListItemHTML: 1-on-1 activeChat item missing connector or connector.id. Data:`, itemData);
-                     return '<div class="list-item-base error-item">Error: Chat item data invalid</div>';
+                    console.warn(`createListItemHTML: 1-on-1 activeChat item missing connector or connector.id. Data:`, itemData);
+                    return '<div class="list-item-base error-item">Error: Chat item data invalid</div>';
                 }
                 name = connector.profileName || connector.name || "Unknown Contact";
-                // CORRECTED PATH: connector.avatarModern is already relative to root.
-                // Fallback also relative to root.
                 avatarHtml = `<img src="${connector.avatarModern || 'images/placeholder_avatar.png'}" alt="${polyglotHelpers.sanitizeTextForDisplay(name)}" class="list-item-avatar" onerror="this.src='images/placeholder_avatar.png'">`;
                 const lastMsg = itemData.messages?.[itemData.messages.length - 1];
                 let plainPreview = "";
@@ -71,50 +91,50 @@ window.listRenderer = (() => {
                 if (itemData.lastActivity) {
                     subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span> <span class="list-item-timestamp">${polyglotHelpers.formatRelativeTimestamp(itemData.lastActivity)}</span>`;
                 } else {
-                    subTextOutput = polyglotHelpers.sanitizeTextForDisplay(plainPreview);
+                    subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span>`;
                 }
                 const isActive = activityManager.isConnectorActive(connector);
                 statusOrActionHtml = `<span class="chat-list-item-status ${isActive ? 'active' : ''}" title="${isActive ? 'Active' : 'Inactive'}"></span>`;
                 itemClass = 'chat-list-item';
                 dataIdAttr = `data-connector-id="${polyglotHelpers.sanitizeTextForDisplay(connector.id)}"`;
 
-            } else if (itemTypeContext === 'summary') {
-                name = itemData.connectorName || "Session";
 
-                let connectorAvatar = 'images/placeholder_avatar.png'; // Default
-                // Logic to fetch connector avatar using connectorId
+            } else if (itemTypeContext === 'summary') {
+                // ... (your existing summary logic - this already includes time) ...
+                name = itemData.connectorName || "Session";
+                let connectorAvatar = 'images/placeholder_avatar.png';
                 if (itemData.connectorId && window.polyglotConnectors) {
                     const connector = window.polyglotConnectors.find(c => c.id === itemData.connectorId);
-                    if (connector && connector.avatarModern) {
-                        connectorAvatar = connector.avatarModern; // Use modern avatar path
-                    } else if (connector) {
-                        console.warn(`ListRenderer: Connector ${itemData.connectorId} found but missing avatarModern.`);
-                    } else {
-                        console.warn(`ListRenderer: Connector not found for ID ${itemData.connectorId} in summary list.`);
-                    }
-                } else if (!itemData.connectorId) {
-                    console.warn("ListRenderer: itemData for summary missing connectorId.");
+                    if (connector && connector.avatarModern) connectorAvatar = connector.avatarModern;
                 }
-
                 avatarHtml = `<img src="${connectorAvatar}" alt="${polyglotHelpers.sanitizeTextForDisplay(name)}" class="list-item-avatar" onerror="this.src='images/placeholder_avatar.png'">`;
-                let summaryDetails = `Date: ${itemData.date || 'N/A'}`;
-                if (itemData.duration) summaryDetails += `, ${itemData.duration}`;
-                subTextOutput = polyglotHelpers.sanitizeTextForDisplay(summaryDetails.substring(0, 40) + (summaryDetails.length > 40 ? '...' : ''));
+                let datePart = itemData.date || 'N/A';
+                let timePart = '';
+                if (itemData.startTimeISO) {
+                    try {
+                        const startDate = new Date(itemData.startTimeISO);
+                        datePart = startDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric'});
+                        timePart = startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit'});
+                    } catch (e) { /* warn */ }
+                }
+                let detailsHtml = `<span class="summary-item-date">${polyglotHelpers.sanitizeTextForDisplay(datePart)}</span>`;
+                if (timePart) detailsHtml += `<span class="summary-item-time">${polyglotHelpers.sanitizeTextForDisplay(timePart)}</span>`;
+                if (itemData.duration) detailsHtml += `<span class="summary-item-duration">(${polyglotHelpers.sanitizeTextForDisplay(itemData.duration)})</span>`;
+                subTextOutput = detailsHtml;
                 itemClass = 'summary-list-item';
                 if (itemData.sessionId) dataIdAttr = `data-session-id="${polyglotHelpers.sanitizeTextForDisplay(itemData.sessionId)}"`;
 
 
             } else if (itemTypeContext === 'groupDiscovery') {
-                // ... (paths here 'images/groups/...' and 'images/placeholder_group_avatar.png' need to be correct) ...
-                // ... (flagLoader.getFlagUrl() relies on flagcdn.js and 'images/flags/unknown.png') ...
-                name = itemData.name || "Unnamed Group";
-                if (itemData.groupPhotoUrl) { // e.g., "images/groups/french_club.png"
+                // ... (your existing group discovery logic - this is the source for avatar fix) ...
+                 name = itemData.name || "Unnamed Group";
+                if (itemData.groupPhotoUrl) {
                     avatarHtml = `<img src="${polyglotHelpers.sanitizeTextForDisplay(itemData.groupPhotoUrl)}" alt="${polyglotHelpers.sanitizeTextForDisplay(name)}" class="list-item-avatar group-photo large-group-photo" onerror="this.src='images/placeholder_group_avatar.png'">`;
                 } else if (itemData.language) {
                     const langDef = (window.polyglotFilterLanguages || []).find(l => l.name === itemData.language || l.value === itemData.language);
-                    const flagCodeToUse = langDef?.flagCode || itemData.language.substring(0, 2).toLowerCase() || 'xx';
-                    if (flagCodeToUse !== 'xx') {
-                        // flagLoader.getFlagUrl('globe') should use FALLBACK_FLAG_URL from flagcdn.js which is 'images/flags/unknown.png'
+                     const langSub = typeof itemData.language === 'string' ? itemData.language.substring(0, 2).toLowerCase() : '';
+                    const flagCodeToUse = langDef?.flagCode || langSub || 'xx';
+                    if (flagCodeToUse !== 'xx' && flagLoader?.getFlagUrl) {
                         avatarHtml = `<img src="${flagLoader.getFlagUrl(flagCodeToUse)}" alt="${polyglotHelpers.sanitizeTextForDisplay(itemData.language)} flag" class="lang-flag lang-flag-lg" onerror="this.src='${flagLoader.getFlagUrl('globe')}'">`;
                     } else {
                         avatarHtml = `<div class="list-item-avatar group-avatar-icon large-group-icon"><i class="fas fa-users"></i></div>`;
@@ -122,20 +142,19 @@ window.listRenderer = (() => {
                 } else {
                     avatarHtml = `<div class="list-item-avatar group-avatar-icon large-group-icon"><i class="fas fa-users"></i></div>`;
                 }
-
                 let plainDescription = `${itemData.language || 'N/A'} - ${itemData.description ? itemData.description.substring(0, 70) + (itemData.description.length > 70 ? '...' : '') : 'Chat about various topics!'}`;
-                subTextOutput = polyglotHelpers.sanitizeTextForDisplay(plainDescription);
+                subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainDescription)}</span>`;
                 itemClass = 'group-discovery-list-item';
                 if (itemData.id) dataIdAttr = `data-group-id="${polyglotHelpers.sanitizeTextForDisplay(itemData.id)}"`;
-
                 if (itemData.isJoined) {
                     statusOrActionHtml = `<button class="view-group-chat-btn-list action-btn-sm secondary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(itemData.id)}"><i class="fas fa-comment-dots"></i> View Chat</button>`;
                 } else {
                     statusOrActionHtml = `<button class="join-group-btn-list action-btn-sm primary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(itemData.id)}"><i class="fas fa-plus-circle"></i> Join Group</button>`;
                 }
 
+
             } else {
-                 console.warn(`createListItemHTML: Unknown itemTypeContext: '${itemTypeContext}'. Data:`, itemData);
+                console.warn(`createListItemHTML: Unknown itemTypeContext: '${itemTypeContext}'. Data:`, itemData);
                 return `<div class="list-item-base error-item">Unknown item type: ${polyglotHelpers.sanitizeTextForDisplay(String(itemTypeContext))}</div>`;
             }
         } catch (error) {
@@ -154,7 +173,6 @@ window.listRenderer = (() => {
             </div>`;
     }
 
-    // ... (rest of renderList and public methods remain the same as the previous version you approved)
     function renderList(ulElement, emptyMsgElement, items, itemTypeContext, itemClickHandler) {
         const { viewManager } = getDeps();
         if (!ulElement) {
@@ -261,3 +279,4 @@ window.listRenderer = (() => {
         }
     };
 })();
+

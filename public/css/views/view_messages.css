@@ -214,3 +214,79 @@ body.dark-mode .embedded-chat-main-header {
     justify-content: center;
     max-width: 100%;
 }
+/* In your chat_bubbles.css or a general components.css */
+/* --- Alternative 1: Minimalist Line --- */
+/* --- Alternative 2: Subtle Pill / Tag --- */
+/* --- Alternative 3: Bordered Box with Left Accent --- */
+/* --- Alternative 1: Minimalist Line --- */
+.system-event-wrapper {
+    display: flex;
+    justify-content: center;
+    margin: 12px 0; /* A bit more vertical margin */
+    width: 100%;
+    padding: 0 15px; /* Padding on the wrapper to prevent text from touching edges */
+    box-sizing: border-box;
+}
+
+.call-event-message {
+    /* No background or border on the message itself */
+    color: var(--text-muted-color, #8a8d91);
+    font-size: 0.8em; /* Smaller font */
+    text-align: center;
+    max-width: 90%; 
+    display: flex;
+    flex-direction: row; /* Icon, text, details, actions all in one line if space allows */
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap; /* Allow wrapping if content is too long */
+    gap: 8px; /* Space between elements */
+}
+
+.call-event-main-text {
+    display: flex;
+    align-items: center;
+    gap: 5px; /* Space between icon and text */
+}
+
+.call-event-icon {
+    font-size: 0.9em; /* Slightly smaller icon */
+    /* Icon colors (same as your original) */
+}
+.call-event-icon.call-started { color: var(--success-color, #34a853); }
+.call-event-icon.call-ended { color: var(--info-color, #4285f4); }
+.call-event-icon.call-missed { color: var(--error-color, #ea4335); }
+.call-event-icon:not(.call-started):not(.call-ended):not(.call-missed) {
+    color: var(--text-muted-color, #8a8d91);
+}
+
+.call-event-details-container {
+    display: flex;
+    align-items: center; /* Keep details aligned with main text */
+    gap: 8px;
+    font-size: 1em; /* Same size as main event text for this style */
+    opacity: 0.9;
+}
+.call-event-details-container .call-event-detail.duration i {
+    margin-right: 3px;
+}
+
+.call-event-actions {
+    /* Actions will be inline with other elements due to flex-direction: row */
+}
+
+.call-event-action-btn {
+  padding: 3px 8px; /* Smaller button */
+  font-size: 0.9em; /* Match surrounding text */
+  background-color: transparent; /* Transparent button */
+  color: var(--primary-accent-color, #007bff); /* Link-like color */
+  border: 1px solid transparent; /* No border initially */
+  border-radius: 4px;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+.call-event-action-btn:hover {
+  color: var(--primary-accent-hover-color, #0056b3);
+  background-color: var(--background-color-hover-light, #e9ecef); /* Subtle hover background */
+  text-decoration: none;
+}

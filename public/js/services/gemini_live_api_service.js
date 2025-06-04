@@ -1,288 +1,302 @@
 // js/services/gemini_live_api_service.js
-// Manages interaction with the Gemini Live API using the @google/genai JS SDK.
+// Manages interaction with the Gemini Live API using @google/genai JS SDK.
+// Version: Regen v1.4 - Correct PCM MimeType
+
+console.log("gemini_live_api_service.js: Script execution STARTED (Regen v1.4).");
+
+if (window.geminiLiveApiService) {
+    console.warn("gemini_live_api_service.js: window.geminiLiveApiService ALREADY DEFINED.");
+}
 
 window.geminiLiveApiService = (() => {
     'use strict';
+    const SERVICE_VERSION = "Regen v1.4 - Correct PCM MimeType";
+    console.log(`gemini_live_api_service.js: IIFE (v${SERVICE_VERSION}) STARTING.`);
 
-    let genAIClient = null; // Instance of GoogleGenAI
-    let activeLiveSession = null; // Instance of the SDK's Session object from live.connect
+    let genAIClientInstance = null;
+    let activeLiveSDKSession = null;
+    let setupTimeoutId = null;
 
-    // Callbacks that will be set by session_manager/live_call_handler
+    let onOpenCallback = null;
     let onAiAudioChunkCallback = null;
     let onAiTextCallback = null;
     let onUserTranscriptionCallback = null;
     let onModelTranscriptionCallback = null;
+    let onAiInterruptedCallback = null;
     let onErrorCallback = null;
-    let onOpenCallback = null;
     let onCloseCallback = null;
 
-    // Helper to get or initialize the GenAI client
-    function getGenAIClient(apiKeyFromGlobal) {
-        if (!window.GoogleGenerativeAI && !window.GoogleGenAI) { // Check for both new and old SDK names
-            const errorMsg = "Gemini Live API Service: @google/genai SDK (GoogleGenerativeAI/GoogleGenAI class) not found on window.";
-            console.error(errorMsg);
-            throw new Error(errorMsg);
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
         }
-        const SDK = window.GoogleGenerativeAI || window.GoogleGenAI;
-
-
-        if (!genAIClient) {
-            if (!apiKeyFromGlobal || typeof apiKeyFromGlobal !== 'string' || apiKeyFromGlobal === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
-                const errorMsg = `getGenAIClient: Invalid or missing API key: '${apiKeyFromGlobal}'`;
-                console.error(errorMsg);
-                throw new Error(errorMsg);
-            }
-
-            try {
-                let clientOptions = { apiKey: apiKeyFromGlobal };
-                genAIClient = new SDK(clientOptions);
-
-                // The .live namespace might be directly on the client or require an apiVersion
-                if (genAIClient && !genAIClient.live) {
-                    console.warn("geminiLiveApiService: '.live' namespace not found on client. Attempting with apiVersion 'v1beta' or 'v1alpha'.");
-                    // Try common alpha/beta versions if needed, SDK docs are key here
-                    // This might change based on SDK evolution
-                    try {
-                        clientOptions.apiVersion = 'v1beta'; // Or 'v1alpha'
-                        let tempClient = new SDK(clientOptions);
-                        if (tempClient && tempClient.live) {
-                            genAIClient = tempClient;
-                            console.log("geminiLiveApiService: Successfully re-initialized client with apiVersion for .live support.");
-                        } else {
-                             console.warn("geminiLiveApiService: Retrying with apiVersion did not expose .live namespace.");
-                        }
-                    } catch (e_version) {
-                        console.warn("geminiLiveApiService: Error re-initializing client with specific apiVersion:", e_version);
-                    }
-                }
-
-
-                if (!genAIClient) throw new Error("Client initialization failed even after attempts.");
-                console.log("geminiLiveApiService: GoogleGenAI client initialized. Has .live namespace:", !!genAIClient.live);
-            } catch (e) {
-                console.error("CRITICAL: Failed to initialize GoogleGenAI client:", e);
-                throw e;
-            }
-        }
-        return genAIClient;
+        return window.btoa(binary);
     }
 
-    async function connect(modelName, sessionSetupConfig, callbacks) {
-        console.log("geminiLiveApiService: connect() called. Model:", modelName, "Config:", sessionSetupConfig);
-
-        if (activeLiveSession) {
-            console.warn("geminiLiveApiService: Active session exists. Closing old one before establishing new.");
-            await closeConnection("New connection requested"); // Ensure old session is fully closed
+    function getGenAIClientInternal() {
+        const funcName = "getGenAIClientInternal";
+        if (genAIClientInstance) return genAIClientInstance;
+        const SDKClass = window.GoogleGenerativeAI || window.GoogleGenAI;
+        if (!SDKClass) {
+            const errorMsg = `GeminiLiveService (${funcName}): GoogleGenerativeAI SDK class not found.`;
+            console.error(errorMsg); throw new Error(errorMsg);
         }
+        const apiKeyFromWindow = window.GEMINI_API_KEY;
+        if (!apiKeyFromWindow || typeof apiKeyFromWindow !== 'string' || apiKeyFromWindow.trim() === '' || apiKeyFromWindow.includes('YOUR_ACTUAL')) {
+            const errorMsg = `GeminiLiveService (${funcName}): Invalid API key. Value: "${String(apiKeyFromWindow).substring(0,10)}..."`;
+            console.error(errorMsg); throw new Error(errorMsg);
+        }
+        try {
+            genAIClientInstance = new SDKClass({ apiKey: apiKeyFromWindow });
+            if (!genAIClientInstance?.live) {
+                 console.warn(`GeminiLiveService (${funcName}): '.live' namespace NOT FOUND. Client:`, genAIClientInstance);
+            }
+            return genAIClientInstance;
+        } catch (e) {
+            console.error(`GeminiLiveService (${funcName}): CRITICAL error during SDK instantiation:`, e.message, e);
+            throw e;
+        }
+    }
 
-        const apiKeyToUse = window.GEMINI_API_KEY;
-        if (!apiKeyToUse || apiKeyToUse === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
-            console.error("API Key not configured for geminiLiveApiService.");
-            throw new Error("API Key not configured.");
+    async function connect(modelName, sessionSetupConfig, facadeCallbacks) {
+        const funcName = "connect";
+        console.log(`GeminiLiveService (${funcName} v${SERVICE_VERSION}): Connect. Model: '${modelName}'`);
+        if (activeLiveSDKSession) {
+            await closeConnection("New connection requested");
+        }
+        onOpenCallback = facadeCallbacks.onOpen;
+        onAiAudioChunkCallback = facadeCallbacks.onAiAudioChunk;
+        onAiTextCallback = facadeCallbacks.onAiText;
+        onUserTranscriptionCallback = facadeCallbacks.onUserTranscription;
+        onModelTranscriptionCallback = facadeCallbacks.onModelTranscription;
+        onAiInterruptedCallback = facadeCallbacks.onAiInterrupted;
+        onErrorCallback = facadeCallbacks.onError;
+        onCloseCallback = facadeCallbacks.onClose;
+
+        if (!modelName || !sessionSetupConfig || !onOpenCallback || !onErrorCallback || !onCloseCallback) {
+            const errorMsg = `GeminiLiveService (${funcName}): Invalid params.`;
+            console.error(errorMsg); onErrorCallback?.(new Error(errorMsg)); return false;
         }
 
         try {
-            const client = getGenAIClient(apiKeyToUse);
-
-            onAiAudioChunkCallback = callbacks.onAiAudioChunk;
-            onAiTextCallback = callbacks.onAiText;
-            onUserTranscriptionCallback = callbacks.onUserTranscription;
-            onModelTranscriptionCallback = callbacks.onModelTranscription;
-            onErrorCallback = callbacks.onError;
-            onOpenCallback = callbacks.onOpen;
-            onCloseCallback = callbacks.onClose;
-
-            if (!client.live || typeof client.live.connect !== 'function') {
-                const errorMsg = "SDK method client.live.connect is not available. Check SDK version and initialization.";
-                console.error("geminiLiveApiService:", errorMsg, "client.live details:", client.live);
-                throw new Error(errorMsg);
+            const client = getGenAIClientInternal();
+            if (!client || !client.live?.connect) {
+                const errorMsg = `GeminiLiveService (${funcName}): SDK client or 'client.live.connect' UNAVAILABLE.`;
+                console.error(errorMsg, "Client:", client); throw new Error(errorMsg);
             }
-
-            console.log("geminiLiveApiService: Calling client.live.connect...");
-
-            activeLiveSession = await client.live.connect({
+            activeLiveSDKSession = await client.live.connect({
                 model: modelName,
                 callbacks: {
                     onopen: () => {
-                        console.log('geminiLiveApiService: SDK onopen - WebSocket connection established.');
-                        // Note: The SDK's onopen doesn't mean setup is complete. Wait for `message.setupComplete`.
+                        console.log(`GeminiLiveService (${funcName}): SDK onopen. Waiting for setupComplete...`);
+                        if (setupTimeoutId) clearTimeout(setupTimeoutId);
+                        setupTimeoutId = setTimeout(() => {
+                            console.warn(`GeminiLiveService (${funcName}): Timeout waiting for setupComplete.`);
+                            activeLiveSDKSession?.close?.().catch(err => console.error("Error closing on timeout:", err));
+                            if (onErrorCallback) onErrorCallback(new Error("Live API setup timeout."));
+                        }, 25000);
                     },
                     onmessage: (message) => {
-                        // console.debug("geminiLiveApiService: SDK onmessage received:", JSON.stringify(message).substring(0, 300) + "...");
-                        if (message.error && onErrorCallback) {
-                            console.error("geminiLiveApiService: Error message from stream:", message.error);
-                            onErrorCallback(new Error(message.error.message || "Live API error in stream message"));
-                        } else if (message.setupComplete) {
-                            console.log("geminiLiveApiService: SDK onmessage - SetupComplete received from server. Calling onOpenCallback.");
-                            if (onOpenCallback) onOpenCallback(); // Signal our handler that session is truly ready
-                        } else if (message.serverContent) {
+                        if (message.error) {
+                            console.error(`GeminiLiveService (${funcName}): SDK message error:`, message.error);
+                            if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+                            onErrorCallback?.(new Error(message.error.message || `Live API stream error: ${message.error.code || 'Unknown'}`));
+                            return;
+                        }
+                        if (message.setupComplete) {
+                            if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+                            console.log(`GeminiLiveService (${funcName}): SDK setupComplete. Triggering onOpenCallback.`);
+                            onOpenCallback?.();
+                        }
+                        if (message.serverContent) {
                             const sc = message.serverContent;
                             if (sc.modelTurn?.parts) {
                                 sc.modelTurn.parts.forEach(part => {
                                     if (part.text && onAiTextCallback) {
-                                        // console.log("geminiLiveApiService: AI Text Part:", part.text.substring(0, 50) + "...");
-                                        onAiTextCallback(part.text); // Pass the text chunk
-                                    }
-                                    // --- RESTORED AI AUDIO CHUNK HANDLING ---
+                                             console.log(`GeminiLiveService (onMessage): Received AI text part: "${part.text.substring(0,50)}..."`); // <<< ADD THIS LOG
+                                             onAiTextCallback(part.text);
+                                             }
                                     if (part.inlineData?.data && onAiAudioChunkCallback) {
                                         try {
                                             const byteString = atob(part.inlineData.data);
                                             const byteArray = new Uint8Array(byteString.length);
-                                            for (let i = 0; i < byteString.length; i++) {
-                                                byteArray[i] = byteString.charCodeAt(i);
-                                            }
-                                            // console.log("geminiLiveApiService: AI Audio Chunk (inlineData) size:", byteArray.buffer.byteLength);
-                                            onAiAudioChunkCallback(byteArray.buffer, part.inlineData.mimeType || "audio/mp3"); // Defaulting to mp3 as per TTS, but Live API might be PCM
-                                        } catch (e) {
-                                            console.error("Error decoding SDK audio data from inlineData:", e);
-                                        }
+                                            for (let i = 0; i < byteString.length; i++) byteArray[i] = byteString.charCodeAt(i);
+                                            onAiAudioChunkCallback(byteArray.buffer, part.inlineData.mimeType || "audio/mp3");
+                                        } catch (e) { console.error("Error decoding AI audio inlineData:", e); }
                                     } else if (part.blob && onAiAudioChunkCallback && typeof part.blob.arrayBuffer === 'function') {
-                                        part.blob.arrayBuffer().then(arrayBuffer => {
-                                            // console.log("geminiLiveApiService: AI Audio Chunk (blob) size:", arrayBuffer.byteLength);
-                                            onAiAudioChunkCallback(arrayBuffer, part.blob.type || "audio/mp3");
-                                        }).catch(e => console.error("Error getting ArrayBuffer from Blob:", e));
+                                        part.blob.arrayBuffer().then(buffer => onAiAudioChunkCallback(buffer, part.blob.type))
+                                            .catch(e => console.error("Error getting ArrayBuffer from AI audio Blob:", e));
                                     }
-                                    // --- END RESTORED AI AUDIO CHUNK HANDLING ---
                                 });
                             }
-                            if (sc.inputTranscription?.text && onUserTranscriptionCallback) {
-                                const userText = sc.inputTranscription.text;
-                                const isFinalUser = sc.inputTranscription.isFinal || false;
-                                // console.log(`geminiLiveApiService: User Transcription - Text: "${userText.substring(0,30)}...", IsFinal: ${isFinalUser}`);
-                                onUserTranscriptionCallback(userText, isFinalUser);
+                            if (sc.inputTranscription?.text !== undefined && onUserTranscriptionCallback) {
+                                onUserTranscriptionCallback(sc.inputTranscription.text, sc.inputTranscription.isFinal || false);
                             }
-                            if (sc.outputTranscription?.text && onModelTranscriptionCallback) {
-                                const modelText = sc.outputTranscription.text;
-                                const isFinalModel = sc.outputTranscription.isFinal || false;
-                                // console.log(`geminiLiveApiService: Model Transcription - Text: "${modelText.substring(0,30)}...", IsFinal: ${isFinalModel}`);
-                                onModelTranscriptionCallback(modelText, isFinalModel);
+                            if (sc.outputTranscription?.text !== undefined && onModelTranscriptionCallback) {
+                                onModelTranscriptionCallback(sc.outputTranscription.text, sc.outputTranscription.isFinal || false);
+                            }
+                            if (sc.interrupted === true && onAiInterruptedCallback) {
+                                onAiInterruptedCallback();
                             }
                         }
+                         console.log(`GeminiLiveService (RAW MESSAGE v1.4_OTF): `, JSON.stringify(message).substring(0, 700) + (JSON.stringify(message).length > 700 ? "..." : ""));
+
+                if (message.error) { /* ... error handling ... */ return; }
+                if (message.setupComplete) { /* ... setupComplete handling ... onOpenCallback() ... */ }
+
+                if (message.serverContent) {
+                    const sc = message.serverContent;
+
+                    // 1. PRIORITIZE outputTranscription for AI's spoken text
+                    if (sc.outputTranscription?.text !== undefined && onModelTranscriptionCallback) {
+                        console.log(`GeminiLiveService (onMessage): ----> Calling onModelTranscriptionCallback with (outputTranscription): "${sc.outputTranscription.text.substring(0,50)}...", Final: ${sc.outputTranscription.isFinal}`);
+                        onModelTranscriptionCallback(sc.outputTranscription.text, sc.outputTranscription.isFinal || false);
+                        // If outputTranscription is the source of AI speech text,
+                        // do we still need to process modelTurn.parts for text? Maybe not for this use case.
+                    }
+
+                    // 2. Process modelTurn for AUDIO and potentially other non-speech text parts
+                    if (sc.modelTurn?.parts) {
+                        sc.modelTurn.parts.forEach(part => {
+                            // Check for TEXT parts in modelTurn (might be for non-spoken UI text or if outputTranscription isn't used/available)
+                            if (part.text && onAiTextCallback) {
+                                 console.log(`GeminiLiveService (onMessage): Received AI modelTurn part.text: "${part.text.substring(0,50)}..." -> Calling onAiTextCallback.`);
+                                 onAiTextCallback(part.text);
+                                 // Note: If outputTranscription is also providing this, you might get duplicates.
+                                 // Decide which one is the source of truth for AI *spoken* text.
+                            }
+                            // Audio processing
+                            if (part.inlineData?.data && onAiAudioChunkCallback) { /* ... as before ... */ }
+                            else if (part.blob && onAiAudioChunkCallback) { /* ... as before ... */ }
+                        });
+                    }
+
+                    // 3. User's speech transcription
+                    if (sc.inputTranscription?.text !== undefined && onUserTranscriptionCallback) {
+                        // console.log(`GeminiLiveService (onMessage): ----> Calling onUserTranscriptionCallback with: "${sc.inputTranscription.text.substring(0,50)}..."`);
+                        onUserTranscriptionCallback(sc.inputTranscription.text, sc.inputTranscription.isFinal || false);
+                    }
+
+                    // 4. Interruption
+                    if (sc.interrupted === true && onAiInterruptedCallback) {
+                        console.log("GeminiLiveService (onMessage): AI INTERRUPTED signal. Calling onAiInterruptedCallback.");
+                        onAiInterruptedCallback();
+                    }
+                }
                     },
                     onerror: (errorEvent) => {
-                        console.error('GEMINI LIVE SDK ONERROR EVENT Raw:', errorEvent);
-                        console.error('GEMINI LIVE SDK ONERROR EVENT Stringified:', JSON.stringify(errorEvent, Object.getOwnPropertyNames(errorEvent)));
-                        let errorMessage = "Live API WebSocket error.";
-                        if (errorEvent && errorEvent.message) {
-                            errorMessage = errorEvent.message;
-                        } else if (errorEvent && typeof errorEvent.code === 'number') {
-                            errorMessage = `WebSocket error. Code: ${errorEvent.code}, Reason: ${errorEvent.reason || 'N/A'}`;
-                        } else if (errorEvent && typeof errorEvent.type === 'string') {
-                            errorMessage = `WebSocket error event: ${errorEvent.type}`;
-                        }
-                        console.error('geminiLiveApiService: SDK onerror callback processed:', errorMessage);
-                        if (onErrorCallback) onErrorCallback(new Error(errorMessage));
-                        activeLiveSession = null;
+                        if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+                        console.error(`GeminiLiveService (${funcName}): SDK ONERROR EVENT:`, errorEvent);
+                        onErrorCallback?.(new Error(errorEvent.message || `WebSocket error: ${errorEvent.code || 'Unknown'}`));
+                        activeLiveSDKSession = null;
                     },
                     onclose: (closeEvent) => {
-                        console.log('geminiLiveApiService: SDK onclose - WebSocket closed. Reason:', closeEvent?.reason, "Code:", closeEvent?.code, "WasClean:", closeEvent?.wasClean);
-                        if (onCloseCallback) onCloseCallback(closeEvent?.wasClean, closeEvent?.code, closeEvent?.reason);
-                        activeLiveSession = null;
+                        if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+                        console.error(`GeminiLiveService (${funcName}): SDK ONCLOSE EVENT. Clean: ${closeEvent?.wasClean}, Code: ${closeEvent?.code}, Reason: "${closeEvent?.reason}"`, closeEvent);
+                        onCloseCallback?.(closeEvent?.wasClean, closeEvent?.code, closeEvent?.reason);
+                        activeLiveSDKSession = null;
                     }
                 },
-                config: sessionSetupConfig // This is the SessionSetupConfig from live_call_handler
+                config: sessionSetupConfig
             });
-
-            console.log("geminiLiveApiService: client.live.connect call awaited. SDK Session object:", activeLiveSession);
-            if (!activeLiveSession) {
-                throw new Error("client.live.connect did not return a session object or resolved falsy.");
-            }
-            // Note: Returning activeLiveSession might not be directly useful to the caller if all interaction is via callbacks and send methods.
-            // The main thing is that activeLiveSession is now set for other functions in this service.
-            return true; // Indicate connection process was initiated
-
+            if (!activeLiveSDKSession) throw new Error("client.live.connect returned falsy.");
+            console.log(`GeminiLiveService (${funcName}): Connection init with SDK. Waiting setupComplete.`);
+            return true;
         } catch (err) {
-            console.error("geminiLiveApiService: Error in connect function:", err.message, err.stack);
-            activeLiveSession = null;
-            if (onErrorCallback) onErrorCallback(err);
-            throw err; // Re-throw to be caught by live_call_handler
+            if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+            console.error(`GeminiLiveService (${funcName}): CRITICAL error in connect try block:`, err.message, err);
+            activeLiveSDKSession = null; onErrorCallback?.(err); return false;
         }
     }
 
     async function sendClientText(text) {
-        if (!activeLiveSession) {
-            console.warn("geminiLiveApiService: sendClientText - No active SDK session.");
-            if (onErrorCallback) onErrorCallback(new Error("Live session not active for sending text."));
-            return;
-        }
-        if (typeof activeLiveSession.sendClientContent !== 'function') {
-            console.error("geminiLiveApiService: sendClientText - activeLiveSession.sendClientContent is not a function.");
-            if (onErrorCallback) onErrorCallback(new Error("Live session misconfigured for sending text."));
-            return;
+        const funcName = "sendClientText";
+        if (!activeLiveSDKSession?.sendClientContent) {
+            onErrorCallback?.(new Error("Cannot send text: Session/method unavailable.")); return;
         }
         try {
-            console.log("geminiLiveApiService: Sending client text via SDK session:", text.substring(0, 50) + "...");
-            await activeLiveSession.sendClientContent({
+            await activeLiveSDKSession.sendClientContent({
                 turns: [{ role: "user", parts: [{ text: text }] }]
             });
         } catch (err) {
-            console.error("geminiLiveApiService: Error sending client text via SDK session:", err);
-            if (onErrorCallback) onErrorCallback(err);
+            console.error(`GeminiLiveService (${funcName}): Error sending text:`, err); onErrorCallback?.(err);
         }
     }
 
-    async function sendRealtimeAudio(audioChunkArrayBuffer, mimeType = "audio/pcm;rate=16000") {
-        if (!activeLiveSession) {
-            // console.warn("geminiLiveApiService: sendRealtimeAudio - No active SDK session.");
-            return; // Fail silently if no session, as this is high frequency
-        }
-        if (typeof activeLiveSession.sendRealtimeInput !== 'function') {
-            console.error("geminiLiveApiService: sendRealtimeAudio - activeLiveSession.sendRealtimeInput is not a function.");
-            return;
-        }
+    async function sendRealtimeAudio(audioChunkArrayBuffer) {
+        const funcName = "sendRealtimeAudio";
+        if (!activeLiveSDKSession?.sendRealtimeInput) return;
+        if (!audioChunkArrayBuffer?.byteLength) return;
+
+        // ***** CRITICAL FIX based on server error message *****
+        const audioMimeType = "audio/pcm;rate=16000";
+        // The server message indicated "channels=1" is not part of the supported mime type string here.
+        // It expects 'audio/pcm' or 'audio/pcm;rate=xxxxx'.
+        // We are sending 16kHz audio from live_api_mic_input.js (resampled).
+        // ***** END CRITICAL FIX *****
+
         try {
-            // Convert ArrayBuffer to base64 string
-            let binary = '';
-            const bytes = new Uint8Array(audioChunkArrayBuffer);
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            const base64Audio = btoa(binary);
-            const audioMediaPayload = { data: base64Audio, mimeType: mimeType };
-            await activeLiveSession.sendRealtimeInput({ media: audioMediaPayload });
+            const base64AudioData = arrayBufferToBase64(audioChunkArrayBuffer);
+            const audioBlobForSDK = {
+                data: base64AudioData,
+                mimeType: audioMimeType
+            };
+            // console.debug(`GeminiLiveService (${funcName}): Sending audio. Mime: ${audioMimeType}, Base64 Length: ${base64AudioData.length}`);
+            await activeLiveSDKSession.sendRealtimeInput({
+                audio: audioBlobForSDK
+            });
         } catch (err) {
-            console.error("geminiLiveApiService: Error sending realtime audio via SDK session:", err);
-            // Avoid calling onErrorCallback for every chunk failure to prevent flooding,
-            // unless it's a critical error. The main onerror for the session should catch bigger issues.
+            console.error(`GeminiLiveService (${funcName}): Error sending audio:`, err.message, err);
         }
     }
 
     async function sendAudioStreamEndSignal() {
-        if (!activeLiveSession || typeof activeLiveSession.sendRealtimeInput !== 'function') {
-            console.warn("geminiLiveApiService: sendAudioStreamEndSignal - No active session or method unavailable.");
-            return;
-        }
+        const funcName = "sendAudioStreamEndSignal";
+        if (!activeLiveSDKSession?.sendRealtimeInput) return;
         try {
-            console.log("geminiLiveApiService: Sending audioStreamEnd signal via SDK session.");
-            await activeLiveSession.sendRealtimeInput({ audioStreamEnd: true });
+            await activeLiveSDKSession.sendRealtimeInput({ audioStreamEnd: true });
         } catch (err) {
-            console.error("geminiLiveApiService: Error sending audioStreamEnd signal:", err);
-            if (onErrorCallback) onErrorCallback(err);
+            console.error(`GeminiLiveService (${funcName}): Error sending audioStreamEnd:`, err); onErrorCallback?.(err);
         }
     }
 
-    function closeConnection(reason = "Client session ended") {
-        console.log("geminiLiveApiService: Attempting to close Live API session via SDK. Current session active:", !!activeLiveSession);
-        if (activeLiveSession && typeof activeLiveSession.close === 'function') {
+    async function closeConnection(reason = "Client request") {
+        const funcName = "closeConnection";
+        console.log(`GeminiLiveService (${funcName} v${SERVICE_VERSION}): Closing. Reason: ${reason}. Session: ${!!activeLiveSDKSession}`);
+        if (setupTimeoutId) { clearTimeout(setupTimeoutId); setupTimeoutId = null; }
+        if (activeLiveSDKSession?.close) {
             try {
-                activeLiveSession.close(); // SDK's close method
-                console.log("geminiLiveApiService: SDK session close() called.");
+                await activeLiveSDKSession.close();
             } catch (err) {
-                console.error("geminiLiveApiService: Error during SDK session close():", err);
+                console.error(`GeminiLiveService (${funcName}): Error during SDK session.close():`, err);
+                if (activeLiveSDKSession) {
+                    onCloseCallback?.(false, err.code || 0, err.message || "Error closing session.");
+                    activeLiveSDKSession = null; 
+                }
             }
-        } else if (activeLiveSession) {
-            console.warn("geminiLiveApiService: activeLiveSession exists but .close is not a function. Forcing null.");
+        } else if (activeLiveSDKSession) {
+            activeLiveSDKSession = null; 
+            onCloseCallback?.(false, 0, "Session lacked .close method.");
         }
-        activeLiveSession = null; // Ensure it's nulled out
+        if (!activeLiveSDKSession) {
+            onOpenCallback = null; onAiAudioChunkCallback = null; onAiTextCallback = null;
+            onUserTranscriptionCallback = null; onModelTranscriptionCallback = null;
+            onAiInterruptedCallback = null; onErrorCallback = null; onCloseCallback = null;
+        }
     }
 
-    console.log("services/gemini_live_api_service.js loaded and AI audio chunk handling restored.");
+    console.log(`gemini_live_api_service.js (v${SERVICE_VERSION}): IIFE FINISHED.`);
     return {
-        connect,
-        sendClientText,
-        sendRealtimeAudio,
-        sendAudioStreamEndSignal,
-        closeConnection
+        connect, sendClientText, sendRealtimeAudio, sendAudioStreamEndSignal, closeConnection
     };
 })();
+
+if (window.geminiLiveApiService?.connect) {
+    console.log(`gemini_live_api_service.js (Regen v1.4): SUCCESSFULLY assigned to window.`);
+} else {
+    console.error(`gemini_live_api_service.js (Regen v1.4): CRITICAL ERROR - not correctly formed.`);
+}
+console.log("gemini_live_api_service.js: Script execution FINISHED (Regen v1.4).");

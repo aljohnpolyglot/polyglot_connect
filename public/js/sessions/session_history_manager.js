@@ -66,41 +66,115 @@ window.sessionHistoryManager = (() => {
         return session;
     }
 
-    function downloadTranscript(sessionId) {
-        const { polyglotHelpers } = getDeps();
-        const sessionData = getSessionById(sessionId);
-        if (!sessionData?.rawTranscript || !polyglotHelpers) {
-            alert("No transcript data available for this session or helper utilities missing.");
-            console.warn("sessionHistoryManager: Transcript download failed for session:", sessionId);
-            return;
-        }
+ function downloadTranscript(sessionId) {
+    const functionName = "downloadTranscript";
+    console.log(`sessionHistoryManager (${functionName}): Attempting to download transcript for session ID: ${sessionId}`);
+    
+    // FIX: Use the getSessionById function which accesses the in-memory 'completedSessions'
+    const session = getSessionById(sessionId); 
 
-        let transcriptText = `Session with ${polyglotHelpers.sanitizeTextForDisplay(sessionData.connectorName)} on ${polyglotHelpers.sanitizeTextForDisplay(sessionData.date)}\n`;
-        transcriptText += `Type: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.sessionType || 'N/A')}\n`;
-        transcriptText += `Duration: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.duration)}\n\n`;
-        transcriptText += "--- Conversation Transcript ---\n";
-        sessionData.rawTranscript.forEach(msg => {
-            const speaker = msg.sender.includes('user') ? 'You' : polyglotHelpers.sanitizeTextForDisplay(sessionData.connectorName.split(' ')[0]);
-            const textContent = typeof msg.text === 'string' ? polyglotHelpers.sanitizeTextForDisplay(msg.text) : `[${polyglotHelpers.sanitizeTextForDisplay(msg.type || 'Non-text')}]`;
-            transcriptText += `${speaker}: ${textContent}\n`;
-        });
-        transcriptText += `\n--- AI Debrief ---\n`;
-        transcriptText += `Topics: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.topics?.join('; ') || 'N/A')}\n`;
-        transcriptText += `Vocabulary: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.vocabulary?.join('; ') || 'N/A')}\n`;
-        transcriptText += `Focus Areas: ${polyglotHelpers.sanitizeTextForDisplay(sessionData.focusAreas?.join('; ') || 'N/A')}\n`;
-
-        const blob = new Blob([transcriptText], { type: 'text/plain;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const safeConnectorName = polyglotHelpers.sanitizeTextForDisplay(sessionData.connectorName).replace(/\s+/g, '_');
-        const safeDate = polyglotHelpers.sanitizeTextForDisplay(sessionData.date).replace(/\//g, '-');
-        a.download = `PolyglotDebrief_${safeConnectorName}_${safeDate}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-        console.log("sessionHistoryManager: Transcript downloaded for session:", sessionId);
+    if (!session) {
+        console.error(`sessionHistoryManager (${functionName}): Session with ID ${sessionId} not found for download (from in-memory cache).`);
+        alert("Error: Could not find session data to download transcript.");
+        return;
     }
+
+    if (!session.rawTranscript || session.rawTranscript.length === 0) {
+        console.warn(`sessionHistoryManager (${functionName}): No raw transcript found for session ${sessionId}.`);
+        alert("No transcript data available for this session.");
+        return;
+    }
+
+    // --- Filename Generation ---
+    const connectorName = session.connectorName ? session.connectorName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'partner';
+    let timestampForFile = 'unknown_date';
+
+    if (session.startTimeISO) {
+        try {
+            const startDate = new Date(session.startTimeISO);
+            // Format: YYYYMMDD_HHMMSS
+            const year = startDate.getFullYear();
+            const month = (startDate.getMonth() + 1).toString().padStart(2, '0');
+            const day = startDate.getDate().toString().padStart(2, '0');
+            const hours = startDate.getHours().toString().padStart(2, '0');
+            const minutes = startDate.getMinutes().toString().padStart(2, '0');
+            const seconds = startDate.getSeconds().toString().padStart(2, '0');
+            timestampForFile = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+        } catch (e) {
+            console.warn(`sessionHistoryManager (${functionName}): Could not parse startTimeISO '${session.startTimeISO}' for filename. Using fallback.`);
+            // Fallback if startTimeISO is invalid, use current date/time or just the session ID part
+            const now = new Date();
+            timestampForFile = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+        }
+    } else if (session.date) { // Fallback to less precise date if startTimeISO is missing
+        timestampForFile = session.date.replace(/[^a-z0-9]/gi, '_');
+    }
+
+    const filename = `PolyglotConnect_Transcript_${connectorName}_${timestampForFile}.txt`;
+    // --- End Filename Generation ---
+
+    let transcriptContent = `Session with ${session.connectorName || 'Partner'} on ${session.date || 'Unknown Date'}\n`;
+    transcriptContent += `Type: ${session.sessionType || 'N/A'}\n`;
+    transcriptContent += `Duration: ${session.duration || 'N/A'}\n`;
+    if (session.startTimeISO) transcriptContent += `Started: ${new Date(session.startTimeISO).toLocaleString()}\n`;
+    if (session.endTimeISO) transcriptContent += `Ended: ${new Date(session.endTimeISO).toLocaleString()}\n`;
+    transcriptContent += `\n--- Conversation Transcript ---\n`;
+
+    // Use polyglotHelpers.formatTranscriptForLLM for a nice, readable format
+    // or create a simpler one here if preferred for raw download.
+    // For consistency, let's assume polyglotHelpers is available or make it a dependency.
+    const { polyglotHelpers } = window; // Or getDeps() if you have that structure here
+
+    if (polyglotHelpers && typeof polyglotHelpers.formatTranscriptForLLM === 'function') {
+        transcriptContent += polyglotHelpers.formatTranscriptForLLM(session.rawTranscript, session.connectorName, "You");
+    } else {
+        // Simpler fallback formatting if helper is not available
+        session.rawTranscript.forEach(turn => {
+            const speaker = turn.sender === 'user-audio-transcript' || turn.sender === 'user-typed' ? 'You' : (session.connectorName || 'Partner');
+            transcriptContent += `${speaker}: ${turn.text}\n`;
+        });
+    }
+
+    // Include AI Debrief if available and non-minimal
+    if (session.conversationSummary && !session.conversationSummary.toLowerCase().includes("too short") && !session.conversationSummary.toLowerCase().includes("error")) {
+        transcriptContent += "\n\n--- AI Debrief ---\n";
+        transcriptContent += `Summary: ${session.conversationSummary}\n`;
+        if (session.keyTopicsDiscussed && session.keyTopicsDiscussed.length > 0 && session.keyTopicsDiscussed[0] !== "N/A" && !session.keyTopicsDiscussed[0].toLowerCase().includes("error")) {
+            transcriptContent += `\nKey Topics: ${session.keyTopicsDiscussed.join(', ')}\n`;
+        }
+        if (session.newVocabularyAndPhrases && session.newVocabularyAndPhrases.length > 0) {
+            transcriptContent += "\nNew Vocabulary/Phrases:\n";
+            session.newVocabularyAndPhrases.forEach(vocab => {
+                transcriptContent += `  - ${vocab.term}: ${vocab.translation} (e.g., "${vocab.exampleSentence}")\n`;
+            });
+        }
+        if (session.areasForImprovement && session.areasForImprovement.length > 0) {
+            transcriptContent += "\nAreas for Improvement:\n";
+            session.areasForImprovement.forEach(area => {
+                transcriptContent += `  - ${area.areaType}: ${area.coachSuggestion} (Explanation: ${area.explanation || 'N/A'})\n`;
+            });
+        }
+        // Add other debrief sections as desired
+        if(session.overallEncouragement) {
+            transcriptContent += `\nCoach's Note: ${session.overallEncouragement}\n`;
+        }
+    }
+
+    try {
+        const blob = new Blob([transcriptContent], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        console.log(`sessionHistoryManager (${functionName}): Transcript '${filename}' download initiated.`);
+    } catch (e) {
+        console.error(`sessionHistoryManager (${functionName}): Error creating download link for transcript:`, e);
+        alert("Sorry, there was an error preparing the transcript for download.");
+    }
+}
 
     function updateSummaryListUI() {
         const { listRenderer, viewManager } = getDeps();

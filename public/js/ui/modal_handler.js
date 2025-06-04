@@ -148,9 +148,20 @@ levelDiv.textContent = levelText;
     }
 
     console.log("ui/modal_handler.js loaded.");
+
+    // ADD THIS FUNCTION inside the modalHandler IIFE, before the return statement
+
+    function isVisible(modalElement) {
+        if (!modalElement) return false;
+        // Check if it has the 'active' class and display is not 'none'
+        // Using getComputedStyle is more robust for checking actual display status
+        const style = window.getComputedStyle(modalElement);
+        return modalElement.classList.contains('active') && style.display !== 'none' && style.opacity !== '0';
+    }
     return {
         open,
         close,
+        isVisible, // <<< ADD THIS
         renderLanguageSection // Expose this for shell_controller
     };
 })();

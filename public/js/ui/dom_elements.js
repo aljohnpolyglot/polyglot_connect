@@ -100,6 +100,7 @@ window.domElements = {
     personaModalDirectCallBtn: document.getElementById('persona-modal-start-directcall-btn'),
 
     // Virtual Calling Screen Modal
+    ringtoneAudio: document.getElementById('ringtone-audio'), // <<< ADD THIS LINE
     virtualCallingScreen: document.getElementById('virtual-calling-screen'),
     callingAvatar: document.getElementById('calling-avatar'),
     callingName: document.getElementById('calling-name'),

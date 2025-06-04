@@ -3,10 +3,12 @@
 
 window.conversationManager = (() => {
     'use strict';
-
-    const getDeps = () => ({
-        polyglotHelpers: window.polyglotHelpers
-    });
+    const MODULE_VERSION = '1.0.0';
+    
+   const getDeps = () => ({
+    polyglotHelpers: window.polyglotHelpers,
+    chatOrchestrator: window.chatOrchestrator // Add this
+});
 
     let activeConversations = {}; // { connectorId: { connector, messages: [], lastActivity, geminiHistory: [] } }
     const MAX_GEMINI_HISTORY_TURNS = 10; // How many pairs of user/model turns to keep, besides system prompts
@@ -49,6 +51,8 @@ window.conversationManager = (() => {
         getDeps().polyglotHelpers?.saveToLocalStorage(STORAGE_KEY, activeConversations);
         // console.log("ConversationManager: Conversations saved to localStorage.");
     }
+
+  
 
  function initializeGeminiHistory(historyArray, connector) {
     console.log(`ConversationManager: Initializing Gemini history for ${connector?.id} with STRICT voice emoji/parenthetical rules.`);
@@ -231,7 +235,7 @@ window.conversationManager = (() => {
         const isExplanationLangForTutor = (isTutorForPrimary || isStrongInPrimary) && explanationLanguage === strongLang;
 
         if (strongLang !== primaryLanguage && strongLang !== "English" && !isExplanationLangForTutor) {
-            const isNativeInStrongLang = connector.nativeLanguages.some(nl => nl.lang === strongLang);
+          const isNativeInStrongLang = connector.nativeLanguages?.some(nl => nl.lang === strongLang);
             languageInstructions += `You are also ${isNativeInStrongLang ? 'a native' : 'fluent'} speaker of ${strongLang}. If the user initiates conversation in ${strongLang}, or if a topic is very specific to ${strongLang} culture, you should comfortably switch to ${strongLang}. If the user wishes to continue in ${strongLang}, you may do so. However, if their primary goal is ${primaryLanguage}, gently offer to switch back to ${primaryLanguage} after a while. `;
         }
     });
@@ -462,16 +466,97 @@ window.conversationManager = (() => {
             isGroup: false
         }));
     }
+    function addSystemMessageToConversation(connectorId, systemMessageObject) {
+    const functionName = "addSystemMessageToConversation";
 
-    console.log("js/core/conversation_manager.js loaded with refined system prompt for conciseness and language handling.");
+    if (!connectorId || !systemMessageObject || typeof systemMessageObject.text !== 'string') {
+        console.warn(`ConvManager (${functionName}): Invalid parameters. ConnectorId: ${connectorId}, Message:`, systemMessageObject);
+        return false; // Indicate failure
+    }
+
+    const { polyglotHelpers } = getDeps(); // Get polyglotHelpers once at the top
+
+    const result = ensureConversationRecord(connectorId);
+    const actualConversation = result.conversation;
+
+    if (actualConversation) {
+        if (!polyglotHelpers || typeof polyglotHelpers.generateUUID !== 'function') {
+            console.error(`ConvManager (${functionName}): polyglotHelpers or generateUUID missing! Cannot create message ID.`);
+            // Decide if this is critical enough to stop, or generate a fallback ID differently
+        }
+        const messageId = polyglotHelpers?.generateUUID ? polyglotHelpers.generateUUID() : `sys_msg_${Date.now()}`;
+
+        actualConversation.messages.push({
+            id: messageId,
+            sender: systemMessageObject.sender || 'system',
+            text: systemMessageObject.text,
+            timestamp: systemMessageObject.timestamp || Date.now(),
+            type: systemMessageObject.type || 'system_event',
+            eventType: systemMessageObject.eventType || null,
+            duration: systemMessageObject.duration || null,
+            callSessionId: systemMessageObject.callSessionId || null
+        });
+
+        actualConversation.lastActivity = systemMessageObject.timestamp || Date.now();
+        saveConversationsToStorage(); // Persist the updated conversations object
+
+        // Notify orchestrator (if available)
+        const { chatOrchestrator } = getDeps(); // getDeps now includes chatOrchestrator from my previous fix
+        if (chatOrchestrator && typeof chatOrchestrator.notifyNewActivityInConversation === 'function') {
+            chatOrchestrator.notifyNewActivityInConversation(connectorId);
+        } else {
+            console.warn(`ConvManager (${functionName}): chatOrchestrator.notifyNewActivityInConversation not available.`);
+        }
+        return true; // Indicate success
+    } else { // This 'else' now correctly pairs with 'if (actualConversation)'
+        // This case should ideally not be hit if ensureConversationRecord is robust
+        console.error(`ConvManager (${functionName}): Conversation record for connectorId '${connectorId}' could not be ensured or found.`);
+        return false; // Indicate failure
+    }
+}
+    console.log(`js/core/conversation_manager.js (v${MODULE_VERSION}): IIFE FINISHED. Returning exports.`);
     return {
         initialize,
-        ensureConversationRecord,
-        markConversationActive, // Added new function
-        getConversation,
-        addMessageToConversation,
-        addModelResponseMessage,
         getActiveConversations,
-        saveConversationsToStorage
+        getConversationById: getConversation,   // ALIAS: Exports 'getConversation' as 'getConversationById'
+        addMessageToConversation,
+        ensureConversationRecord,
+        addSystemMessageToConversation,
+        markConversationActive,                 // Make sure this is defined if exported
+        addModelResponseMessage,                // Make sure this is defined if exported
+        
+        // For getGeminiHistoryForConnector and clearConversationHistory,
+        // you MUST define these functions if you export them.
+        // If they don't exist yet, either remove them from export or add stubs:
+        getGeminiHistoryForConnector: function(connectorId) {
+            console.warn("ConversationManager: getGeminiHistoryForConnector is a STUB and not fully implemented.");
+            const convo = activeConversations[connectorId];
+            return convo ? [...(convo.geminiHistory || [])] : [];
+        },
+        clearConversationHistory: function(connectorId) {
+            console.warn("ConversationManager: clearConversationHistory is a STUB and not fully implemented.");
+            if (activeConversations[connectorId]) {
+                activeConversations[connectorId].messages = [];
+                activeConversations[connectorId].geminiHistory = [];
+                initializeGeminiHistory(activeConversations[connectorId].geminiHistory, activeConversations[connectorId].connector);
+                activeConversations[connectorId].lastActivity = Date.now();
+                saveConversationsToStorage();
+                console.log(`ConversationManager: History cleared for ${connectorId}`);
+                // Notify if chat list needs update
+                 const { chatOrchestrator } = getDeps();
+                 chatOrchestrator?.notifyNewActivityInConversation?.(connectorId);
+            }
+        }
     };
-})();
+})(); // End of IIFE
+
+// Enhanced check at the end of the file
+if (window.conversationManager && 
+    typeof window.conversationManager.initialize === 'function' &&
+    typeof window.conversationManager.getActiveConversations === 'function' && // Check a keyFn used by orchestrator
+    typeof window.conversationManager.addSystemMessageToConversation === 'function') {
+    console.log("conversation_manager.js (v Corrected Exports): SUCCESSFULLY assigned and core methods verified.");
+} else {
+    console.error("conversation_manager.js (v Corrected Exports): CRITICAL ERROR - window.conversationManager IS UNDEFINED or core methods are missing.");
+}
+console.log("conversation_manager.js: Script execution FINISHED (v Corrected Exports).");

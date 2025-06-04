@@ -149,29 +149,61 @@ window.chatOrchestrator = (() => {
         return validCombined;
     }
     
+    // Inside chat_orchestrator.js
     function handleActiveChatItemClickInternal(itemData) {
-        const deps = getResolvedDeps(true); // Strict check for critical UI interaction
+        const deps = getResolvedDeps(true);
         if (!deps) {
-            console.error("ChatOrchestrator: handleActiveChatItemClickInternal - Cannot proceed, critical dependencies missing.");
+            console.error("ChatOrchestrator: handleActiveChatItemClickInternal - Missing deps.");
             return;
         }
-        const { groupManager, viewManager, chatSessionHandler } = deps;
-        // ... (rest of the function remains the same) ...
+        const { groupManager, viewManager, chatSessionHandler, chatUiManager } = deps; // Added chatUiManager
+
         console.log("ChatOrchestrator: handleActiveChatItemClickInternal. Item isGroup:", itemData?.isGroup, "ID:", itemData?.id);
         if (!itemData || !itemData.id) {
-            console.error("ChatOrchestrator: handleActiveChatItemClickInternal - itemData or itemData.id is missing!");
+            console.error("ChatOrchestrator: handleActiveChatItemClickInternal - itemData or itemData.id missing.");
             return;
         }
-        if (itemData.isGroup) {
-            groupManager.joinGroup?.(itemData.id);
-        } else {
-             if (viewManager?.getCurrentActiveTab() !== 'messages') {
-                viewManager.switchView?.('messages');
+
+         if (itemData.isGroup) {
+            console.log("ChatOrchestrator: Clicked on a GROUP item in active chats list:", itemData.id);
+            
+            // 1. Potentially hide the 1-on-1 embedded chat view if it's active
+            //    (This might be handled by groupManager or chatUiManager when showing group chat)
+            if (viewManager?.getCurrentActiveTab() === 'messages' && chatUiManager?.hideEmbeddedChatInterface) {
+                chatUiManager.hideEmbeddedChatInterface();
+                console.log("ChatOrchestrator: Hid embedded 1-on-1 chat interface.");
             }
-            if (chatSessionHandler?.openConversationInEmbeddedView && itemData.connector) {
-                chatSessionHandler.openConversationInEmbeddedView(itemData.connector);
+
+            // 2. Call groupManager.joinGroup. This function should now:
+            //    - Set the group as active.
+            //    - Show the specific group's chat UI.
+            //    - It ALREADY calls viewManager.setActiveRightSidebarPanel('messagesChatListPanel');
+            //    - It ALREADY calls chatOrchestrator.renderCombinedActiveChatsList();
+            if (groupManager?.joinGroup) {
+                groupManager.joinGroup(itemData.id); // Pass the group ID
+                console.log("ChatOrchestrator: Called groupManager.joinGroup for", itemData.id);
+
+                // 3. AFTER groupManager.joinGroup has configured the UI for the specific group,
+                //    tell viewManager to update the main navigation tab to "Groups".
+                //    This should NOT re-trigger the default behavior of the 'groups' tab (showing group list).
+                if (viewManager?.setActiveTabProgrammatically) { // Use the new method
+                    viewManager.setActiveTabProgrammatically('groups');
+                } else {
+                    // Fallback if the new method isn't implemented - this might show the group list view
+                    console.warn("ChatOrchestrator: viewManager.setActiveTabProgrammatically not found. Using switchView('groups') as fallback.");
+                    viewManager.switchView?.('groups');
+                }
             } else {
-                console.error("ChatOrchestrator: handleActiveChatItemClickInternal - chatSessionHandler.openConversationInEmbeddedView or itemData.connector not available. Connector:", itemData.connector);
+                console.error("ChatOrchestrator: groupManager.joinGroup method is missing!");
+            }
+
+        } else { // It's a 1-on-1 chat
+            console.log("ChatOrchestrator: Clicked on a 1-on-1 item in active chats list:", itemData.connector?.id);
+            // Your existing logic for 1-on-1 seems mostly fine, using initiateSession is good.
+            if (polyglotApp?.initiateSession && itemData.connector) {
+                polyglotApp.initiateSession(itemData.connector, 'message'); // 'message' type should switch to messages view and open convo
+            } else {
+                console.error("ChatOrchestrator: polyglotApp.initiateSession or itemData.connector not available for 1-on-1 chat.");
             }
         }
         console.log("ChatOrchestrator: handleActiveChatItemClickInternal - FINISHED for item:", itemData.id);
@@ -297,18 +329,17 @@ window.chatOrchestrator = (() => {
 
     console.log("chat_orchestrator.js: IIFE (module definition) FINISHED. Returning exported object.");
     return {
-        initialize, openConversation, openMessageModal, handleMessagesTabActive,
-        filterAndDisplayConnectors, renderCombinedActiveChatsList,
-        notifyNewActivityInConversation, getTextMessageHandler, getVoiceMemoHandler,
-        getCurrentEmbeddedChatTargetId, getCurrentModalMessageTarget
-    };
+    initialize,
+    openConversation,
+    openMessageModal,
+    handleMessagesTabActive,
+    filterAndDisplayConnectors,
+    renderCombinedActiveChatsList,
+    notifyNewActivityInConversation,
+    getTextMessageHandler, // These getters are fine
+    getVoiceMemoHandler,
+    getCurrentEmbeddedChatTargetId,
+    getCurrentModalMessageTarget
+    // Add any other methods defined in chat_orchestrator.js that need to be public
+};
 })();
-
-if (window.chatOrchestrator && typeof window.chatOrchestrator.initialize === 'function' && !(window.chatOrchestrator.initialize.toString().includes("Action aborted"))) {
-    console.log("chat_orchestrator.js: SUCCESSFULLY assigned to window.chatOrchestrator and it's NOT a dummy object.");
-} else if (window.chatOrchestrator) {
-    console.error("chat_orchestrator.js: ERROR - window.chatOrchestrator IS ASSIGNED, but it seems to be a DUMMY object (check for 'Action aborted' in its method logs) or initialize method is missing.", window.chatOrchestrator);
-} else {
-    console.error("chat_orchestrator.js: CRITICAL ERROR - window.chatOrchestrator IS UNDEFINED after IIFE execution.");
-}
-console.log("chat_orchestrator.js: Script execution FINISHED.");

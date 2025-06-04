@@ -51,7 +51,7 @@ window.chatSessionHandler = (() => {
         console.log("chat_session_handler.js: initialize() - FINISHED.");
     }
 
-    function openConversationInEmbeddedView(connectorOrId) {
+  function openConversationInEmbeddedView(connectorOrId) {
         console.log("chat_session_handler.js: openConversationInEmbeddedView() - START. Input:", connectorOrId);
         const {
             domElements, uiUpdater, chatViewManager, conversationManager,
@@ -98,31 +98,51 @@ window.chatSessionHandler = (() => {
         uiUpdater.clearEmbeddedChatLog();
         console.log("ChatSessionHandler: Embedded chat interface shown and log cleared.");
 
-        if (Array.isArray(convo.messages) && convo.messages.length > 0) {
-            console.log(`ChatSessionHandler: Populating ${convo.messages.length} messages into embedded chat log for ${targetId}.`);
-            convo.messages.forEach(msg => {
-                if (!msg) { console.warn("ChatSessionHandler: Null/undefined message in conversation for", targetId); return; }
-                const senderType = msg.sender?.startsWith('user') ? 'user' : 'connector';
-                const msgOptions = { 
-                    timestamp: msg.timestamp, 
-                    isThinking: msg.isThinking || false, 
-                    avatarUrl: senderType === 'connector' ? convo.connector.avatarModern : undefined, 
-                    senderName: senderType === 'connector' ? convo.connector.profileName : undefined 
-                };
-                if (msg.type === 'image' && msg.content_url) {
-                    uiUpdater.appendToEmbeddedChatLog(msg.text || "", senderType, { ...msgOptions, imageUrl: msg.content_url });
-                } else if (msg.text || msg.isThinking) {
-                    uiUpdater.appendToEmbeddedChatLog(msg.text || "", senderType, msgOptions);
-                }
-            });
+            if (Array.isArray(convo.messages) && convo.messages.length > 0) {
+        console.log(`ChatSessionHandler: Populating ${convo.messages.length} messages into embedded chat log for ${targetId}.`);
+        convo.messages.forEach(msg => {
+            if (!msg) { console.warn("ChatSessionHandler: Null/undefined message in conversation for", targetId); return; }
+            
+            let senderClass = msg.sender; 
+            if (msg.sender === 'user-voice-transcript') {
+                senderClass = 'user';
+            }
+
+            // Prepare options object to pass to uiUpdater
+            // This object will include all necessary details from the msg object
+            // Inside openConversationInEmbeddedView -> forEach loop
+        const msgOptions = { 
+            timestamp: msg.timestamp, 
+            type: msg.type,           
+            eventType: msg.eventType, 
+            duration: msg.duration,   
+            callSessionId: msg.callSessionId, // <<< ADD THIS LINE
+            senderName: (senderClass === 'connector') ? convo.connector.profileName : undefined,
+            avatarUrl: (senderClass === 'connector') ? convo.connector.avatarModern : undefined,
+            imageUrl: (msg.type === 'image' && msg.content_url) ? msg.content_url : undefined,
+            // Note: connectorId and connectorName for call_event types will be added by 
+            // uiUpdater's appendToEmbeddedChatLog based on the current chat context.
+        };
+
+            let textForDisplay = msg.text;
+            
+            uiUpdater.appendToEmbeddedChatLog(textForDisplay || "", senderClass, msgOptions);
+        });
         } else if (isNew) {
             console.log(`ChatSessionHandler: New embedded conversation with ${convo.connector.profileName}. No prior messages.`);
         }
 
-        if (uiUpdater?.scrollEmbeddedChatToBottom) {
+        if (uiUpdater && typeof uiUpdater.scrollEmbeddedChatToBottom === 'function') { // ADDED CHECK
             uiUpdater.scrollEmbeddedChatToBottom();
         } else {
-            console.warn("ChatSessionHandler: scrollEmbeddedChatToBottom function not found in uiUpdater.");
+            console.warn("ChatSessionHandler: uiUpdater.scrollEmbeddedChatToBottom function not found or uiUpdater itself is missing.");
+            // Fallback attempt if specific function is missing but main log element is known
+            if (domElements?.embeddedChatLog) {
+                console.log("ChatSessionHandler: Fallback scrolling embeddedChatLog directly.");
+                requestAnimationFrame(() => {
+                    domElements.embeddedChatLog.scrollTop = domElements.embeddedChatLog.scrollHeight;
+                });
+            }
         }
 
         if (domElements?.embeddedMessageTextInput) {
@@ -130,15 +150,14 @@ window.chatSessionHandler = (() => {
             domElements.embeddedMessageTextInput.focus();
         }
 
-        if (chatOrchestrator.renderCombinedActiveChatsList) {
+        if (chatOrchestrator?.renderCombinedActiveChatsList) { // Added null check for chatOrchestrator
             console.log("ChatSessionHandler: Calling chatOrchestrator.renderCombinedActiveChatsList after opening conversation.");
             chatOrchestrator.renderCombinedActiveChatsList();
         } else {
             console.warn("ChatSessionHandler: chatOrchestrator.renderCombinedActiveChatsList not found.");
         }
-        console.log("chat_session_handler.js: openConversationInEmbeddedView() - FINISHED for", targetId);
+        console.log("chat_session_handler.js: openConversationInEmbeddedView() - FINISHED for", typeof connectorOrId === 'string' ? connectorOrId : connectorOrId?.id);
     }
-
     function handleMessagesTabBecameActive() {
         console.log("chat_session_handler.js: handleMessagesTabBecameActive() - START.");
         const { conversationManager, chatActiveTargetManager, chatViewManager, listRenderer } = getDeps();
@@ -233,22 +252,32 @@ window.chatSessionHandler = (() => {
         console.log("ChatSessionHandler: Message modal header updated and log cleared.");
 
         if (Array.isArray(convo.messages) && convo.messages.length > 0) {
-            console.log(`ChatSessionHandler: Populating ${convo.messages.length} messages into modal chat log for ${connector.id}.`);
-            convo.messages.forEach(msg => {
-                if (!msg) { console.warn("ChatSessionHandler: Null/undefined message in modal conversation for", connector.id); return; }
-                const senderType = msg.sender?.startsWith('user') ? 'user' : 'connector';
-                const msgOptions = { 
-                    timestamp: msg.timestamp, 
-                    isThinking: msg.isThinking || false, 
-                    avatarUrl: senderType === 'connector' ? convo.connector.avatarModern : undefined, 
-                    senderName: senderType === 'connector' ? convo.connector.profileName : undefined 
-                };
-                if (msg.type === 'image' && msg.content_url) {
-                    uiUpdater.appendToMessageLogModal(msg.text || "", senderType, { ...msgOptions, imageUrl: msg.content_url });
-                } else if (msg.text || msg.isThinking) {
-                    uiUpdater.appendToMessageLogModal(msg.text || "", senderType, msgOptions);
-                }
-            });
+    console.log(`ChatSessionHandler: Populating ${convo.messages.length} messages into modal chat log for ${connector.id}.`);
+    convo.messages.forEach(msg => {
+        if (!msg) { console.warn("ChatSessionHandler: Null/undefined message in modal conversation for", connector.id); return; }
+
+        let senderClass = msg.sender;
+        if (msg.sender === 'user-voice-transcript') {
+            senderClass = 'user';
+        }
+
+        // Inside openMessageModalForConnector -> forEach loop
+        // Inside openMessageModalForConnector -> forEach loop
+        const msgOptions = { 
+            timestamp: msg.timestamp, 
+            type: msg.type,
+            eventType: msg.eventType,
+            duration: msg.duration,
+            callSessionId: msg.callSessionId, // <<< ADD THIS LINE
+            senderName: (senderClass === 'connector') ? convo.connector.profileName : undefined,
+            avatarUrl: (senderClass === 'connector') ? convo.connector.avatarModern : undefined,
+            imageUrl: (msg.type === 'image' && msg.content_url) ? msg.content_url : undefined,
+        };
+
+        let textForDisplay = msg.text;
+        
+        uiUpdater.appendToMessageLogModal(textForDisplay || "", senderClass, msgOptions);
+    });
         } else if (isNew) {
              console.log(`ChatSessionHandler: New modal conversation with ${convo.connector.profileName}.`);
         }
