@@ -4,7 +4,31 @@
 #summary-view .view-content {
     padding: var(--spacing-md); /* Add some padding around the summary content */
 }
+/* In your lists.css or a relevant CSS file */
+.summary-list-item .list-item-subtext {
+    display: flex; /* Arrange date, time, duration in a row */
+    flex-wrap: wrap; /* Allow wrapping if space is tight */
+    gap: 0.5em;     /* Space between items */
+    font-size: 0.85em; /* Adjust overall size of this subtext line */
+    color: var(--text-muted-color); /* Or your preferred color */
+    align-items: center; /* Vertically align items if they wrap */
+}
 
+.summary-list-item .summary-item-date {
+    font-size: 0.85em; /* Specific styling for date if needed */
+    color: var(--text-color-secondary); /* Example styling */
+}
+
+.summary-list-item .summary-item-time {
+    font-weight: bold; /* Specific styling for time if needed */
+    font-size: 0.85em; /* Consistent size with date */
+    color: var(--text-color-primary); /* Example styling */
+}
+
+.summary-list-item .summary-item-duration {
+    /* Specific styling for duration if needed */
+    font-style: italic;
+}
 /* Styles for when recap content is embedded directly into the summary view */
 .recap-modal-content-embedded {
     background-color: var(--bg-white);

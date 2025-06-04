@@ -1,209 +1,298 @@
 // js/services/ai_recap_service.js
-// Handles generation of session recaps using Groq/Llama or potentially other OpenAI-compatible providers.
+// Handles session recap generation using OpenAI-compatible APIs (Groq, TogetherAI).
+
+console.log("ai_recap_service.js: Script execution STARTED (Bulletproof Armor Version).");
+
+if (window.aiRecapService) {
+    console.warn("ai_recap_service.js: window.aiRecapService ALREADY DEFINED. This is unexpected.");
+}
 
 window.aiRecapService = (() => {
     'use strict';
+    console.log("ai_recap_service.js: IIFE (Bulletproof Armor Version) STARTING.");
 
-    // --- Robust Dependency Check ---
-    if (!window._openaiCompatibleApiCaller || !window._aiApiConstants) {
-        console.error("AI Recap Service: CRITICAL - Core API utilities (_openaiCompatibleApiCaller or _aiApiConstants) not found. Recap generation will fail or be non-functional.");
-        // Define a dummy function that will return a default error structure
-        return {
-            generateSessionRecap: async (fullCallTranscript, connector, provider = "UnknownProvider") => {
-                console.error("AI Recap Service called in error state (missing dependencies).");
-                return { // Return a structure consistent with expected successful/failed output
-                    conversationSummary: `Recap service is not properly initialized for ${provider}. Please check critical dependencies like _openaiCompatibleApiCaller and _aiApiConstants.`,
-                    keyTopicsDiscussed: ["Initialization Error"],
-                    newVocabularyAndPhrases: [],
-                    goodUsageHighlights: [],
-                    areasForImprovement: [],
-                    suggestedPracticeActivities: [],
-                    overallEncouragement: "Please report this initialization issue."
-                };
-            }
+    const getDeps = (functionName = "aiRecapService internal") => {
+        const deps = {
+            openAICompatibleCaller: window._openaiCompatibleApiCaller,
+            aiConstants: window._aiApiConstants,
+            polyglotHelpers: window.polyglotHelpers
         };
-    }
-
-    const callOpenAICompatibleAPI = window._openaiCompatibleApiCaller;
-    // Destructure necessary constants after ensuring _aiApiConstants exists
-    const { PROVIDERS, GROQ_MODELS, TOGETHER_MODELS } = window._aiApiConstants; 
-    // API keys are accessed via window object directly in the call
-
-    const MIN_TRANSCRIPT_TURNS_FOR_DETAILED_RECAP = 4; // e.g., 2 user turns and 2 AI turns
-
-    const defaultErrorRecapStructure = (providerName = "AI", specificMessage = "Debrief generation encountered an unexpected issue.") => ({
-        conversationSummary: specificMessage.startsWith("Debrief generation failed") ? specificMessage : `Debrief generation failed with ${providerName}. ${specificMessage}`,
-        keyTopicsDiscussed: ["N/A - Error"],
-        newVocabularyAndPhrases: [],
-        goodUsageHighlights: [],
-        areasForImprovement: [],
-        suggestedPracticeActivities: [],
-        overallEncouragement: "An error occurred while generating the debrief. Please try a new session. If the issue persists, it might be a temporary problem with the service."
-    });
-
-    // Helper function to clean JSON strings, removing BOM and trimming control/whitespace
-    function cleanJsonString(str) {
-        if (typeof str !== 'string') {
-            console.warn(`aiRecapService cleanJsonString: input was not a string, type: ${typeof str}. Returning as is.`);
-            return str;
+        let allGood = true;
+        if (!deps.openAICompatibleCaller) {
+            console.error(`aiRecapService (${functionName}): _openaiCompatibleApiCaller IS MISSING!`);
+            allGood = false;
         }
-        let originalLength = str.length;
-        let cleanedStr = str;
+        if (!deps.aiConstants) {
+            console.error(`aiRecapService (${functionName}): _aiApiConstants IS MISSING!`);
+            allGood = false;
+        }
+        if (!deps.polyglotHelpers) {
+            console.error(`aiRecapService (${functionName}): polyglotHelpers IS MISSING!`);
+            allGood = false;
+        }
+        if (!allGood) {
+            console.error(`aiRecapService (${functionName}): One or more critical dependencies missing. Service may not function.`);
+        }
+        return allGood ? deps : null; // Return null if critical deps are missing
+    };
 
-        // Remove BOM (Byte Order Mark) - common issue from some APIs/encodings
-        if (cleanedStr.charCodeAt(0) === 0xFEFF || cleanedStr.charCodeAt(0) === 0xFFFE) {
-            cleanedStr = cleanedStr.substring(1);
-        }
-        // Aggressively trim whitespace and common control characters (like null bytes, etc.) from start and end.
-        // \p{C} matches Unicode "Control" characters. The 'u' flag is essential for \p.
-        cleanedStr = cleanedStr.replace(/^[\s\p{C}]+/u, '').replace(/[\s\p{C}]+$/u, '');
-        
-        if (cleanedStr.length !== originalLength) {
-            // console.debug(`aiRecapService cleanJsonString: String cleaned. Length change: ${originalLength} -> ${cleanedStr.length}`);
-        }
-        return cleanedStr;
-    }
-    
-    async function generateSessionRecap(fullCallTranscript, connector, provider = PROVIDERS.GROQ) {
-        if (!connector || !connector.id || !connector.language || !connector.profileName) {
-            console.warn("aiRecapService.generateSessionRecap: Connector info is incomplete or missing.", connector);
-            return defaultErrorRecapStructure(provider, "Connector information missing for recap generation.");
-        }
-        if (!fullCallTranscript || !Array.isArray(fullCallTranscript)) {
-            console.warn(`aiRecapService.generateSessionRecap: No transcript provided or invalid format for connector ${connector.id}.`);
-            return defaultErrorRecapStructure(provider, "No conversation recorded (or invalid transcript) for recap.");
+    // This default recap structure is used if everything fails.
+    const getDefaultErrorRecapStructure = (providerNameForError = "AI Service") => {
+        const { aiConstants } = getDeps("getDefaultErrorRecapStructure") || {}; // Get deps, or empty object if deps failed
+        const randomErrorMsg = aiConstants?.HUMAN_LIKE_ERROR_MESSAGES?.[0] || "(A technical difficulty occurred.)";
+        return {
+            conversationSummary: `Debrief generation failed with ${providerNameForError}. ${randomErrorMsg}`,
+            keyTopicsDiscussed: ["Error in processing recap"],
+            newVocabularyAndPhrases: [],
+            goodUsageHighlights: [],
+            areasForImprovement: [],
+            suggestedPracticeActivities: [],
+            overallEncouragement: "Please try ending the session again later when services might be more stable."
+        };
+    };
+
+    function buildRecapPromptForOpenAICompatible(transcriptText, connector) {
+        const functionName = "buildRecapPromptForOpenAICompatible";
+        console.log(`aiRecapService (${functionName}): Building recap prompt for connector: ${connector?.id}, language: ${connector?.language}.`);
+        const { aiConstants } = getDeps(functionName);
+        if (!aiConstants || !connector) {
+            console.error(`aiRecapService (${functionName}): Missing aiConstants or connector. Cannot build prompt.`);
+            return "Error: Prompt generation failed due to missing core data.";
         }
 
-        // --- Minimum Transcript Length Check ---
-        if (fullCallTranscript.length < MIN_TRANSCRIPT_TURNS_FOR_DETAILED_RECAP) {
-            console.log(`aiRecapService: Transcript for ${connector.id} too short (${fullCallTranscript.length} turns, need ${MIN_TRANSCRIPT_TURNS_FOR_DETAILED_RECAP}) for detailed ${provider} recap. Returning minimal feedback.`);
-            return {
-                conversationSummary: "The conversation was very brief, so a detailed debrief couldn't be generated this time. Try having a more extended chat!",
-                keyTopicsDiscussed: ["Brief interaction"],
-                newVocabularyAndPhrases: [],
-                goodUsageHighlights: ["Engaged in a short practice!"],
-                areasForImprovement: [{areaType: "Interaction Length", userInputExample: null, coachSuggestion: "Try to have a longer conversation to get more detailed feedback.", explanation: "More conversation provides more material for analysis.", exampleWithSuggestion: "N/A"}],
-                suggestedPracticeActivities: ["Engage in a conversation for at least a few minutes.", "Try to use a variety of phrases and sentences."],
-                overallEncouragement: "Every bit of practice helps! Keep going, and aim for longer chats next time."
-            };
-        }
-        // --- End Minimum Transcript Length Check ---
+        // --- Detailed JSON Structure Example with Instructions and Limits ---
+        const jsonStructureExample = `{
+    "conversationSummary": "A brief (2-4 sentences) overall summary of the conversation flow, main purpose, and how well the user engaged in ${connector.language}.",
+    "keyTopicsDiscussed": ["Topic 1", "Topic 2", "A specific theme that emerged (maximum 5 topics)"],
+    "newVocabularyAndPhrases": [
+        {"term": "example phrase found in transcript", "translation": "its meaning in English (or user's primary language if known)", "exampleSentence": "A sentence using it, ideally from the transcript or a natural new one."}
+    ], // Select the 10-20 MOST IMPORTANT/USEFUL vocabulary items or phrases for the user to learn. Prioritize items directly relevant to the conversation or common usage in ${connector.language}. Maximum 20 items.
+    "goodUsageHighlights": [
+        "User correctly used [specific grammar point or phrase from transcript].",
+        "Good pronunciation of [word/phrase] noted by the user."
+    ], // List up to 10 specific examples of good language use by the user. Be specific. If few, list what's available.
+    "areasForImprovement": [
+        {"areaType": "Grammar", "userInputExample": "Actual user quote with error if available", "coachSuggestion": "Corrected version or alternative phrasing", "explanation": "Brief, clear explanation of the grammar rule or reason for correction.", "exampleWithSuggestion": "Full sentence example incorporating the suggestion."},
+        {"areaType": "Vocabulary Choice", "userInputExample": "User's phrase", "coachSuggestion": "More natural or precise vocabulary", "explanation": "Why the suggestion is better.", "exampleWithSuggestion": "Example sentence."},
+        {"areaType": "Pronunciation Hint", "userInputExample": "Word user struggled with", "coachSuggestion": "Simple phonetic hint or similar sounding English word (e.g., 'comme (like comb) ça')", "explanation": "Brief tip for the sound.", "exampleWithSuggestion": null},
+        {"areaType": "Fluency", "userInputExample": null, "coachSuggestion": "Suggestion for smoother speech (e.g., 'Try to use more connecting words like 'et puis', 'alors').", "explanation": "Benefit of the suggestion.", "exampleWithSuggestion": null}
+    ], // Identify 3-5 key areas. For each, provide userInputExample (if applicable, from transcript), coachSuggestion, explanation, and exampleWithSuggestion. Be constructive.
+    "suggestedPracticeActivities": [
+        "Activity idea 1 relevant to topics or improvement areas (e.g., 'Practice ordering food at a French café using the new vocabulary.').",
+        "Activity idea 2 (e.g., 'Listen to a short dialogue in ${connector.language} focusing on [grammar point from areasForImprovement].')"
+    ], // Provide 2-3 specific and actionable practice suggestions.
+    "overallEncouragement": "A positive, personalized, and encouraging closing remark (1-3 sentences) to motivate the user for future practice in ${connector.language}."
+}`;
 
-        let transcriptText = "Conversation Transcript (User vs. AI Partner):\n";
-        fullCallTranscript.forEach(turn => {
-            const speaker = turn.sender?.startsWith('user') ? 'User' : (connector.profileName || connector.name || 'AI Partner');
-            let textContent = (typeof turn.text === 'string') ? turn.text : `[${turn.type || 'Non-text interaction content'}]`;
-            // Clarify spoken parts in the transcript for the AI
-            if (turn.sender === 'user-voice-transcript' || turn.sender === 'user-audio') textContent = `(User spoke): ${textContent}`;
-            else if (turn.sender?.startsWith('connector-audio') || turn.sender?.startsWith('connector-spoken')) textContent = `(${connector.profileName || 'AI Partner'} spoke): ${textContent}`;
-            transcriptText += `${speaker}: ${textContent}\n`;
-        });
+        let prompt = `You are an expert language learning coach for ${connector.language}. Your name is Polyglot AI Coach.
+You are providing a detailed and constructive debrief for a language practice session between a User and a simulated persona named ${connector.profileName}.
+The User was primarily practicing their ${connector.language} skills.
+The persona, ${connector.profileName}, was speaking ${connector.language} (and possibly some English if their persona allows, as described in their system prompt).
 
-        // Your detailed recap prompt instructions, ensuring clarity for the LLM
-        const recapPromptInstructions = `
-You are an expert, friendly, and encouraging language learning coach for a user learning ${connector.language}.
-Analyze the following conversation transcript between the "User" and an "AI Partner" (named ${connector.profileName || connector.name}, who was speaking primarily in ${connector.language}).
-Your entire output MUST BE a single, valid JSON object. Do NOT include any text before or after the JSON object itself. Do not use markdown code blocks like \`\`\`json.
-The JSON object MUST strictly adhere to the following structure with ALL specified top-level keys:
-- "conversationSummary": (string) A brief 2-3 sentence overview of the main flow, purpose, and overall feel of the conversation.
-- "keyTopicsDiscussed": (array of strings) List 3-5 main subjects or themes talked about.
-- "newVocabularyAndPhrases": (array of objects) Identify 2-4 useful vocabulary items or short phrases in ${connector.language} that the User encountered or that were introduced by the AI Partner. For each, provide: { "term": "the term/phrase in ${connector.language}", "translation": "concise English translation", "exampleSentence": "a short example sentence using the term from the transcript or a new one" }.
-- "goodUsageHighlights": (array of strings) Point out 1-3 specific instances or patterns where the User showed good use of ${connector.language} (e.g., "Good use of the phrase '...'").
-- "areasForImprovement": (array of objects) Identify 2-3 specific areas for the User's improvement in ${connector.language}. For each, provide: { "areaType": "category (e.g., Grammar - Tense, Vocabulary Choice, Pronunciation Hint, Fluency)", "userInputExample": "The User's phrase that needs improvement, or null if general.", "coachSuggestion": "Corrected or better phrase in ${connector.language}, or a tip.", "explanation": "WHY it's better or the rule.", "exampleWithSuggestion": "Full corrected example sentence." }.
-- "suggestedPracticeActivities": (array of strings) 1-2 brief, actionable suggestions for practice related to "areasForImprovement".
-- "overallEncouragement": (string) A short, positive, and encouraging closing remark (1-2 sentences).
+Analyze the following conversation transcript. The persona's lines are prefixed with '${connector.profileName}:', and the user's lines are prefixed with 'User:'.
 
-TRANSCRIPT TO ANALYZE:
+Transcript:
 ${transcriptText}
+---
+Based on the entire transcript, provide a structured debrief.
+CRITICAL INSTRUCTIONS FOR YOUR RESPONSE:
+1.  Your ENTIRE response MUST be a single, valid JSON object.
+2.  You MUST adhere EXACTLY to the following JSON structure, using these precise key names and data types.
+3.  Do NOT include any text, greetings, explanations, apologies, or disclaimers before or after the main JSON object.
+4.  Do NOT use markdown (e.g., \`\`\`json) to wrap the JSON object.
+5.  Ensure all string values within the JSON are properly escaped (e.g., double quotes within strings should be \\").
+6.  Pay close attention to the specified maximum number of items for list/array fields (e.g., newVocabularyAndPhrases, goodUsageHighlights, keyTopicsDiscussed, areasForImprovement, suggestedPracticeActivities). Prioritize the most impactful and beneficial items for the user if more are identified than the maximum allows.
+7.  If the transcript is very short, unclear, or if the user was "trolling" or providing nonsensical input, reflect this honestly in the "conversationSummary". In such cases, for other fields like "areasForImprovement" or "newVocabularyAndPhrases", provide very general language learning advice or state that specific analysis is not possible due to the nature of the input. Still maintain the JSON structure.
+8.  All textual feedback, suggestions, and explanations should be in clear, simple English, as the user is a language learner.
 
-Remember: ONLY the JSON object. All string values within the JSON must be properly escaped.
-`;
+JSON Structure and Content Guidelines:
+${jsonStructureExample}
 
-        const messages = [
-            { role: "system", content: `You are an AI assistant specialized in generating language learning session debriefs. Your output must be a single, valid JSON object matching the detailed structure provided by the user. Adhere strictly to the requested keys and formats.` },
-            { role: "user", content: recapPromptInstructions } // The detailed instructions and transcript are now part of the user message
-        ];
+Now, generate the JSON debrief:`;
+        console.log(`aiRecapService (${functionName}): Recap prompt constructed. Length: ${prompt.length}. Preview: ${prompt.substring(0, 300)}...`);
+        return prompt;
+    }
 
-        let apiKeyToUse;
-        let modelToUse;
-        let currentProviderForLog = provider; // For logging which provider was attempted
+    function parseRecapResponse(responseText, providerName) {
+        const functionName = "parseRecapResponse";
+        console.log(`aiRecapService (${functionName}): Attempting to parse from ${providerName}. Response text length: ${responseText?.length}`);
+        const { aiConstants } = getDeps(functionName) || {}; // Handle case where getDeps might return null
 
-        if (provider === PROVIDERS.GROQ) {
-            apiKeyToUse = window.GROQ_API_KEY; // Assumes GROQ_API_KEY is on window from config.js -> app.js
-            modelToUse = GROQ_MODELS.RECAP;
-        } else if (provider === PROVIDERS.TOGETHER) {
-            apiKeyToUse = window.TOGETHER_API_KEY; // Assumes TOGETHER_API_KEY is on window
-            modelToUse = TOGETHER_MODELS.RECAP;
-        } else {
-            console.error(`aiRecapService: Unsupported provider '${provider}' specified for recap generation.`);
-            return defaultErrorRecapStructure(provider, `Unsupported provider for recap: ${provider}`);
+        if (!responseText || typeof responseText !== 'string') {
+            console.error(`aiRecapService (${functionName}): Cannot parse recap, responseText is invalid from ${providerName}.`);
+            return getDefaultErrorRecapStructure(providerName);
         }
 
-        if (!apiKeyToUse || apiKeyToUse.includes("YOUR_") || apiKeyToUse.trim() === '') {
-            console.error(`aiRecapService: API key for ${provider} is missing, invalid, or a placeholder.`);
-            return defaultErrorRecapStructure(provider, `API key for ${provider} is not configured correctly.`);
+        let cleanedResponse = responseText.trim();
+        console.log(`aiRecapService (${functionName}): Initial trimmed response (first 500 chars):`, cleanedResponse.substring(0, 500));
+
+        // 1. Attempt to extract JSON if it's in a markdown block (common LLM mistake)
+        const jsonMarkdownMatch = cleanedResponse.match(/^```json\s*([\s\S]*?)\s*```$/m);
+        if (jsonMarkdownMatch && jsonMarkdownMatch[1]) {
+            cleanedResponse = jsonMarkdownMatch[1].trim();
+            console.log(`aiRecapService (${functionName}): Extracted JSON from markdown block.`);
+        } else {
+            // 2. If not in markdown, try to find the first '{' and last '}' to strip extraneous text
+            const firstBrace = cleanedResponse.indexOf('{');
+            const lastBrace = cleanedResponse.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace > firstBrace) {
+                const potentialJson = cleanedResponse.substring(firstBrace, lastBrace + 1);
+                // Quick check if this substring looks like JSON (starts with { ends with })
+                if (potentialJson.startsWith("{") && potentialJson.endsWith("}")) {
+                    cleanedResponse = potentialJson;
+                    console.log(`aiRecapService (${functionName}): Trimmed response to content between first '{' and last '}'.`);
+                } else {
+                     console.warn(`aiRecapService (${functionName}): Found braces, but substring didn't look like clean JSON. Proceeding with original cleanedResponse for parsing.`);
+                }
+            } else {
+                console.warn(`aiRecapService (${functionName}): Could not find valid JSON start/end braces in response from ${providerName}. This response is unlikely to be valid JSON.`);
+                // Don't return defaultErrorRecap yet, let JSON.parse try and fail to get more specific error.
+            }
         }
 
         try {
-            console.log(`aiRecapService (${provider}): Requesting session recap for connector '${connector.id}', Model: '${modelToUse}'.`);
-            // Request JSON object mode if the API supports it (OpenAI-compatible APIs often do)
-            const apiOptions = { temperature: 0.3, response_format: { type: "json_object" } };
-            const jsonStringResponse = await callOpenAICompatibleAPI(messages, modelToUse, provider, apiKeyToUse, apiOptions);
-
-            console.log(`aiRecapService (${provider}): --- START RAW RECAP RESPONSE ---`);
-            // Log a manageable portion if it's very long
-            console.log(jsonStringResponse.length > 1000 ? jsonStringResponse.substring(0, 500) + "\n...\n" + jsonStringResponse.substring(jsonStringResponse.length - 500) : jsonStringResponse);
-            console.log(`aiRecapService (${provider}): --- END RAW RECAP RESPONSE ---`);
-            console.log(`aiRecapService (${provider}): Raw Length: ${jsonStringResponse.length}, Start: [${jsonStringResponse.substring(0, 15)}], End: [${jsonStringResponse.substring(jsonStringResponse.length - 15)}]`);
-
-            let cleanedResponse = cleanJsonString(jsonStringResponse);
-            let parsed;
-
-            try {
-                parsed = JSON.parse(cleanedResponse);
-                console.log(`aiRecapService (${provider}): Successfully parsed CLEANED response directly.`);
-            } catch (e) {
-                console.warn(`aiRecapService (${provider}): Direct JSON.parse (of cleaned) failed for recap. Error:`, e.message);
-                console.log(`aiRecapService (${provider}): Attempting markdown extraction from ORIGINAL raw response as fallback.`);
-                
-                const originalJsonMatch = jsonStringResponse.match(/```json\s*([\s\S]*?)\s*```/s);
-                if (originalJsonMatch && originalJsonMatch[1]) {
-                    const originalExtractedAndCleanedJson = cleanJsonString(originalJsonMatch[1]);
-                    console.log(`aiRecapService (${provider}): Extracted from ORIGINAL markdown (and cleaned): [${originalExtractedAndCleanedJson.substring(0,20)}...${originalExtractedAndCleanedJson.substring(originalExtractedAndCleanedJson.length-20)}]`);
-                    try {
-                        parsed = JSON.parse(originalExtractedAndCleanedJson);
-                        console.log(`aiRecapService (${provider}): Successfully parsed ORIGINAL EXTRACTED & CLEANED JSON.`);
-                    } catch (e2) {
-                        console.error(`aiRecapService (${provider}): Failed to parse markdown-extracted & cleaned JSON. Error:`, e2.message, "Content was:", originalExtractedAndCleanedJson);
-                        throw new Error(`Recap response from ${provider} malformed JSON after all attempts to parse.`);
-                    }
-                } else {
-                    console.error(`aiRecapService (${provider}): Recap response not valid JSON and no markdown block found in original response. Cleaned response was:`, cleanedResponse);
-                    throw new Error(`Recap response from ${provider} was not valid JSON (no markdown found).`);
-                }
+            const parsed = JSON.parse(cleanedResponse);
+            console.log(`aiRecapService (${functionName}): Successfully parsed JSON recap from ${providerName}.`);
+            // Basic validation of essential structure
+            if (typeof parsed.conversationSummary !== 'string' || !Array.isArray(parsed.keyTopicsDiscussed) || 
+                !Array.isArray(parsed.newVocabularyAndPhrases) || !Array.isArray(parsed.areasForImprovement)) {
+                console.warn(`aiRecapService (${functionName}): Parsed JSON from ${providerName} is MISSING ESSENTIAL RECAP FIELDS (summary, topics, vocab, improvement). Content:`, parsed);
+                return getDefaultErrorRecapStructure(providerName + " (Malformed Structure)");
+            }
+            // Validate that areasForImprovement items have the expected structure
+            if (parsed.areasForImprovement.some(item => typeof item.areaType === 'undefined' || typeof item.coachSuggestion === 'undefined')) {
+                 console.warn(`aiRecapService (${functionName}): Parsed JSON from ${providerName} has malformed items in 'areasForImprovement'.`);
+                 // Could try to filter out bad items or return error recap
             }
 
-            // Validate parsed structure and provide defaults for missing optional keys
-            return {
-                conversationSummary: typeof parsed.conversationSummary === 'string' ? parsed.conversationSummary : "Summary could not be generated at this time.",
-                keyTopicsDiscussed: Array.isArray(parsed.keyTopicsDiscussed) ? parsed.keyTopicsDiscussed : ["No specific topics noted."],
-                newVocabularyAndPhrases: Array.isArray(parsed.newVocabularyAndPhrases) ? parsed.newVocabularyAndPhrases.filter(item => item && typeof item.term === 'string') : [],
-                goodUsageHighlights: Array.isArray(parsed.goodUsageHighlights) ? parsed.goodUsageHighlights : [],
-                areasForImprovement: Array.isArray(parsed.areasForImprovement) ? parsed.areasForImprovement.filter(item => item && typeof item.areaType === 'string') : [],
-                suggestedPracticeActivities: Array.isArray(parsed.suggestedPracticeActivities) ? parsed.suggestedPracticeActivities : [],
-                overallEncouragement: typeof parsed.overallEncouragement === 'string' ? parsed.overallEncouragement : "Keep up the great work with your practice!"
-            };
-
-        } catch (error) { // Catches errors from callOpenAICompatibleAPI or re-thrown errors from parsing
-            console.error(`aiRecapService.generateSessionRecap Error for ${connector.profileName || connector.name} with provider ${provider}:`, error.message, error);
-            // Return the defaultErrorRecapStructure with the provider name and error message
-            return defaultErrorRecapStructure(provider, error.message);
+            return parsed;
+        } catch (e) {
+            console.error(`aiRecapService (${functionName}): JSON.parse FAILED for ${providerName} after cleaning. Error: ${e.message}.`);
+            console.error(`aiRecapService (${functionName}): Cleaned response that failed parsing (first 500 chars):`, cleanedResponse.substring(0, 500));
+            
+            // Log specific details if available from the error (e.g., Groq's failed_generation)
+            if (e.providerDetails?.failed_generation) {
+                 console.error("AI Provider's 'failed_generation' field content:", e.providerDetails.failed_generation);
+            }
+            // Specific check for common missing quote error
+            const missingQuotePattern = /:\s*([a-zA-Z0-9_]+)\s*":/; // e.g. : styleTypeAndPhrases":
+            if (e.message?.toLowerCase().includes("unexpected token") && missingQuotePattern.test(cleanedResponse)) {
+                console.warn(`aiRecapService (${functionName}): Detected potential missing quote on a key (e.g., 'key":' instead of '"key":'). This is a common LLM JSON error.`);
+            }
+            return getDefaultErrorRecapStructure(providerName + " (JSON Parse Error)");
         }
-    } // End of generateSessionRecap function
+    }
 
-    console.log("services/ai_recap_service.js loaded with min transcript check and improved JSON parsing.");
-    return { 
-        generateSessionRecap,
-        defaultErrorRecap: defaultErrorRecapStructure // Expose if needed by other modules
+    /**
+     * Generates a session recap using the preferred AI provider (Groq or TogetherAI) and connector information.
+     * If the preferred provider fails, it will be caught by the ai_service.js facade, which can then try a fallback (e.g., Gemini recap).
+     * @param {object} fullCallTranscript - The complete conversation transcript.
+     * @param {object} connector - Connector information, including ID, language, and profile name.
+     * @param {string} preferredProvider - The preferred AI provider to use. If not supported, an error will be thrown.
+     * @returns {object} A structured recap object with conversation summary, key topics, new vocabulary, good usage highlights, focus areas, practice activities, and overall encouragement.
+     * @throws {Error} If the preferred provider is unsupported or the API call fails.
+     */
+    async function generateSessionRecap(fullCallTranscript, connector, preferredProvider) {
+        const functionName = "generateSessionRecap";
+        console.log(`aiRecapService (${functionName}): START. Preferred: ${preferredProvider}, Connector: ${connector?.id}, Transcript turns: ${fullCallTranscript?.length}`);
+        const deps = getDeps(functionName);
+
+        if (!deps) {
+            console.error(`aiRecapService (${functionName}): Critical dependencies missing. Cannot generate recap.`);
+            return getDefaultErrorRecapStructure("Internal Service Error");
+        }
+        const { openAICompatibleCaller, aiConstants, polyglotHelpers } = deps;
+
+               // Inside ai_recap_service.js -> generateSessionRecap
+          if (!fullCallTranscript || fullCallTranscript.length < (aiConstants.MIN_TRANSCRIPT_TURNS_FOR_RECAP || 2)) {
+            console.warn(`aiRecapService (${functionName}): Transcript too short (${fullCallTranscript?.length} turns). Returning CONSISTENT minimal structure.`);
+            return {
+                // From your populateRecapModal call: recapData.connectorName, recapData.date, recapData.duration, recapData.sessionId
+                // These should ideally be added by session_state_manager BEFORE calling aiRecapService,
+                // or aiRecapService should merge its generated content with these base details.
+                // For now, assuming they are added externally or this service only focuses on AI-generated parts.
+
+                conversationSummary: "The conversation was too short to generate a detailed summary.",
+                keyTopicsDiscussed: ["N/A - Short conversation"], // Array of strings
+                newVocabularyAndPhrases: [], // Empty array, as 'vocabulary' type in populateListInRecap likely expects objects
+                goodUsageHighlights: ["No specific highlights from a short conversation."], // Array of strings
+                areasForImprovement: [], // Empty array, as 'improvementArea' type in populateListInRecap likely expects objects
+                suggestedPracticeActivities: ["Continue practicing with longer conversations!"], // Array of strings
+                overallEncouragement: "Keep practicing! More interaction will allow for a helpful debrief."
+                // Ensure connectorName, date, duration, sessionId are part of the final object passed to populateRecapModal
+            };
+        }
+
+        const transcriptText = polyglotHelpers.formatTranscriptForLLM(fullCallTranscript, connector.profileName);
+        if (!transcriptText || transcriptText.trim().length < 50) { // Arbitrary short length check
+             console.warn(`aiRecapService (${functionName}): Formatted transcript text is very short or empty. May result in poor recap.`);
+        }
+        const prompt = buildRecapPromptForOpenAICompatible(transcriptText, connector);
+        
+        const messages = [{ role: "user", content: prompt }];
+
+        let providerToUse = preferredProvider;
+        let modelToUse;
+        let apiKey;
+
+        if (providerToUse === aiConstants.PROVIDERS.GROQ) {
+            modelToUse = aiConstants.GROQ_MODELS.RECAP;
+            apiKey = window.GROQ_API_KEY;
+        } else if (providerToUse === aiConstants.PROVIDERS.TOGETHER) {
+            modelToUse = aiConstants.TOGETHER_MODELS.RECAP;
+            apiKey = window.TOGETHER_API_KEY;
+        } else {
+            console.error(`aiRecapService (${functionName}): Unsupported preferredProvider for recap: ${preferredProvider}. Defaulting to error.`);
+            return getDefaultErrorRecapStructure(`Unsupported Provider: ${preferredProvider}`);
+        }
+        console.log(`aiRecapService (${functionName}): Attempting recap generation with ${providerToUse}, Model: ${modelToUse}.`);
+
+        try {
+            if (!apiKey || apiKey.includes("YOUR_") || apiKey.trim() === '') {
+                throw new Error(`API key for ${providerToUse} (Recap) is invalid or not configured.`);
+            }
+            if (!modelToUse) {
+                throw new Error(`Recap model for ${providerToUse} is not defined in aiConstants.`);
+            }
+
+            const rawResponse = await openAICompatibleCaller(
+                messages,
+                modelToUse,
+                providerToUse,
+                apiKey,
+                { 
+                    temperature: 0.2, // Lower temp for more factual/structured output
+                    // max_tokens: 2048, // Ensure enough tokens for potentially long JSON
+                    response_format: { "type": "json_object" } // Strongly request JSON output
+                }
+            );
+            console.log(`aiRecapService (${functionName}): Raw response received from ${providerToUse}. Length: ${rawResponse?.length}`);
+            return parseRecapResponse(rawResponse, providerToUse);
+        } catch (error) {
+            console.error(`aiRecapService (${functionName}): Error during API call to ${providerToUse} (Model: ${modelToUse}) for connector ${connector?.id}:`, error.message, error);
+            // The error object from openAICompatibleCaller might have a 'status' or 'providerDetails'
+            // This error will be caught by ai_service.js facade, which can then try a fallback (e.g., Gemini recap).
+            throw error; 
+        }
+    }
+
+    // Final check for dependencies after IIFE definition
+    const finalDepsCheck = getDeps("IIFE final check");
+    if (finalDepsCheck) {
+        console.log("services/ai_recap_service.js (Bulletproof Armor Version) loaded. Initial dependency check passed.");
+    } else {
+        console.error("services/ai_recap_service.js (Bulletproof Armor Version) loaded BUT CRITICAL DEPENDENCIES ARE MISSING. Functionality will be severely impaired.");
+    }
+
+    console.log("ai_recap_service.js: IIFE (Bulletproof Armor Version) FINISHED. Returning exported object.");
+    return {
+        generateSessionRecap
     };
 })();
+
+if (window.aiRecapService && typeof window.aiRecapService.generateSessionRecap === 'function') {
+    console.log("ai_recap_service.js (Bulletproof Armor Version): SUCCESSFULLY assigned to window.aiRecapService.");
+} else {
+    console.error("ai_recap_service.js (Bulletproof Armor Version): CRITICAL ERROR - window.aiRecapService IS UNDEFINED or not correctly formed after IIFE execution.");
+}
+console.log("ai_recap_service.js: Script execution FINISHED (Bulletproof Armor Version).");
