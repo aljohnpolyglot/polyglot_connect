@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler", // Or "node" if "bundler" causes issues with Vite version
+    "baseUrl": ".",
+    "paths": {
+      // If you use aliases like @/components/*, define them here
+      // Example: "@/*": ["./js/*"] or "@/*": ["./public/js/*"]
+      // For now, we'll use relative paths.
+    },
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false, // Start with false, can enable per-file with // @ts-check
+    "outDir": "./dist_ts_check", // Only for `tsc` if not using noEmit, Vite handles actual build
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true, // Highly recommended for new TS projects
+    "skipLibCheck": true,
+    "noEmit": true, // Vite handles transpilation, tsc is for type checking
+    "typeRoots": [
+      "./node_modules/@types", // Standard location for @types packages
+    "./src/js/types"          // Add the path to your custom global types directory
+    ],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"] // Add necessary libs
+  },
+  "include": [
+    "vite-env.d.ts",
+    "src/**/*.ts",      // All .ts files in src and its subdirectories
+    "src/**/*.js",      // All .js files in src and its subdirectories
+    "public/js/**/*.js",    // helpers.ts is here
+    "public/js/**/*.ts",
+    "public/data/**/*.js",
+    "vite.config.js",
+    "js/types/global.d.ts" // Make sure this specific file is listed or covered by a wildcard
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "polyglot_connect_old" // The backup directory
+  ]
+}

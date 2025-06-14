@@ -1,187 +1,513 @@
-/* --- Suggested main chat bubble styles (e.g., in components/chat_bubbles.css) --- */
+/*
+   ===================================================================
+   ||   css/components/chat_bubbles.css                           ||
+   ||   Reusable Styles for All Chat Message Types                ||
+   ===================================================================
+*/
 
-/* Parent container for chat messages (applies to #group-chat-log, #embedded-chat-log, etc.) */
+/* --- Chat Log Area Base (parent of message wrappers) --- */
+/* This class can be applied to #group-chat-log, #embedded-chat-log, #message-chat-log etc. */
 .chat-log-area {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs); /* Consistent small gap between message wrappers */
-    padding: var(--spacing-md);
+    gap: var(--chat-message-gap, var(--spacing-xs, 6px)); /* Gap between message wrappers */
+    padding: var(--chat-log-padding, var(--spacing-md, 16px));
     overflow-y: auto;
-    /* Default scroll padding, can be adjusted by JS for typing indicators if they are overlays */
-    scroll-padding-bottom: 10px; 
-    transition: scroll-padding-bottom 0.2s ease-in-out; /* For dynamic changes */
-    background-color: var(--bg-white); /* Default background for chat area */
+    background-color: var(--chat-log-bg, var(--bg-white, #ffffff)); /* Default light background */
+    /* Smooth scrolling behavior */
+    scroll-behavior: smooth;
+    /* Scroll padding to ensure last message isn't hidden by input bar if input bar is overlaid */
+    /* Adjust this value based on your input bar's height */
+    /* scroll-padding-bottom: var(--chat-input-area-height, 70px); */
 }
 
-/* Wrapper for each message unit (avatar + bubble) */
+/* --- Wrapper for Each Message Unit (Avatar (optional) + Bubble) --- */
 .chat-message-wrapper {
     display: flex;
-    align-items: flex-end;  /* Aligns avatar with the bottom of the last line of text in bubble */
-    max-width: 80%;     /* Max width of the entire message unit */
-    width: fit-content; /* Wrapper is only as wide as its content (avatar + bubble), up to max-width */
-    position: relative;   /* For potential future absolute positioned elements */
-    margin-bottom: var(--spacing-xxs); /* Smaller bottom margin for tighter packing */
+    align-items: flex-end;  /* Aligns avatar (if present) with bottom of bubble's last line */
+    max-width: 80%;         /* Max width of the entire message unit relative to chat-log-area */
+    width: fit-content;     /* Wrapper shrinks to content width, up to max-width */
+    position: relative;       /* For timestamp tooltips or other absolute elements */
+    /* margin-bottom is handled by gap on .chat-log-area */
 }
 
 .chat-message-wrapper.user-wrapper {
     align-self: flex-end; /* Aligns this wrapper to the right of .chat-log-area */
-    flex-direction: row-reverse; /* Bubble first, then avatar on the right (if shown) */
+    flex-direction: row-reverse; /* Bubble first, then avatar (if shown) */
 }
 
 .chat-message-wrapper.connector-wrapper {
-    align-self: flex-start; /* Aligns this wrapper to the left of .chat-log-area */
-    flex-direction: row; /* Avatar on the left, then bubble */
+    align-self: flex-start; /* Aligns this wrapper to the left */
+    flex-direction: row;
 }
 
-/* Avatar Styling */
+/* --- Avatar Styling (if shown next to bubbles) --- */
+/* HTML: <img class="chat-bubble-avatar" src="..."> */
 .chat-bubble-avatar {
-    width: 30px;
-    height: 30px;
+    width: var(--chat-bubble-avatar-size, 30px);
+    height: var(--chat-bubble-avatar-size, 30px);
     border-radius: 50%;
     object-fit: cover;
-    flex-shrink: 0; /* Prevent avatar from shrinking */
-    /* margin-bottom: 4px; /* Small margin to align with bottom of single-line text */
+    flex-shrink: 0;
+    background-color: var(--avatar-bg-fallback-light, #e0e0e0); /* Fallback */
+    /* Consider a subtle border that matches the chat-log-bg for a cutout effect */
+    /* border: 2px solid var(--chat-log-bg, var(--bg-white, #ffffff)); */
 }
-
 .chat-message-wrapper.has-avatar-left .chat-bubble-avatar {
-    margin-right: 8px;
+    margin-right: var(--spacing-xs, 8px);
+}
+.chat-message-wrapper.has-avatar-right .chat-bubble-avatar { /* For user avatar if implemented */
+    margin-left: var(--spacing-xs, 8px);
+}
+.clickable-chat-avatar { /* Add to avatar if it should open persona modal */
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.clickable-chat-avatar:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 8px var(--focus-ring-light, rgba(0, 123, 255, 0.4));
 }
 
-.chat-message-wrapper.has-avatar-right .chat-bubble-avatar { /* For user avatar if you add it */
-    margin-left: 8px;
-}
-
-/* The Chat Bubble Itself */
+/* --- The Chat Bubble Itself --- */
+/* HTML: <div class="chat-message-ui user">...</div> or <div class="chat-message-ui connector">...</div> */
 .chat-message-ui {
-    padding: 10px 14px;
-    border-radius: 18px;
+    padding: var(--chat-bubble-padding-y, 10px) var(--chat-bubble-padding-x, 14px);
+    border-radius: 18px; /* Bubbly shape */
     line-height: 1.45;
-    word-wrap: break-word;
-    overflow-wrap: break-word; /* Ensures long words/strings break */
-    min-width: 40px; /* Prevents tiny bubbles for "ok" etc. */
-    box-shadow: var(--shadow-xs); /* Softer shadow */
-    /* No max-width here; constrained by .chat-message-wrapper */
+    word-wrap: break-word;      /* Legacy */
+    overflow-wrap: break-word;  /* Standard */
+    min-width: 40px;            /* Prevent tiny bubbles for short replies */
+    box-shadow: var(--chat-bubble-shadow, var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05)));
+    max-width: 100%; /* Takes full width of its .chat-message-wrapper parent */
+    box-sizing: border-box;
+    position: relative; /* For sender name or other internal absolute elements */
 }
 
 /* User's Bubble */
-.chat-message-wrapper.user-wrapper .chat-message-ui {
-    background-color: var(--primary-color);
-    color: var(--text-color-on-primary, white);
-    border-bottom-right-radius: 6px; /* Speech bubble tail */
+.chat-message-wrapper.user-wrapper .chat-message-ui { /* More specific selector */
+    background-color: var(--chat-bubble-user-bg, var(--primary-color, #007bff));
+    color: var(--chat-bubble-user-text, var(--text-color-on-primary, white));
+    border-bottom-right-radius: 6px; /* Tail effect */
 }
 
 /* Connector/AI Bubble (General) */
-.chat-message-wrapper.connector-wrapper .chat-message-ui {
-    background-color: var(--background-alt-color); /* e.g., light grey */
-    color: var(--text-color);
-    border-bottom-left-radius: 6px; /* Speech bubble tail */
+.chat-message-wrapper.connector-wrapper .chat-message-ui { /* More specific selector */
+    background-color: var(--chat-bubble-connector-bg, var(--bg-alt-color, #e9ecef));
+    color: var(--chat-bubble-connector-text, var(--text-color-default, #212529));
+    border-bottom-left-radius: 6px; /* Tail effect */
 }
 
-/* Tutor Bubble (Specific style for tutors in groups) */
+/* Tutor Bubble (Specific style for tutors, e.g., in group chats) */
+/* HTML: <div class="chat-message-ui connector tutor">...</div> */
 .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor {
-    background-color: var(--secondary-color-lighter, #e0f2fe); /* Distinct tutor color */
-    /* border: 1px solid var(--secondary-color); */
+    background-color: var(--chat-bubble-tutor-bg, var(--secondary-color-x-light, #e0f2fe));
+    color: var(--chat-bubble-tutor-text, var(--secondary-color-dark, #0c5464));
+    /* border: 1px solid var(--secondary-color-light, #b6e2f9); */ /* Optional border */
 }
 
-/* Sender Name (Primarily for Group Chat AI bubbles) */
+/* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
+/* HTML: <strong class="chat-message-sender-name">Sender:</strong> <span class="chat-message-text">...</span> */
 .chat-message-sender-name {
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-semibold, 600);
     font-size: 0.8em;
-    display: block; /* Ensures it's on its own line above the message text */
-    margin-bottom: -13px;
-    color: var(--text-muted-color); /* Default, can be overridden */
+    display: block;
+    margin-bottom: var(--spacing-xxs, 4px); /* Space between name and text */
+    color: var(--chat-sender-name-color, var(--text-color-muted, #6c757d));
 }
+/* User messages typically don't show sender name */
+.chat-message-wrapper.user-wrapper .chat-message-sender-name { display: none; }
+
 .chat-message-wrapper.connector-wrapper .chat-message-sender-name {
-    color: var(--primary-color-dark, #0056b3); /* Or a color that suits the connector bubble */
+    color: var(--chat-sender-name-connector-color, var(--primary-color-dark, #0056b3));
 }
 .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor .chat-message-sender-name {
-    color: var(--secondary-color-dark, #0c5464); /* Tutor name color */
+    color: var(--chat-sender-name-tutor-color, var(--secondary-color-dark, #0c5464));
 }
+
+/* Message Text (actual content) */
+
+.chat-message-text strong { font-weight: var(--font-weight-bold, 700); }
+.chat-message-text em { font-style: italic; }
+
 
 /* "Is Typing..." Bubble Styling */
+/* HTML: <div class="chat-message-ui connector connector-thinking">...</div> */
 .chat-message-ui.connector-thinking {
-    color: var(--text-muted-color);
+    color: var(--chat-typing-indicator-text, var(--text-color-muted, #6c757d));
     font-style: italic;
-    background-color: var(--background-alt-color-subtle, #f8f9fa); /* Slightly different */
+    background-color: var(--chat-typing-indicator-bg, var(--bg-alt-color-subtle, #f8f9fa));
+    padding-top: 8px; padding-bottom: 8px; /* Slightly less vertical padding */
 }
-
 .chat-message-ui.connector-thinking::after { /* Animated ellipsis */
     content: '.';
     display: inline-block;
-    animation: ellipsis-animation 1.4s infinite;
-    animation-timing-function: steps(3, end);
-    position: relative;
-    left: 1px;
+    animation: ellipsis-animation 1.4s infinite steps(3, end);
+    position: relative; left: 1px;
 }
-
-@keyframes ellipsis-animation {
-    0% { content: '.'; }
-    33% { content: '..'; }
-    66% { content: '...'; }
-}
-
+@keyframes ellipsis-animation { 0% {content: '.';} 33% {content: '..';} 66% {content: '...';} }
 
 /* Image within a chat bubble */
+/* HTML: <img class="chat-message-image" src="..."> */
 .chat-message-image {
     display: block;
     max-width: 100%;
-    border-radius: 10px; /* Softer than bubble for visual hierarchy */
-    margin-top: 6px; /* If there's text above it */
+    max-height: 250px;
+    border-radius: 10px; /* Rounded, slightly less than bubble for inset look */
+    margin-top: var(--spacing-xs, 6px); /* Space if there's a caption above */
+    object-fit: contain; /* Show whole image without cropping, within max dimensions */
+    background-color: var(--chat-image-bg-fallback, #f0f0f0); /* Fallback for transparent images */
+    cursor: pointer; /* If images are zoomable */
 }
 
-/* System Messages */
-.chat-message-wrapper.system-message-wrapper { /* If you choose to wrap system messages */
-    align-self: center; /* Center the wrapper itself in the chat log */
-    max-width: 90%;     /* System messages can be wider */
-    width: auto;        /* Let content decide width up to max-width */
+/* --- System Messages & Call Events (Centred in chat log) --- */
+.chat-message-wrapper.system-message-wrapper,
+.system-event-wrapper { /* Shared wrapper for centered messages */
+    align-self: center;
+    max-width: 90%;
+    width: auto; /* Let content decide width up to max-width */
     justify-content: center;
+    margin-top: var(--spacing-sm, 10px);    /* More distinct spacing for system/event */
+    margin-bottom: var(--spacing-sm, 10px);
 }
+
+/* System Messages (e.g., "AI is generating response...") */
+/* HTML: <div class="chat-message-ui system-message">...</div> */
 .chat-message-ui.system-message {
-    background-color: transparent; /* Often system messages are just text */
-    color: var(--text-muted-color);
+    background-color: transparent;
+    color: var(--chat-system-message-text, var(--text-color-muted, #6c757d));
     text-align: center;
     font-style: italic;
-    font-size: 0.9em;
-    padding: 4px 0; /* Minimal padding */
+    font-size: 0.85em;
+    padding: var(--spacing-xxs, 4px) 0;
     box-shadow: none;
+    border-radius: 0; /* Typically no bubble shape */
+    width: 100%; /* Span full width of its .system-message-wrapper */
 }
 .chat-message-ui.system-message.error {
-    color: var(--danger-color);
-    font-weight: var(--font-weight-medium);
-    background-color: transparent;
+    color: var(--chat-system-error-text, var(--danger-color, #dc3545));
+    font-weight: var(--font-weight-medium, 500);
+    font-style: normal;
 }
 
+/* Call Event Messages */
+/* HTML: <div class="call-event-message">...</div> (inside .system-event-wrapper) */
+.call-event-message {
+    color: var(--chat-call-event-text, var(--text-color-muted, #6c757d));
+    font-size: 0.8em;
+    text-align: center;
+    max-width: 100%; /* Takes width of its wrapper */
+    display: flex;
+    flex-direction: column; /* Stack main text/details and actions */
+    align-items: center;
+    gap: var(--spacing-xs, 6px);
+}
+.call-event-main-text { display: flex; align-items: center; gap: var(--spacing-xs, 5px); }
+.call-event-icon { font-size: 0.9em; /* Relative to .call-event-message font-size */ }
+.call-event-icon.call-started { color: var(--chat-call-started-icon, var(--success-color, #28a745)); }
+.call-event-icon.call-ended { color: var(--chat-call-ended-icon, var(--info-color, #17a2b8)); }
+.call-event-icon.call-missed { color: var(--chat-call-missed-icon, var(--danger-color, #dc3545)); }
 
-/* Dark Mode Adjustments for general chat bubbles */
+.call-event-details-container { display: flex; align-items: center; gap: var(--spacing-xs, 8px); opacity: 0.9; }
+.call-event-details-container .call-event-detail.duration i { margin-right: 3px; }
+
+.call-event-actions { display: flex; gap: var(--spacing-sm, 10px); margin-top: var(--spacing-xxs, 4px); }
+.call-event-action-btn {
+    padding: 4px 10px;
+    font-size: 0.95em; /* Relative to .call-event-message */
+    background-color: transparent;
+    color: var(--chat-call-action-btn-text, var(--link-color, #007bff));
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-button, 4px);
+    text-decoration: underline;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+}
+.call-event-action-btn:hover {
+    color: var(--chat-call-action-btn-hover-text, var(--link-hover-color, #0056b3));
+    background-color: var(--chat-call-action-btn-hover-bg, var(--bg-subtle-hover-light, #e9ecef));
+    text-decoration: none;
+}
+
+/* Session Timestamp (Divider in chat log) */
+/* HTML: <div class="chat-session-timestamp">Date/Time</div> */
+.chat-session-timestamp {
+    color: var(--chat-session-timestamp-text, var(--text-color-muted, #868e96));
+    font-size: 0.8em;
+    text-align: center;
+    width: 100%;
+    margin: var(--spacing-md, 12px) 0;
+    padding: 0 var(--spacing-md, 16px); /* Consistent horizontal padding */
+    box-sizing: border-box;
+    line-height: 1.3;
+}
+
+/* Custom Tooltip for Message Timestamp (on hover of .chat-message-wrapper) */
+/* HTML: <div class="custom-chat-tooltip">Precise Time</div> */
+.custom-chat-tooltip {
+    display: block; /* Use opacity for show/hide */
+    opacity: 0;
+    visibility: hidden;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px); /* Slightly more gap */
+    background-color: var(--tooltip-bg, #212529);
+    color: var(--tooltip-text, #f8f9fa);
+    padding: var(--spacing-xxs, 5px) var(--spacing-xs, 8px);
+    border-radius: var(--border-radius-sm, 4px);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: var(--z-index-tooltip, 1000);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+    pointer-events: none; /* Tooltip itself shouldn't be interactive */
+    transition: opacity 0.15s ease-in-out, visibility 0s 0.15s; /* Delay visibility change */
+}
+.chat-message-wrapper:hover .custom-chat-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s, 0s; /* Show immediately on hover */
+}
+
+/* --- Dark Mode Adjustments for Chat Bubbles --- */
 body.dark-mode .chat-log-area {
-    background-color: var(--bg-dark-primary); /* Darker chat area background */
+    background-color: var(--chat-log-bg-dark, var(--bg-dark-primary, #18191a));
+}
+body.dark-mode .chat-bubble-avatar {
+    background-color: var(--avatar-bg-fallback-dark, #4f4f4f);
+    /* border-color: var(--chat-log-bg-dark, var(--bg-dark-primary, #18191a)); */ /* If using cutout effect */
+}
+body.dark-mode .clickable-chat-avatar:hover {
+    box-shadow: 0 0 8px var(--focus-ring-dark, rgba(3,169,244,0.3));
 }
 body.dark-mode .chat-message-wrapper.user-wrapper .chat-message-ui {
-    background-color: var(--primary-color-dark); /* Or a distinct user color for dark mode */
+    background-color: var(--chat-bubble-user-bg-dark, var(--primary-color-dark, #0d6efd));
+    color: var(--chat-bubble-user-text-dark, var(--text-color-on-primary, white));
 }
 body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui {
-    background-color: var(--bg-dark-tertiary); /* Dark connector bubble */
+    background-color: var(--chat-bubble-connector-bg-dark, var(--bg-dark-tertiary, #3a3b3c));
+    color: var(--chat-bubble-connector-text-dark, var(--text-color-default-dark, #e4e6eb));
 }
 body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor {
-    background-color: var(--secondary-color-darker, #1e4258); /* Dark tutor bubble */
+    background-color: var(--chat-bubble-tutor-bg-dark, var(--secondary-color-darker, #1e4258));
+    color: var(--chat-bubble-tutor-text-dark, var(--secondary-color-x-light, #b2ebf2));
+    /* border-color: var(--secondary-color-dark, #0c5464); */
 }
 body.dark-mode .chat-message-sender-name {
-    color: var(--text-muted-color-dark, #909090);
+    color: var(--chat-sender-name-color-dark, var(--text-color-muted-dark, #adb5bd));
 }
 body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-sender-name {
-    color: var(--primary-color-lighter, #79c0ff);
+    color: var(--chat-sender-name-connector-color-dark, var(--primary-color-light, #79c0ff));
 }
 body.dark-mode .chat-message-wrapper.connector-wrapper .chat-message-ui.tutor .chat-message-sender-name {
-    color: var(--secondary-color-lighter, #86d0fb);
+    color: var(--chat-sender-name-tutor-color-dark, var(--secondary-color-light, #86d0fb));
 }
 body.dark-mode .chat-message-ui.connector-thinking {
-    background-color: var(--bg-dark-hover, #3a3a3a);
-    color: var(--text-muted-color-dark, #888);
+    background-color: var(--chat-typing-indicator-bg-dark, var(--bg-dark-hover, #303132));
+    color: var(--chat-typing-indicator-text-dark, var(--text-color-muted-dark, #868e96));
+}
+body.dark-mode .chat-message-image {
+    background-color: var(--chat-image-bg-fallback-dark, #3a3a3a);
 }
 body.dark-mode .chat-message-ui.system-message {
-    background-color: transparent;
-    color: var(--text-muted-color-dark, #909090);
+    color: var(--chat-system-message-text-dark, var(--text-color-muted-dark, #adb5bd));
 }
 body.dark-mode .chat-message-ui.system-message.error {
-    color: var(--danger-color-light, #ff8080);
+    color: var(--chat-system-error-text-dark, var(--danger-color-light, #ff8080));
+}
+body.dark-mode .call-event-message {
+    color: var(--chat-call-event-text-dark, var(--text-color-muted-dark, #adb5bd));
+}
+body.dark-mode .call-event-icon.call-started { color: var(--chat-call-started-icon-dark, var(--success-color-dark, #20c997)); }
+body.dark-mode .call-event-icon.call-ended { color: var(--chat-call-ended-icon-dark, var(--info-color-dark, #61dafb)); }
+body.dark-mode .call-event-icon.call-missed { color: var(--chat-call-missed-icon-dark, var(--danger-color-dark, #ff6b6b)); }
+body.dark-mode .call-event-action-btn {
+    color: var(--chat-call-action-btn-text-dark, var(--link-color-dark, #03a9f4));
+}
+body.dark-mode .call-event-action-btn:hover {
+    color: var(--chat-call-action-btn-hover-text-dark, var(--link-hover-color-dark, #61dafb));
+    background-color: var(--chat-call-action-btn-hover-bg-dark, var(--bg-subtle-hover-dark, #3a3b3c));
+}
+body.dark-mode .chat-session-timestamp {
+    color: var(--chat-session-timestamp-text-dark, var(--text-color-muted-dark, #adb5bd));
+}
+body.dark-mode .custom-chat-tooltip {
+    background-color: var(--tooltip-bg-dark, #f8f9fa);
+    color: var(--tooltip-text-dark, #212529);
+}
+/* D:\polyglot_connect\css\components\chat_bubbles.css */
+
+/* Voice Memo Specific Styles */
+.chat-message-ui.voice-memo-message {
+    padding: 8px 12px; /* Adjust overall padding if needed */
+    display: flex; /* Allow transcript to flow below player controls */
+    flex-direction: column;
+    gap: 4px; /* Space between player and transcript */
+}
+
+.voice-memo-player-controls {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 8px; /* Space between play button and waveform */
+}
+
+.voice-memo-play-btn {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 1.2em; /* Adjust icon size */
+    color: var(--voice-memo-play-button-color, #ffffff); /* Default to white, can be overridden */
+    width: 30px; /* Fixed width for the button */
+    height: 30px; /* Fixed height for the button */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* Prevent button from shrinking */
+}
+
+
+.chat-message-ui.connector.voice-memo-message .voice-memo-play-btn {
+    color: var(--text-color-primary, #333); /* Color for connector play button icon */
+}
+
+
+.voice-memo-waveform-container {
+    flex-grow: 1; /* Allow waveform to take remaining space */
+    height: 30px; /* Match WaveSurfer height option */
+    min-width: 150px; /* Prevent it from becoming too small */
+}
+
+/* WaveSurfer itself often injects a <wave> element inside the container. */
+/* You might not need to style #waveform-id directly if WaveSurfer handles it. */
+/* Styling the fallback player if WaveSurfer fails */
+.chat-audio-player.fallback-player {
+    width: 100%;
+    height: 38px;
+    border-radius: 19px;
+}
+.chat-message-ui.user.voice-memo-message .fallback-player::-webkit-media-controls-panel {
+    background-color: var(--user-message-bg-lighter, rgba(0, 120, 255, 0.7));
+    border-radius: 19px;
+}
+.chat-message-ui.connector.voice-memo-message .fallback-player::-webkit-media-controls-panel {
+    background-color: var(--connector-message-bg-lighter, rgba(220, 220, 220, 0.7));
+    border-radius: 19px;
+}
+
+
+.voice-memo-transcript { /* New class for transcript */
+    font-size: 0.85em; /* Slightly smaller */
+    color: var(--voice-memo-transcript-color, #e0e0e0); /* Lighter color for transcript on dark bg */
+    font-style: italic;
+    margin-top: 2px; /* Small space above transcript */
+    padding-left: 5px; /* Align with general text padding if needed */
+    word-break: break-word;
+}
+
+.chat-message-ui.user.voice-memo-message .voice-memo-transcript {
+    color: rgba(255, 255, 255, 0.8); /* Transcript color for user bubble */
+}
+
+.chat-message-ui.connector.voice-memo-message .voice-memo-transcript {
+    color: var(--text-color-secondary, #555); /* Transcript color for connector bubble */
+}
+/* Chat Input Area Enhancements */
+.chat-input-previews-container {
+    display: flex;
+    flex-wrap: wrap; /* Allow previews to wrap */
+    gap: 8px;
+    padding: 0 8px 8px 8px; /* Padding around previews */
+    max-height: 120px; /* Limit height, make it scrollable if needed */
+    overflow-y: auto;
+}
+
+.image-preview-container { /* This is now the inner container for items */
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%; /* Take full width of its parent */
+}
+
+.image-preview-item {
+    position: relative;
+    width: 60px; /* Adjust size as needed */
+    height: 60px; /* Adjust size as needed */
+    border: 1px solid var(--border-color-light);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--background-color-secondary); /* For placeholder feel */
+}
+
+.image-preview-item img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+}
+
+.remove-preview-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.remove-preview-btn:hover {
+    background-color: rgba(255, 0, 0, 0.8);
+}
+
+.chat-main-input-area {
+    display: flex;
+    align-items: center; /* Align items vertically */
+    gap: 8px; /* Space between buttons and input wrapper */
+    padding: 8px; /* Consistent padding with previews */
+    width: 100%;
+}
+
+.text-input-wrapper {
+    flex-grow: 1; /* Allow this to take up available space */
+    display: flex;
+    flex-direction: column; /* Stack text input and caption input */
+    gap: 4px;
+}
+
+.chat-input-field,
+.image-caption-input {
+    width: 100%; /* Make them take full width of their wrapper */
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    background-color: var(--input-background-color);
+    color: var(--text-color-primary);
+    font-size: 1rem;
+}
+
+.image-caption-input {
+    font-size: 0.9rem; /* Slightly smaller caption input */
+    /* display: none; is handled by JS */
+}
+
+/* Adjustments for when previews are active */
+.embedded-chat-footer,
+.messaging-interface-footer,
+.group-chat-footer {
+    /* Allow footer to grow if needed, or set a max-height and make scrollable */
+    /* For simplicity, let's assume it can grow a bit */
+    flex-direction: column; /* Stack previews on top of main input area */
 }

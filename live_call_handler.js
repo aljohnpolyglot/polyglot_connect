@@ -1,429 +1,649 @@
 // js/sessions/live_call_handler.js
-// FACADE for Live API call logic. Coordinates specialized live call sub-modules.
-// Enhanced debugging for "does not open" issue.
-
-console.log("live_call_handler.js: Script execution STARTED (Facade Debug v2).");
-
-if (window.liveCallHandler) {
-    console.warn("live_call_handler.js: window.liveCallHandler ALREADY DEFINED. Possible double load or script issue.");
-}
+// Handles the logic for a Live API-based voice/video call using @google/genai SDK.
 
 window.liveCallHandler = (() => {
     'use strict';
-    const FACADE_VERSION = "Debug v2.1";
-    console.log(`live_call_handler.js: IIFE (Facade ${FACADE_VERSION}) STARTING.`);
 
-    const getDeps = (functionName = "liveCallHandler internal") => {
-        const deps = {
-            domElements: window.domElements,
-            uiUpdater: window.uiUpdater,
-            polyglotHelpers: window.polyglotHelpers,
-            geminiLiveApiService: window.geminiLiveApiService,
-            sessionStateManager: window.sessionStateManager,
-            modalHandler: window.modalHandler,
-            polyglotSharedContent: window.polyglotSharedContent,
-            polyglotMinigamesData: window.polyglotMinigamesData,
-            conversationManager: window.conversationManager,
-            liveApiMicInput: window.liveApiMicInput,
-            liveApiAudioOutput: window.liveApiAudioOutput,
-            liveApiTextCoordinator: window.liveApiTextCoordinator
-        };
-        // Simple check for critical global objects at the point of use
-        if (!window.domElements) console.error(`LCH Facade (${functionName}): Global window.domElements is MISSING!`);
-        // ... (add more global checks if needed for things like polyglotHelpers, etc.)
-        return deps;
-    };
+    const getDeps = () => ({
+        domElements: window.domElements,
+        uiUpdater: window.uiUpdater,
+        polyglotHelpers: window.polyglotHelpers,
+        geminiLiveApiService: window.geminiLiveApiService,
+        sessionStateManager: window.sessionStateManager,
+        modalHandler: window.modalHandler,
+        polyglotSharedContent: window.polyglotSharedContent,
+        polyglotMinigamesData: window.polyglotMinigamesData,
+        conversationManager: window.conversationManager // Ensure conversationManager is included
+    });
 
     let currentConnector = null;
     let currentSessionType = null;
-    let isMicEffectivelyMuted = true;
-    let isAiSpeakerMuted = false;
+    // No longer storing the SDK session object directly here;
+    // all interactions will go through geminiLiveApiService.
+    // We rely on sessionStateManager.isSessionActive() to know if a call is ongoing.
 
-    function buildLiveApiSystemInstruction(connector) {
-        const functionName = "buildLiveApiSystemInstruction";
-        // console.log(`LCH Facade (${functionName}): Building for connector ${connector?.id}`);
-        const { conversationManager } = getDeps(functionName); // Get deps *inside* if it relies on them
+    // Web Audio API state
+    let audioContext = null;
+    let userMicrophoneStream = null;
+    let microphoneSourceNode = null;
+    let scriptProcessorNode = null;
+    const TARGET_INPUT_SAMPLE_RATE = 16000;
+    const AI_OUTPUT_SAMPLE_RATE = 24000;
 
-        if (!connector) {
-            console.warn(`LCH Facade (${functionName}): Connector undefined. RETURNING GENERIC PROMPT.`);
-            return { parts: [{ text: "You are a helpful assistant. Please be concise and conversational." }] };
-        }
+    let aiAudioPlaybackQueue = [];
+    let isPlayingAiAudio = false;
+    let nextAiAudioPlayTime = 0;
+    let audioPlayerContext = null;
 
-        if (!conversationManager || typeof conversationManager.ensureConversationRecord !== 'function') {
-            console.error(`LCH Facade (${functionName}): conversationManager (or .ensureConversationRecord) missing! Building basic fallback.`);
-            let personaDetails = `You are ${connector.profileName || 'a language partner'}, primarily speaking ${connector.language || 'English'}.`;
-            const fullInstruction = `${personaDetails} Keep your responses conversational. Do not mention being an AI.`;
-            console.log(`LCH Facade (${functionName}): RETURNING BASIC FALLBACK PROMPT: "${fullInstruction.substring(0,50)}..."`);
-            return { parts: [{ text: fullInstruction }] };
-        }
+    let isMicEffectivelyMuted = true; // UI state and controls sending audio
+    let isAiSpeakerMuted = false;   // UI state and controls AI audio playback
 
-        try {
-            const { conversation: convo } = conversationManager.ensureConversationRecord(connector.id, connector);
-            if (convo?.geminiHistory?.[0]?.parts?.[0]?.text) {
-                const promptText = convo.geminiHistory[0].parts[0].text;
-                console.log(`LCH Facade (${functionName}): RETURNING RICH PROMPT from geminiHistory: "${promptText.substring(0,50)}..."`);
-                return { parts: [{ text: promptText }] };
-            }
-        } catch (e) {
-            console.error(`LCH Facade (${functionName}): Error in ensureConversationRecord or accessing geminiHistory:`, e);
-            // Fall through to build manual prompt
+    // --- NEW: Buffers and Timers for Consolidating Transcriptions ---
+    let userTranscriptionBuffer = "";
+    let userTranscriptionTimeoutId = null;
+    const USER_TRANSCRIPTION_FLUSH_DELAY = 1500; // ms of silence before flushing user's speech
+
+    let aiSpokenTextBuffer = ""; // For AI's own speech if it also comes in chunks
+    let aiSpokenTextTimeoutId = null;
+    const AI_SPOKEN_TEXT_FLUSH_DELAY = 800; // Shorter delay for AI as it might speak faster
+
+    // Helper to flush buffered transcriptions
+    function flushUserTranscription() {
+        const { sessionStateManager } = getDeps();
+        if (userTranscriptionBuffer.trim() !== "") {
+            console.log("liveCallHandler: Flushing USER transcription buffer:", userTranscriptionBuffer);
+            sessionStateManager.addTurnToTranscript('user-audio-transcript', userTranscriptionBuffer.trim());
+            userTranscriptionBuffer = "";
         }
-        
-        console.warn(`LCH Facade (${functionName}): Fallback system instruction (manual build) for connector: ${connector.id}`);
-        let personaDets = `You are ${connector.profileName || 'a character'}, a ${connector.modernTitle || 'person'} from ${connector.city || 'a place'}, ${connector.country || 'a country'}. Your main language for this call is ${connector.language || 'English'}.`;
-        if (connector.interests?.length > 0) personaDets += ` You enjoy ${connector.interests.slice(0, 2).join(' and ')}.`;
-        let langInstructions = ` Engage the user in natural conversation in ${connector.language || 'English'}. Primarily respond in ${connector.language || 'English'}.`;
-        const engPractice = connector.practiceLanguages?.find(lang => lang.lang === "English");
-        if (engPractice && (engPractice.levelTag === "fluent" || engPractice.levelTag === "learning")) {
-            langInstructions += ` You're also ${engPractice.levelTag} in English. If the user uses English, you can reply in English if natural, but guide back to ${connector.language || 'English'} for practice.`;
-        }
-        const fullIns = `${personaDets}${langInstructions} Keep responses conversational. DO NOT mention being an AI, model, or program. Act human.`;
-        console.log(`LCH Facade (${functionName}): RETURNING MANUALLY BUILT FALLBACK PROMPT: "${fullIns.substring(0,50)}..."`);
-        return { parts: [{ text: fullIns }] };
+        if (userTranscriptionTimeoutId) clearTimeout(userTranscriptionTimeoutId);
+        userTranscriptionTimeoutId = null;
     }
-    
+
+    function flushAiSpokenText() {
+        const { sessionStateManager, polyglotHelpers } = getDeps(); // Add polyglotHelpers
+        if (aiSpokenTextBuffer.trim() !== "") {
+            let textToStore = aiSpokenTextBuffer.trim();
+            if (polyglotHelpers?.stripEmojis) { // Check if helper is available
+                textToStore = polyglotHelpers.stripEmojis(textToStore);
+                console.log("liveCallHandler: AI Spoken text buffer, EMOJIS STRIPPED for transcript:", textToStore);
+            } else {
+                console.log("liveCallHandler: Flushing AI SPOKEN text buffer (no emoji stripping helper):", textToStore);
+            }
+            sessionStateManager.addTurnToTranscript('connector-spoken-output', textToStore); // Use a consistent key
+            aiSpokenTextBuffer = "";
+        }
+        if (aiSpokenTextTimeoutId) clearTimeout(aiSpokenTextTimeoutId);
+        aiSpokenTextTimeoutId = null;
+    }
+
+    // --- Helper Function to Build System Instruction for Live API ---
+    function buildLiveApiSystemInstruction(connector) {
+        if (!connector) return { parts: [{ text: "You are a helpful assistant." }] };
+
+        let personaDetails = `You are ${connector.profileName}, a ${connector.modernTitle} living in ${connector.city}, ${connector.country}. Your primary language for this call is ${connector.language}.`;
+        if (connector.interests && connector.interests.length > 0) {
+            personaDetails += ` You enjoy activities like ${connector.interests.slice(0, 2).join(' and ')}.`;
+        }
+        // Consider adding a snippet from dailyRoutineNotes if available and concise.
+
+        let languageInstructions = ` Your main goal is to engage the user in natural, human-like conversation in ${connector.language}. Primarily respond in ${connector.language}.`;
+        const englishPractice = connector.practiceLanguages?.find(lang => lang.lang === "English");
+        if (englishPractice && (englishPractice.levelTag === "fluent" || englishPractice.levelTag === "learning")) {
+            languageInstructions += ` You are also ${englishPractice.levelTag} in English. If the user speaks English, you can respond in English if it feels natural for that turn in the call, but generally try to guide the conversation back to ${connector.language} for their practice.`;
+        }
+
+        const fullInstruction = `${personaDetails}${languageInstructions} Keep your responses conversational and appropriate for a voice call. ABSOLUTELY DO NOT mention that you are an AI, a language model, or a computer program. If asked directly about your nature, subtly deflect the question or answer as a human from ${connector.city} would, then steer the conversation back to language practice. Maintain your persona throughout the call.`;
+        return { parts: [{ text: fullInstruction }] }; // SDK expects Content object structure for systemInstruction
+    }
+
+    // --- UI Initialization for the specific call type ---
     function initializeCallUI(connector, sessionType) {
-        const functionName = "initializeCallUI";
-        // console.log(`LCH Facade (${functionName}): Type: ${sessionType}, Connector: ${connector?.id}`);
-        const { uiUpdater, domElements, modalHandler } = getDeps(functionName);
+        const { uiUpdater, domElements, modalHandler } = getDeps();
+        console.log("liveCallHandler: initializeCallUI for type:", sessionType);
+        let modalToOpen;
 
         if (!domElements || !uiUpdater || !modalHandler) {
-            console.error(`LCH Facade (${functionName}): Missing UI deps. Cannot initialize UI.`);
-            return; // Abort UI initialization
-        }
-
-        let modalToOpenId = null;
-        let modalElement = null;
-
-        if (sessionType === "direct_modal") {
-            modalToOpenId = 'directCallInterface';
-            modalElement = domElements.directCallInterface;
-            if (!modalElement) { console.error(`LCH Facade (${functionName}): domElements.directCallInterface missing!`); return; }
-            uiUpdater.updateDirectCallHeader?.(connector);
-            uiUpdater.clearDirectCallActivityArea?.();
-            uiUpdater.updateDirectCallStatus?.("Live Call Connected", false); 
-            uiUpdater.updateDirectCallMicButtonVisual?.(isMicEffectivelyMuted); 
-            uiUpdater.updateDirectCallSpeakerButtonVisual?.(isAiSpeakerMuted);
-        } else if (sessionType === "voiceChat_modal") { 
-            modalToOpenId = 'voiceEnabledChatInterface';
-            modalElement = domElements.voiceEnabledChatInterface;
-            if (!modalElement) { console.error(`LCH Facade (${functionName}): domElements.voiceEnabledChatInterface missing!`); return; }
-            uiUpdater.updateVoiceChatHeader?.(connector);
-            uiUpdater.clearVoiceChatLog?.();
-            uiUpdater.resetVoiceChatInput?.();
-            if (domElements.toggleVoiceChatTTSBtn) uiUpdater.updateTTSToggleButtonVisual?.(domElements.toggleVoiceChatTTSBtn, isAiSpeakerMuted);
-            domElements.voiceChatTextInput?.focus();
-        }
-
-        if (modalElement && modalHandler.open) {
-            modalHandler.open(modalElement);
-            console.log(`LCH Facade (${functionName}): Opened modal '${modalToOpenId}'.`);
-        } else {
-            console.error(`LCH Facade (${functionName}): Modal element for ID '${modalToOpenId}' not found OR modalHandler.open missing.`);
-        }
-    }
-
-    async function startLiveCall(connector, sessionType) {
-        const functionName = "startLiveCall";
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): TRYING TO START - Connector: ${connector?.id}, Type: ${sessionType}`);
-        const deps = getDeps(functionName);
-
-        // Step 1: Check all critical dependencies upfront
-        const requiredDepNames = [
-            'geminiLiveApiService', 'sessionStateManager', 'conversationManager', 
-            'liveApiMicInput', 'liveApiAudioOutput', 'liveApiTextCoordinator', 
-            'uiUpdater', 'domElements', 'modalHandler', 'polyglotHelpers'
-        ];
-        for (const depName of requiredDepNames) {
-            if (!deps[depName]) {
-                console.error(`LCH Facade (${functionName}): ABORT! CRITICAL DEPENDENCY '${depName}' IS MISSING.`);
-                alert(`Live call error: Core component '${depName}' missing (LCH-S01). Please check console and script loading order.`);
-                deps.sessionStateManager?.resetBaseSessionState?.(); // Attempt cleanup
-                return false;
-            }
-            // Check initialize for sub-modules
-            if (['liveApiMicInput', 'liveApiAudioOutput', 'liveApiTextCoordinator'].includes(depName)) {
-                if (typeof deps[depName].initialize !== 'function') {
-                    console.error(`LCH Facade (${functionName}): ABORT! Sub-module '${depName}' MISSING 'initialize' METHOD.`);
-                    alert(`Live call error: Sub-component '${depName}' broken (LCH-S02).`);
-                    deps.sessionStateManager?.resetBaseSessionState?.();
-                    return false;
-                }
-            }
-        }
-        console.log(`LCH Facade (${functionName}): All dependencies appear present.`);
-
-        // Step 2: Initialize sub-modules
-        console.log(`LCH Facade (${functionName}): Initializing sub-modules...`);
-        if (!deps.liveApiMicInput.initialize(deps.geminiLiveApiService, () => isMicEffectivelyMuted)) {
-             console.error(`LCH Facade (${functionName}): ABORT! liveApiMicInput.initialize FAILED.`);
-             deps.sessionStateManager.resetBaseSessionState?.(); return false; 
-        }
-        if (!deps.liveApiAudioOutput.initialize(() => isAiSpeakerMuted)) {
-             console.error(`LCH Facade (${functionName}): ABORT! liveApiAudioOutput.initialize FAILED.`);
-             deps.sessionStateManager.resetBaseSessionState?.(); return false; 
-        }
-        if (!deps.liveApiTextCoordinator.initialize(deps.sessionStateManager, deps.polyglotHelpers, deps.uiUpdater)) {
-             console.error(`LCH Facade (${functionName}): ABORT! liveApiTextCoordinator.initialize FAILED.`);
-             deps.sessionStateManager.resetBaseSessionState?.(); return false; 
-        }
-        deps.liveApiTextCoordinator.setCurrentSessionTypeContext(sessionType); // Essential
-        deps.liveApiTextCoordinator.resetBuffers(); // Ensure clean start
-        console.log(`LCH Facade (${functionName}): Sub-modules initialized.`);
-
-        // Step 3: Set internal state
-        currentConnector = connector;
-        currentSessionType = sessionType;
-        isMicEffectivelyMuted = false; // Default to open mic for live API
-        isAiSpeakerMuted = false;     
-        console.log(`LCH Facade (${functionName}): Internal state set. MicMuted: ${isMicEffectivelyMuted}, SpeakerMuted: ${isAiSpeakerMuted}`);
-
-        // Step 4: Initialize base session state (shows virtual calling screen)
-        console.log(`LCH Facade (${functionName}): Calling sessionStateManager.initializeBaseSession...`);
-        if (!deps.sessionStateManager.initializeBaseSession(connector, sessionType)) {
-            console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.initializeBaseSession FAILED.`);
-            // This function should handle its own alerts/UI if session is already active.
-            return false;
-        }
-        console.log(`LCH Facade (${functionName}): sessionStateManager.initializeBaseSession successful.`);
-
-        // Step 5: Build System Instruction
-        const systemInstructionObject = buildLiveApiSystemInstruction(connector);
-        if (!systemInstructionObject?.parts?.[0]?.text?.trim()) { // Check for empty/whitespace text too
-            console.error(`LCH Facade (${functionName}): ABORT! Failed to build a valid, non-empty system instruction.`);
-            deps.uiUpdater?.updateDirectCallStatus?.("Setup Error (Sys. Prompt)", true);
-            if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-            deps.sessionStateManager.resetBaseSessionState();
-            return false;
-        }
-        console.log(`LCH Facade (${functionName}): System instruction built successfully.`);
-        
-        // Step 6: Prepare Live API Config
-        const liveApiModelName = connector.liveApiModelName || "gemini-2.0-flash-live-001"; // <<< CONFIRM THIS MODEL NAME
-        console.log(`LCH Facade (${functionName}): Using Live API Model: '${liveApiModelName}'`);
-        const liveApiSessionSetupConfig = { /* ... as in your previous working version ... */ }; // generationConfig, systemInstruction, etc.
-        // For brevity, assuming this config is correct from your previous message.
-        // Ensure `connector.liveApiVoiceName` and `connector.languageCode` are used.
-         liveApiSessionSetupConfig.generationConfig = {
-            responseModalities: ["AUDIO"],
-            speechConfig: { 
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: connector.liveApiVoiceName || "Puck" } },
-                languageCode: connector.languageCode
-            }
-        };
-        liveApiSessionSetupConfig.systemInstruction = systemInstructionObject;
-        liveApiSessionSetupConfig.realtimeInputConfig = { activityHandling: "START_OF_ACTIVITY_INTERRUPTS" };
-        liveApiSessionSetupConfig.inputAudioTranscription = {};
-        liveApiSessionSetupConfig.outputAudioTranscription = {};
-        console.log(`LCH Facade (${functionName}): Live API Config:`, JSON.stringify(liveApiSessionSetupConfig).substring(0, 300) + "...");
-        
-        // Step 7: Define Callbacks
-        const liveApiCallbacks = { /* ... as in your previous version, including onAiInterrupted ... */ };
-         liveApiCallbacks.onOpen = handleLiveApiSessionOpen;
-         liveApiCallbacks.onAiAudioChunk = deps.liveApiAudioOutput.handleReceivedAiAudioChunk;
-         liveApiCallbacks.onAiText = deps.liveApiTextCoordinator.handleReceivedAiText;
-         liveApiCallbacks.onUserTranscription = deps.liveApiTextCoordinator.handleReceivedUserTranscription;
-         liveApiCallbacks.onModelTranscription = deps.liveApiTextCoordinator.handleReceivedModelTranscription;
-         liveApiCallbacks.onAiInterrupted = handleAiInterrupted;
-         liveApiCallbacks.onError = handleLiveApiError;
-         liveApiCallbacks.onClose = handleLiveApiClose;
-        console.log(`LCH Facade (${functionName}): Callbacks defined.`);
-
-        // Step 8: Connect
-        try {
-            console.log(`LCH Facade (${functionName}): Attempting geminiLiveApiService.connect...`);
-            const connectResult = await deps.geminiLiveApiService.connect(liveApiModelName, liveApiSessionSetupConfig, liveApiCallbacks);
-            console.log(`LCH Facade (${functionName}): connectResult from service: ${!!connectResult}`);
-            if (connectResult) { 
-                console.log(`LCH Facade (${functionName}): Connect process INITIATED by service. Waiting for SDK 'onOpen'.`);
-                return true; 
-            } else { 
-                console.error(`LCH Facade (${functionName}): ABORT! geminiLiveApiService.connect returned falsy.`);
-                // This path should ideally be caught by an error throw in geminiLiveApiService if it fails to return a session
-                throw new Error("geminiLiveApiService.connect returned falsy without throwing error.");
-            }
-        } catch (error) { 
-            console.error(`LCH Facade (${functionName}): ABORT! Error DURING geminiLiveApiService.connect call:`, error);
-            deps.uiUpdater?.updateDirectCallStatus?.("Connection Failed", true);
-            if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-                deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-            }
-            deps.sessionStateManager.resetBaseSessionState();
-            return false;
-        }
-    }
-
-    // --- Other Public Methods (sendTypedText, toggles, requestActivity) ---
-    // These should be largely the same as your "Complete Facade" version,
-    // ensuring they use `deps.subModuleName?.methodName?.()` for safety.
-    function endLiveCall(generateRecap = true) {
-        const functionName = "endLiveCall";
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): START. GenerateRecap: ${generateRecap}`);
-        const deps = getDeps(functionName);
-
-        deps.geminiLiveApiService?.closeConnection?.(); // Triggers SDK onClose eventually
-
-        // Explicitly stop/cleanup sub-modules
-        deps.liveApiMicInput?.stopCapture?.();
-        deps.liveApiAudioOutput?.cleanupAudioContext?.();
-        deps.liveApiTextCoordinator?.flushUserTranscription?.(); 
-        deps.liveApiTextCoordinator?.flushAiSpokenText?.();
-        // Consider deps.liveApiTextCoordinator?.resetBuffers?.(); if appropriate on every end.
-
-        if (currentSessionType === "direct_modal" && deps.domElements?.directCallInterface && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.directCallInterface);
-        } else if (currentSessionType === "voiceChat_modal" && deps.domElements?.voiceEnabledChatInterface && deps.modalHandler?.close) {
-             deps.modalHandler.close(deps.domElements.voiceEnabledChatInterface);
-        }
-        
-        deps.sessionStateManager?.finalizeBaseSession?.(generateRecap); 
-        currentConnector = null;
-        currentSessionType = null;
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): FINISHED.`);
-    }
-    // Add other methods (sendTypedText, toggles, requestActivity) here, adapted like endLiveCall
-
-    function sendTypedTextDuringLiveCall(text) {
-        const functionName = "sendTypedTextDuringLiveCall";
-        const deps = getDeps(functionName);
-        if (!text?.trim() || !deps.geminiLiveApiService?.sendClientText || !deps.liveApiTextCoordinator?.handleUserTypedText) return; 
-        if (!deps.sessionStateManager?.isSessionActive()) return; 
-        if (currentSessionType === "voiceChat_modal" && deps.uiUpdater?.appendToVoiceChatLog) deps.uiUpdater.appendToVoiceChatLog(text, 'user');
-        deps.liveApiTextCoordinator.handleUserTypedText(text);
-        deps.geminiLiveApiService.sendClientText(text);
-    }
-
-    function toggleMicMuteForLiveCall() {
-        const functionName = "toggleMicMuteForLiveCall";
-        const deps = getDeps(functionName);
-        isMicEffectivelyMuted = !isMicEffectivelyMuted;
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): Mic muted: ${isMicEffectivelyMuted}`);
-        if (currentSessionType === "direct_modal") {
-            deps.uiUpdater?.updateDirectCallMicButtonVisual?.(isMicEffectivelyMuted);
-            deps.uiUpdater?.updateDirectCallStatus?.(isMicEffectivelyMuted ? "Microphone OFF" : "Microphone ON", false);
-        } // Add voiceChat_modal UI update if needed
-        if (isMicEffectivelyMuted) deps.geminiLiveApiService?.sendAudioStreamEndSignal?.();
-        // liveApiMicInput will pick up state via its () => isMicEffectivelyMuted function
-    }
-
-    function toggleSpeakerMuteForLiveCall() {
-        const functionName = "toggleSpeakerMuteForLiveCall";
-        const deps = getDeps(functionName);
-        isAiSpeakerMuted = !isAiSpeakerMuted;
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): Speaker muted: ${isAiSpeakerMuted}`);
-        if (currentSessionType === "direct_modal") deps.uiUpdater?.updateDirectCallSpeakerButtonVisual?.(isAiSpeakerMuted);
-        // Add voiceChat_modal UI update if needed
-        if (isAiSpeakerMuted) {
-            deps.liveApiAudioOutput?.clearPlaybackQueue?.();
-            deps.liveApiAudioOutput?.stopCurrentSound?.();
-        }
-    }
-    function requestActivityForLiveCall() { /* Simplified - ensure all deps?.method?.() calls */ }
-
-
-    // --- SDK Callback Handlers ---
-    function handleLiveApiSessionOpen() {
-        const functionName = "handleLiveApiSessionOpen (SDK_CB)";
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): SDK onOpen FIRED.`);
-        const deps = getDeps(functionName);
-        
-        if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-            console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
-        } else {
-            console.warn(`LCH Facade (${functionName}): Virtual calling screen or modalHandler.close not available.`);
-        }
-
-        if (!deps.sessionStateManager?.markSessionAsStarted()) {
-             console.error(`LCH Facade (${functionName}): sessionStateManager.markSessionAsStarted FAILED!`);
-             // This is a critical failure, likely call should be aborted.
-             handleLiveApiError(new Error("Failed to mark session as started in onOpen."));
-             return;
-        }
-        console.log(`LCH Facade (${functionName}): Session marked as started.`);
-        
-        // isMicEffectivelyMuted and isAiSpeakerMuted should have been set in startLiveCall
-        // initializeCallUI depends on these current values.
-        initializeCallUI(currentConnector, currentSessionType); 
-        console.log(`LCH Facade (${functionName}): Call UI initialized.`);
-        
-        if (deps.liveApiMicInput?.startCapture) {
-            console.log(`LCH Facade (${functionName}): Calling liveApiMicInput.startCapture...`);
-            deps.liveApiMicInput.startCapture(handleLiveApiError); // Pass the facade's error handler
-        } else {
-            console.error(`LCH Facade (${functionName}): CRITICAL! liveApiMicInput.startCapture is NOT AVAILABLE! Mic input will not work.`);
-            handleLiveApiError(new Error("Microphone module 'startCapture' is missing.")); // Trigger full error handling
+            console.error("liveCallHandler: initializeCallUI - Missing essential UI dependencies.");
             return;
         }
 
-        if (currentConnector?.greetingCall && deps.geminiLiveApiService?.sendClientText) {
-            let greetingText = currentConnector.greetingCall;
-            if (deps.polyglotHelpers?.stripEmojis) greetingText = deps.polyglotHelpers.stripEmojis(greetingText);
-            deps.sessionStateManager?.addTurnToTranscript?.('connector-greeting-intent', currentConnector.greetingCall);
-            if (greetingText.trim()) {
-                console.log(`LCH Facade (${functionName}): Sending greeting: "${greetingText.substring(0,30)}..."`);
-                deps.geminiLiveApiService.sendClientText(greetingText);
-            }
+        if (sessionType === "direct_modal") {
+            modalToOpen = domElements.directCallInterface;
+            if (!modalToOpen) { console.error("liveCallHandler: domElements.directCallInterface missing!"); return; }
+            uiUpdater.updateDirectCallHeader(connector);
+            uiUpdater.clearDirectCallActivityArea();
+            uiUpdater.updateDirectCallStatus("Live Call Connected", false);
+            isMicEffectivelyMuted = false; // For Live API, mic is "open" for sending by default once session starts
+            uiUpdater.updateDirectCallMicButtonVisual(isMicEffectivelyMuted);
+            isAiSpeakerMuted = false;
+            uiUpdater.updateDirectCallSpeakerButtonVisual(isAiSpeakerMuted);
+        } else if (sessionType === "voiceChat_modal") {
+            modalToOpen = domElements.voiceEnabledChatInterface;
+            if (!modalToOpen) { console.error("liveCallHandler: domElements.voiceEnabledChatInterface missing!"); return; }
+            uiUpdater.updateVoiceChatHeader(connector);
+            uiUpdater.clearVoiceChatLog();
+            uiUpdater.resetVoiceChatInput();
+            isAiSpeakerMuted = false;
+            if (domElements.toggleVoiceChatTTSBtn) uiUpdater.updateTTSToggleButtonVisual(domElements.toggleVoiceChatTTSBtn, isAiSpeakerMuted);
+            if (domElements.voiceChatTextInput) domElements.voiceChatTextInput.focus();
         }
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): FINISHED.`);
+
+        if (modalToOpen) {
+            modalHandler.open(modalToOpen);
+            console.log("liveCallHandler: Opened modal for", sessionType);
+        } else {
+            console.error("liveCallHandler: initializeCallUI - modalToOpen was not determined for sessionType:", sessionType);
+        }
     }
 
-    function handleAiInterrupted() {
-        const functionName = "handleAiInterrupted (SDK_CB)";
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): AI speech interrupted.`);
-        const { liveApiAudioOutput, liveApiTextCoordinator } = getDeps(functionName);
-        liveApiAudioOutput?.clearPlaybackQueue?.();
-        liveApiAudioOutput?.stopCurrentSound?.(); 
-        liveApiTextCoordinator?.resetAiSpokenTextBuffer?.();
-        console.log(`LCH Facade (${functionName}): Interruption processed.`);
+    // --- Public API ---
+    async function startLiveCall(connector, sessionType) {
+        console.log(`liveCallHandler: startLiveCall - Connector: ${connector?.id}, Type: ${sessionType}`);
+        const { geminiLiveApiService, sessionStateManager, uiUpdater, domElements, modalHandler, conversationManager } = getDeps();
+
+        if (!connector || !sessionType || !geminiLiveApiService || !sessionStateManager || !uiUpdater || !modalHandler || !domElements || !conversationManager) {
+            console.error("liveCallHandler: Missing critical dependencies for starting live call.", {
+                connectorId: connector?.id, sessionType, hasLiveService: !!geminiLiveApiService,
+                hasStateMgr: !!sessionStateManager, hasUiUpdater: !!uiUpdater, hasModalHandler: !!modalHandler, hasDomElements: !!domElements
+            });
+            alert("Live call cannot start: missing core components (LCH01).");
+            return false;
+        }
+
+        currentConnector = connector;
+        currentSessionType = sessionType;
+        // Set initial mute states for UI. Actual audio sending controlled by connection state and this flag.
+        isMicEffectivelyMuted = (sessionType === "direct_modal"); // Direct Call UI button starts as "muted" visually
+        isAiSpeakerMuted = false;
+        aiAudioPlaybackQueue = [];
+        isPlayingAiAudio = false;
+        nextAiAudioPlayTime = 0;
+
+        if (!sessionStateManager.initializeBaseSession(connector, sessionType)) {
+            console.error("liveCallHandler: Failed to initialize base session state (e.g., virtual calling screen).");
+            return false;
+        }
+
+        const { conversation: convoForSystemPrompt } = conversationManager.ensureConversationRecord(connector.id, connector);
+        if (!convoForSystemPrompt || !convoForSystemPrompt.geminiHistory || convoForSystemPrompt.geminiHistory.length < 1 || !convoForSystemPrompt.geminiHistory[0].parts?.[0]?.text) {
+            console.error("liveCallHandler: Could not retrieve a valid system prompt from conversationManager for connector:", connector.id);
+            uiUpdater?.updateDirectCallStatus("Live Call Setup Failed (Prompt Error)", true);
+            if (domElements?.virtualCallingScreen && modalHandler) modalHandler.close(domElements.virtualCallingScreen);
+            sessionStateManager.resetBaseSessionState();
+            return false;
+        }
+        const systemInstructionText = convoForSystemPrompt.geminiHistory[0].parts[0].text;
+        const systemInstructionObject = { parts: [{ text: systemInstructionText }] };
+        console.log("liveCallHandler: Rich system instruction for Live API retrieved from conversationManager.");
+
+        const liveApiModelName = connector.liveApiModelName || "gemini-2.0-flash-live-001";
+        console.log("liveCallHandler: Using Live API Model:", liveApiModelName);
+
+        const liveApiSessionSetupConfig = {
+            systemInstruction: systemInstructionObject,
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: {
+                        voiceName: connector.liveApiVoiceName || "Puck"
+                    }
+                },
+                languageCode: connector.languageCode
+            },
+            inputAudioTranscription: {},
+            outputAudioTranscription: {}
+        };
+        console.log("liveCallHandler: Full Live API Session Setup Config:", JSON.stringify(liveApiSessionSetupConfig));
+
+        const liveApiCallbacks = {
+            onOpen: handleLiveApiSessionOpen,
+            onAiAudioChunk: handleReceivedAiAudioChunk,
+            onAiText: handleReceivedAiText,
+            onUserTranscription: handleReceivedUserTranscription,
+            onModelTranscription: handleReceivedModelTranscription,
+            onError: handleLiveApiError,
+            onClose: handleLiveApiClose
+        };
+
+        try {
+            console.log("liveCallHandler: Attempting Live API connection via geminiLiveApiService.connect with model:", liveApiModelName);
+            const connectResult = await geminiLiveApiService.connect(liveApiModelName, liveApiSessionSetupConfig, liveApiCallbacks);
+
+            if (connectResult) {
+                console.log("liveCallHandler: Live API connection process initiated by service. Waiting for SDK onOpen callback...");
+                return true;
+            } else {
+                throw new Error(`Live API connection attempt did not return a truthy result (e.g., session object).`);
+            }
+        } catch (error) {
+            console.error("liveCallHandler: Error during geminiLiveApiService.connect call in startLiveCall:", error);
+            uiUpdater?.updateDirectCallStatus("Live Call Connection Failed", true);
+            if (domElements?.virtualCallingScreen && modalHandler) modalHandler.close(domElements.virtualCallingScreen);
+            sessionStateManager.resetBaseSessionState();
+            return false;
+        }
+    }
+
+    function endLiveCall(generateRecap = true) {
+        console.log("liveCallHandler: endLiveCall called. generateRecap:", generateRecap);
+        const { geminiLiveApiService, sessionStateManager, modalHandler, domElements } = getDeps(); // Added modalHandler & domElements
+
+        geminiLiveApiService?.closeConnection(); // This will trigger its onclose, then our handleLiveApiClose
+
+        stopUserMicrophoneCapture();
+
+        aiAudioPlaybackQueue = [];
+        isPlayingAiAudio = false;
+        nextAiAudioPlayTime = 0;
+        if (audioPlayerContext && audioPlayerContext.state !== 'closed') {
+            audioPlayerContext.close().catch(e => console.warn("Error closing audioPlayerContext on endLiveCall", e));
+            audioPlayerContext = null;
+        }
+        
+        // Close the specific call modal UI
+        if (currentSessionType === "direct_modal" && domElements?.directCallInterface) {
+            modalHandler.close(domElements.directCallInterface);
+        } else if (currentSessionType === "voiceChat_modal" && domElements?.voiceEnabledChatInterface) {
+            modalHandler.close(domElements.voiceEnabledChatInterface);
+        }
+
+        sessionStateManager.finalizeBaseSession(generateRecap); // Handles recap & resets base state
+        currentConnector = null; // Clear local references
+        currentSessionType = null;
+    }
+
+    function sendTypedTextDuringLiveCall(text) {
+        console.log("liveCallHandler: sendTypedTextDuringLiveCall - Text:", text);
+        const { geminiLiveApiService, uiUpdater, sessionStateManager } = getDeps();
+
+        if (!text || !geminiLiveApiService?.sendClientText) {
+            console.warn("liveCallHandler: Cannot send typed text - no text or Live API service/method missing.");
+            return;
+        }
+        if (!sessionStateManager.isSessionActive()) { // Check if a session is supposed to be active
+            console.warn("liveCallHandler: Cannot send typed text - no active session according to state manager.");
+            return;
+        }
+
+
+        if (currentSessionType === "voiceChat_modal") {
+            uiUpdater.appendToVoiceChatLog(text, 'user');
+        }
+        sessionStateManager.addTurnToTranscript('user-typed', text);
+        geminiLiveApiService.sendClientText(text);
+    }
+
+    function toggleMicMuteForLiveCall() {
+        const { uiUpdater, geminiLiveApiService } = getDeps();
+        isMicEffectivelyMuted = !isMicEffectivelyMuted;
+        console.log("liveCallHandler: Mic effectively toggled. Now muted:", isMicEffectivelyMuted);
+
+        if (currentSessionType === "direct_modal") {
+            uiUpdater.updateDirectCallMicButtonVisual(isMicEffectivelyMuted);
+            uiUpdater.updateDirectCallStatus(isMicEffectivelyMuted ? "Microphone OFF (sending paused)" : "Microphone ON (sending active)", false);
+        } else if (currentSessionType === "voiceChat_modal") {
+            uiUpdater.updateVoiceChatTapToSpeakButton(isMicEffectivelyMuted ? 'idle' : 'listening', isMicEffectivelyMuted ? 'Mic OFF' : 'Mic ON');
+        }
+        
+        if (isMicEffectivelyMuted) {
+            geminiLiveApiService?.sendAudioStreamEndSignal(); // Good practice to signal if mic is off for a while
+        } else {
+            // If unmuting and mic capture wasn't running (e.g., after an error), restart it.
+            // This assumes startUserMicrophoneCapture can be called safely multiple times or handles existing streams.
+            if (!userMicrophoneStream?.active && audioContext) {
+                 console.log("liveCallHandler: Mic was inactive, attempting to restart capture for unmute.");
+                startUserMicrophoneCapture();
+            }
+            // If using manual VAD with SDK, you might send activityStart here.
+        }
+    }
+
+    function toggleSpeakerMuteForLiveCall() {
+        const { uiUpdater, domElements } = getDeps();
+        isAiSpeakerMuted = !isAiSpeakerMuted;
+        console.log("liveCallHandler: AI Speaker Muted:", isAiSpeakerMuted);
+        if (currentSessionType === "direct_modal") {
+            uiUpdater.updateDirectCallSpeakerButtonVisual(isAiSpeakerMuted);
+        } else if (currentSessionType === "voiceChat_modal" && domElements?.toggleVoiceChatTTSBtn) {
+            uiUpdater.updateTTSToggleButtonVisual(domElements.toggleVoiceChatTTSBtn, isAiSpeakerMuted);
+        }
+        if (isAiSpeakerMuted) {
+            aiAudioPlaybackQueue = []; // Clear pending audio
+            // TODO: Stop any currently playing AudioBufferSourceNode if audioPlayerContext and sourceNode exist
+        }
+    }
+
+    function requestActivityForLiveCall() {
+        console.log("liveCallHandler: requestActivityForLiveCall");
+        const { uiUpdater, polyglotSharedContent, polyglotMinigamesData, geminiLiveApiService, sessionStateManager, polyglotHelpers } = getDeps();
+
+        if (!currentConnector || !geminiLiveApiService?.sendClientText) {
+            console.warn("liveCallHandler: Cannot request activity - missing connector or Live API service.");
+            return;
+        }
+
+        let isTutor = currentConnector.languageRoles &&
+                      currentConnector.languageRoles[currentConnector.language] &&
+                      Array.isArray(currentConnector.languageRoles[currentConnector.language]) &&
+                      currentConnector.languageRoles[currentConnector.language].includes('tutor');
+
+        if (!isTutor || !currentConnector.tutorMinigameImageFiles?.length) {
+            const msg = "No activities available for this partner.";
+            if (currentSessionType === "direct_modal") uiUpdater.updateDirectCallStatus(msg, true);
+            else if (currentSessionType === "voiceChat_modal") uiUpdater.appendToVoiceChatLog(msg, "connector-error");
+            return;
+        }
+
+        const filename = currentConnector.tutorMinigameImageFiles[Math.floor(Math.random() * currentConnector.tutorMinigameImageFiles.length)];
+        const imgInfo = polyglotSharedContent.tutorImages.find(img => img.file === filename);
+        if (!imgInfo) {
+            console.error("liveCallHandler: No image info found for filename:", filename);
+            return;
+        }
+
+        const game = polyglotMinigamesData.find(mg => imgInfo.suitableGames.includes(mg.id)) || polyglotMinigamesData.find(g => g.id === "describe_scene") || { title: "Describe", instruction: "Describe this." };
+        let instruction = game.instruction.replace("[target_language]", currentConnector.language) + ` (Regarding the image of ${imgInfo.description.substring(0, 50)}...)`;
+
+        if (polyglotHelpers?.stripEmojis) {
+            instruction = polyglotHelpers.stripEmojis(instruction);
+        }
+
+        if (currentSessionType === "direct_modal") uiUpdater.updateDirectCallStatus(`Activity: ${game.title}`, false);
+        sessionStateManager.addTurnToTranscript('system-activity', `Activity: ${game.title} with image ${imgInfo.file}`);
+
+        if (!isAiSpeakerMuted && instruction.trim()) { // Only send if there's text left
+            console.log("liveCallHandler: Sending activity instruction (no emojis) to Live API:", instruction);
+            geminiLiveApiService.sendClientText(instruction);
+        }
+    }
+
+    // --- Live API Callbacks Handled by liveCallHandler ---
+    function handleLiveApiSessionOpen() {
+        const { sessionStateManager, geminiLiveApiService, polyglotHelpers } = getDeps(); // Ensure polyglotHelpers is in getDeps
+        console.log("liveCallHandler: handleLiveApiSessionOpen - Live API session confirmed open and setup.");
+
+        const { domElements, modalHandler } = getDeps();
+        if (domElements?.virtualCallingScreen && modalHandler) {
+            modalHandler.close(domElements.virtualCallingScreen);
+        } else {
+            console.warn("liveCallHandler: handleLiveApiSessionOpen - virtualCallingScreen or modalHandler missing.");
+        }
+
+        sessionStateManager.markSessionAsStarted();
+        initializeCallUI(currentConnector, currentSessionType); // Sets up DirectCall/VoiceChat UI
+        startUserMicrophoneCapture(); // Start mic capture FOR Live API
+
+        if (currentConnector.greetingCall) {
+            let greetingText = currentConnector.greetingCall;
+            if (polyglotHelpers?.stripEmojis) { // Check if helper is available
+                greetingText = polyglotHelpers.stripEmojis(greetingText);
+            }
+            console.log("liveCallHandler: Sending connector greeting (no emojis) via Live API text:", greetingText);
+            sessionStateManager.addTurnToTranscript('connector-greeting-intent', currentConnector.greetingCall); // Log original
+            if (greetingText.trim()) { // Only send if there's text left after stripping
+                geminiLiveApiService.sendClientText(greetingText);
+            }
+        }
+    }
+
+    function handleReceivedAiAudioChunk(audioChunkArrayBuffer, mimeType) {
+        if (isAiSpeakerMuted) return;
+        if (!audioChunkArrayBuffer || audioChunkArrayBuffer.byteLength === 0) {
+            // console.debug("liveCallHandler: Received empty AI audio chunk.");
+            return;
+        }
+        // console.debug("liveCallHandler: Received AI audio chunk. Size:", audioChunkArrayBuffer.byteLength, mimeType);
+
+        if (!audioPlayerContext || audioPlayerContext.state === 'closed') {
+            audioPlayerContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: AI_OUTPUT_SAMPLE_RATE });
+        }
+        if (audioPlayerContext.state === 'suspended') {
+            audioPlayerContext.resume().catch(e => console.error("Error resuming audioPlayerContext for AI audio:", e));
+        }
+        if (audioPlayerContext.state === 'closed') { // Should not happen if just created
+             console.error("liveCallHandler: audioPlayerContext is closed, cannot play AI audio.");
+             return;
+        }
+
+
+        try {
+            // Assuming audioChunkArrayBuffer is Int16 PCM as typically output by speech APIs after base64 decode
+            const pcmData = new Int16Array(audioChunkArrayBuffer);
+            const float32Pcm = new Float32Array(pcmData.length);
+            for (let i = 0; i < pcmData.length; i++) {
+                float32Pcm[i] = pcmData[i] / 32768.0; // Normalize Int16 to Float32 range [-1.0, 1.0]
+            }
+
+            const audioBuffer = audioPlayerContext.createBuffer(
+                1,                    // numberOfChannels (mono)
+                float32Pcm.length,    // length (number of frames)
+                AI_OUTPUT_SAMPLE_RATE // sampleRate (e.g., 24000 for Live API output)
+            );
+            audioBuffer.copyToChannel(float32Pcm, 0);
+
+            aiAudioPlaybackQueue.push(audioBuffer);
+            if (!isPlayingAiAudio) {
+                playNextAiAudioChunkFromQueue();
+            }
+        } catch (e) { console.error("liveCallHandler: Error processing/queueing AI audio chunk:", e); }
+    }
+    
+    function playNextAiAudioChunkFromQueue() {
+        if (isAiSpeakerMuted || aiAudioPlaybackQueue.length === 0 || !audioPlayerContext || audioPlayerContext.state === 'closed') {
+            isPlayingAiAudio = false;
+            nextAiAudioPlayTime = (audioPlayerContext && audioPlayerContext.state !== 'closed') ? audioPlayerContext.currentTime : 0;
+            return;
+        }
+        isPlayingAiAudio = true;
+
+        const audioBufferToPlay = aiAudioPlaybackQueue.shift();
+        const sourceNode = audioPlayerContext.createBufferSource();
+        sourceNode.buffer = audioBufferToPlay;
+        sourceNode.connect(audioPlayerContext.destination);
+
+        const currentTime = audioPlayerContext.currentTime;
+        // Ensure startTime is not in the past
+        const startTime = Math.max(currentTime, (nextAiAudioPlayTime > currentTime) ? nextAiAudioPlayTime : currentTime);
+        
+        // console.debug(`liveCallHandler: Playing AI audio chunk. Scheduled: ${startTime.toFixed(3)}, Duration: ${audioBufferToPlay.duration.toFixed(3)}`);
+        sourceNode.start(startTime);
+        // Schedule next chunk with a tiny overlap or immediately after.
+        // A small negative value in overlap can help if there are slight delays.
+        nextAiAudioPlayTime = startTime + audioBufferToPlay.duration - 0.015; 
+
+        sourceNode.onended = () => {
+            // console.debug("liveCallHandler: AI audio chunk finished playing.");
+            playNextAiAudioChunkFromQueue();
+        };
+    }
+
+    function handleReceivedAiText(text) {
+        console.log("liveCallHandler: Received AI Text CHUNK (potentially for speech):", text);
+        const { uiUpdater, polyglotHelpers } = getDeps(); // Add polyglotHelpers
+
+        // For UI, display raw text with emojis in voice chat log
+        if (currentSessionType === "voiceChat_modal") {
+            uiUpdater.appendToVoiceChatLog(text, 'connector');
+        }
+
+        aiSpokenTextBuffer += text + " ";
+        if (aiSpokenTextTimeoutId) clearTimeout(aiSpokenTextTimeoutId);
+        aiSpokenTextTimeoutId = setTimeout(flushAiSpokenText, AI_SPOKEN_TEXT_FLUSH_DELAY);
+    }
+
+    function handleReceivedUserTranscription(text, isFinal = false) {
+        console.log("liveCallHandler: User Transcription CHUNK:", text, "IsFinal:", isFinal);
+        const { uiUpdater, sessionStateManager } = getDeps();
+
+        if (currentSessionType === "voiceChat_modal") {
+            uiUpdater.appendToVoiceChatLog(text, 'user-audio', { isTranscription: true, isStreaming: !isFinal });
+        }
+
+        userTranscriptionBuffer += text + " ";
+        if (userTranscriptionTimeoutId) clearTimeout(userTranscriptionTimeoutId);
+
+        if (isFinal) {
+            flushUserTranscription();
+        } else {
+            userTranscriptionTimeoutId = setTimeout(flushUserTranscription, USER_TRANSCRIPTION_FLUSH_DELAY);
+        }
+    }
+
+    function handleReceivedModelTranscription(text, isFinal = false) {
+        console.log("liveCallHandler: AI Spoken Output Transcription CHUNK (from server STT):", text, "IsFinal:", isFinal);
+        const { polyglotHelpers } = getDeps(); // Ensure polyglotHelpers available
+
+        // If you decide to use outputTranscription for recap, uncomment the following:
+        /*
+        aiSpokenTextBuffer += text + " ";
+        if (aiSpokenTextTimeoutId) clearTimeout(aiSpokenTextTimeoutId);
+
+        if (isFinal) {
+            flushAiSpokenText(); // This will strip emojis before adding to transcript
+        } else {
+            aiSpokenTextTimeoutId = setTimeout(flushAiSpokenText, AI_SPOKEN_TEXT_FLUSH_DELAY);
+        }
+        */
     }
 
     function handleLiveApiError(error) {
-        const functionName = "handleLiveApiError (SDK_CB)";
-        console.error(`LCH Facade (${functionName} v${FACADE_VERSION}): Error received:`, error?.message || error, error);
-        const { uiUpdater, liveApiTextCoordinator, sessionStateManager } = getDeps(functionName); 
+        console.error("liveCallHandler: handleLiveApiError received:", error);
+        const { uiUpdater } = getDeps();
         const errorMessage = error?.message || (typeof error === 'string' ? error : 'Unknown Live API error');
         
-        if (currentSessionType === "direct_modal" && uiUpdater?.updateDirectCallStatus) {
-            uiUpdater.updateDirectCallStatus(`Error: ${errorMessage.substring(0,40)}...`, true);
-        } // Add voiceChat_modal error display if needed
-
-        liveApiTextCoordinator?.flushUserTranscription?.(); 
-        liveApiTextCoordinator?.flushAiSpokenText?.();
-        
-        console.log(`LCH Facade (${functionName}): Calling endLiveCall(false) due to error.`);
-        endLiveCall(false); // This will also call sessionStateManager.finalizeBaseSession -> resetBaseSessionState
-        console.error(`LCH Facade (${functionName} v${FACADE_VERSION}): FINISHED error processing.`);
+        if (currentSessionType === "direct_modal") {
+            uiUpdater.updateDirectCallStatus(`Error: ${errorMessage.substring(0,30)}...`, true);
+        } else if (currentSessionType === "voiceChat_modal") {
+            uiUpdater.appendToVoiceChatLog(`Error: ${errorMessage}`, 'connector-error', { isError: true });
+        }
+        flushUserTranscription();
+        flushAiSpokenText();
+        endLiveCall(false);
     }
 
     function handleLiveApiClose(wasClean, code, reason) {
-        const functionName = "handleLiveApiClose (SDK_CB)";
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): Connection closed. Clean: ${wasClean}, Code: ${code}, Reason: ${reason}`);
-        const deps = getDeps(functionName);
-
-        // Check if the session was genuinely active from this handler's perspective
-        if (deps.sessionStateManager?.isSessionActive()) {
-            console.warn(`LCH Facade (${functionName}): Connection closed by server/network while session was active according to state manager.`);
-            const message = `Call ended: ${reason || 'Connection closed'} (Code: ${code || 'N/A'})`;
-            if (currentSessionType === "direct_modal" && deps.uiUpdater) deps.uiUpdater.updateDirectCallStatus?.(message, !wasClean);
-            // Add voiceChat_modal UI update if needed
-            
-            deps.liveApiTextCoordinator?.flushUserTranscription?.();
-            deps.liveApiTextCoordinator?.flushAiSpokenText?.();
-            
-            console.log(`LCH Facade (${functionName}): Calling endLiveCall due to unexpected close. Recap generation: ${!!wasClean}`);
-            endLiveCall(!!wasClean); // Generate recap if server closed cleanly, not if it was an abrupt error.
-        } else {
-            console.log(`LCH Facade (${functionName}): Close called, but sessionStateManager reports no active session (likely already ended by user/error). Performing minimal cleanup.`);
-            // Still good to ensure sub-module cleanup if they weren't cleaned by a prior endLiveCall
-            deps.liveApiMicInput?.stopCapture?.();
-            deps.liveApiAudioOutput?.cleanupAudioContext?.();
-            deps.liveApiTextCoordinator?.resetBuffers?.(); // Full reset if session wasn't active
+        console.log("liveCallHandler: handleLiveApiClose. Clean:", wasClean, "Code:", code, "Reason:", reason);
+        const { uiUpdater, sessionStateManager } = getDeps();
+        // If sessionStateManager still thinks a session is active, it means the close was unexpected
+        if (sessionStateManager.isSessionActive()) {
+            console.warn("liveCallHandler: Live API connection closed unexpectedly or by server.");
+            const message = `Call ended: ${reason || 'Connection closed'} (Code: ${code})`;
+             if (currentSessionType === "direct_modal") {
+                uiUpdater.updateDirectCallStatus(message, !wasClean);
+            } else if (currentSessionType === "voiceChat_modal") {
+                uiUpdater.appendToVoiceChatLog(message, wasClean ? 'connector' : 'connector-error', { isError: !wasClean });
+            }
+            // Call endLiveCall to ensure all local resources are cleaned up and session is finalized
+            // Pass false for generateRecap if it was an abrupt/error close not initiated by user clicking "End Call"
+            endLiveCall(!wasClean); // Generate recap if it was an unclean close from server side
         }
-        console.log(`LCH Facade (${functionName} v${FACADE_VERSION}): FINISHED processing close.`);
+        // Local resource cleanup is handled by endLiveCall
     }
-    
-    console.log(`live_call_handler.js (Facade ${FACADE_VERSION}): IIFE FINISHED.`);
+
+    // --- Microphone Input Processing for Live API ---
+    async function startUserMicrophoneCapture() {
+        console.log("liveCallHandler: startUserMicrophoneCapture");
+        const { geminiLiveApiService, uiUpdater } = getDeps();
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            console.error("getUserMedia not supported on your browser!");
+            handleLiveApiError(new Error("getUserMedia not supported."));
+            return;
+        }
+        if (!audioContext || audioContext.state === 'closed') {
+            console.log("liveCallHandler: Creating new AudioContext for input capture.");
+            audioContext = new AudioContext({ sampleRate: TARGET_INPUT_SAMPLE_RATE });
+        }
+        if (audioContext.state === 'suspended') {
+            console.log("liveCallHandler: Resuming suspended AudioContext.");
+            await audioContext.resume();
+        }
+
+        try {
+            if (!userMicrophoneStream || !userMicrophoneStream.active) {
+                console.log("liveCallHandler: Requesting microphone access with desired sample rate:", TARGET_INPUT_SAMPLE_RATE);
+                userMicrophoneStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: TARGET_INPUT_SAMPLE_RATE,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                        // channelCount: 1 // Explicitly mono
+                    },
+                    video: false
+                });
+            }
+            const actualSampleRate = userMicrophoneStream.getAudioTracks()[0].getSettings().sampleRate;
+            console.log("liveCallHandler: Microphone stream obtained. Requested SR:", TARGET_INPUT_SAMPLE_RATE, "Actual SR:", actualSampleRate);
+            if (actualSampleRate !== TARGET_INPUT_SAMPLE_RATE) {
+                console.warn(`liveCallHandler: Microphone captured at ${actualSampleRate}Hz, not desired ${TARGET_INPUT_SAMPLE_RATE}Hz. Resampling will be needed for optimal quality or if API is strict.`);
+                // TODO: Implement resampling if actualSampleRate is significantly different and API requires strict 16kHz.
+            }
+
+
+            microphoneSourceNode = audioContext.createMediaStreamSource(userMicrophoneStream);
+            const bufferSize = 4096; // Standard buffer size
+            // scriptProcessorNode is deprecated but has wider support. AudioWorklet is preferred for new development.
+            if (audioContext.createScriptProcessor) {
+                scriptProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1); // (bufferSize, numInputChannels, numOutputChannels)
+            } else {
+                console.error("liveCallHandler: audioContext.createScriptProcessor is not available. AudioWorklet would be needed.");
+                handleLiveApiError(new Error("ScriptProcessorNode not supported."));
+                return;
+            }
+
+
+            scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => {
+                if (isMicEffectivelyMuted || !geminiLiveApiService?.sendRealtimeAudio) {
+                    return;
+                }
+
+                const inputDataFloat32 = audioProcessingEvent.inputBuffer.getChannelData(0);
+                
+                // If actualSampleRate is different from TARGET_INPUT_SAMPLE_RATE, resample here.
+                // This is a complex step omitted for brevity. Assume for now it's close enough or API handles it.
+                // Example: let resampledData = resample(inputDataFloat32, actualSampleRate, TARGET_INPUT_SAMPLE_RATE);
+
+                const pcm16Data = new Int16Array(inputDataFloat32.length); // Assuming no resampling for now
+                for (let i = 0; i < inputDataFloat32.length; i++) {
+                    let s = Math.max(-1, Math.min(1, inputDataFloat32[i]));
+                    pcm16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                geminiLiveApiService.sendRealtimeAudio(pcm16Data.buffer); // Send ArrayBuffer of Int16
+            };
+
+            microphoneSourceNode.connect(scriptProcessorNode);
+            scriptProcessorNode.connect(audioContext.destination); // Required to keep onaudioprocess firing.
+            console.log("liveCallHandler: Microphone capture and processing node connected.");
+
+        } catch (err) {
+            console.error("liveCallHandler: Error in startUserMicrophoneCapture:", err);
+            handleLiveApiError(err);
+        }
+    }
+
+    function stopUserMicrophoneCapture() {
+        console.log("liveCallHandler: stopUserMicrophoneCapture called.");
+        if (scriptProcessorNode) {
+            scriptProcessorNode.disconnect(); // Disconnect from audio graph
+            scriptProcessorNode.onaudioprocess = null; // Remove the event handler
+            scriptProcessorNode = null;
+        }
+        if (microphoneSourceNode) {
+            microphoneSourceNode.disconnect();
+            microphoneSourceNode = null;
+        }
+        if (userMicrophoneStream) {
+            userMicrophoneStream.getTracks().forEach(track => track.stop()); // Stop the browser's mic access
+            userMicrophoneStream = null;
+        }
+        // Do not close audioContext here, as audioPlayerContext might still need it,
+        // or it could be reused for subsequent calls. It's generally better to manage
+        // AudioContext lifecycle at a higher application level or per "usage session".
+        console.log("liveCallHandler: Microphone capture stopped and resources released.");
+    }
+
+    console.log("js/sessions/live_call_handler.js loaded and refactored (variable name fix).");
     return {
         startLiveCall,
         endLiveCall,
@@ -433,10 +653,3 @@ window.liveCallHandler = (() => {
         requestActivityForLiveCall
     };
 })();
-
-if (window.liveCallHandler && typeof window.liveCallHandler.startLiveCall === 'function') {
-    console.log(`live_call_handler.js (Facade Debug v2.1): SUCCESSFULLY assigned to window.`);
-} else {
-    console.error(`live_call_handler.js (Facade Debug v2.1): CRITICAL ERROR - window.liveCallHandler not correctly formed.`);
-}
-console.log("live_call_handler.js: Script execution FINISHED (Facade Debug v2.1).");

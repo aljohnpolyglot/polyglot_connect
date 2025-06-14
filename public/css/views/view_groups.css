@@ -1,283 +1,414 @@
-/* css/views/view_groups.css */
-/* Styles for the Groups View: list of available groups and the group chat interface */
+/*
+   ===================================================================
+   ||   css/views/view_groups.css (Grid Layout - Modern Clean)    ||
+   ||   Modern Clean & Spaced Theme - WITH GRID & ASPECT RATIO    ||
+   ||   Ensures opaque backgrounds for Group Chat UI.             ||
+   ===================================================================
+*/
+
+/* --- Modern Clean Variables (Scoped for this View) --- */
+#groups-view {
+    /* Light Mode Defaults - Reverted to Original "Modern Clean" */
+    --view-groups-bg-page: #e9eef2;                     /* Page background */
+    --view-groups-text-primary: #212529;
+    --view-groups-text-secondary: #495057;
+    --view-groups-text-muted: #6c757d;
+    --view-groups-text-on-accent: #ffffff;
+    --view-groups-accent-primary: #007bff;
+    --view-groups-accent-primary-hover: #0069d9;
+    --view-groups-info-color: #17a2b8;
+    --view-groups-info-color-hover: #117a8b;
+    --view-groups-border-light: #dee2e6;
+    --view-groups-border-strong: #ced4da;
+    --view-groups-shadow-soft: 0 1px 3px rgba(0,0,0,0.04);
+    --view-groups-shadow-medium: 0 3px 6px rgba(0,0,0,0.06);
+    --view-groups-shadow-card-hover: 0 5px 12px rgba(0,0,0,0.08);
+    --view-groups-border-radius-main: 6px;
+    --view-groups-border-radius-card: 8px;
+    --view-groups-border-radius-button: 4px;
+
+    /* Group Card Specific */
+    --group-card-bg: #ffffff;
+    --group-card-avatar-placeholder-bg: #cccccc;
+    --group-card-avatar-size: 60px;
+    --group-card-padding: var(--spacing-lg, 20px);
+    --group-card-gap: var(--spacing-lg, 24px);
+    --group-card-min-width: 270px;
+    --group-card-aspect-ratio: 1 / 1;
+
+    /* Chat Interface (when a group is entered) - OPAQUE BACKGROUNDS ARE KEY */
+    --group-chat-ui-container-bg: #ffffff; /* Main chat UI background - MUST BE OPAQUE */
+    --group-chat-ui-log-bg: #ffffff;       /* Chat log area background - MUST BE OPAQUE (can be same as container or different) */
+    --group-chat-ui-header-footer-bg: #f8f9fa; /* Header/footer background - MUST BE OPAQUE */
+}
+
+body.dark-mode #groups-view {
+    /* Dark Mode Overrides */
+    --view-groups-bg-page: #1a1b1e;
+    --view-groups-text-primary: #f8f9fa;
+    --view-groups-text-secondary: #adb5bd;
+    --view-groups-text-muted: #868e96;
+    --view-groups-accent-primary: #0d6efd;
+    --view-groups-accent-primary-hover: #0b5ed7;
+    --view-groups-info-color: #20c997;
+    --view-groups-info-color-hover: #1baa80;
+    --view-groups-border-light: #495057;
+    --view-groups-border-strong: #5a6268;
+    --view-groups-shadow-soft: 0 2px 4px rgba(0,0,0,0.25);
+    --view-groups-shadow-medium: 0 4px 8px rgba(0,0,0,0.35);
+    --view-groups-shadow-card-hover: 0 6px 15px rgba(0,0,0,0.4);
+
+    --group-card-bg: #2c2f33;
+    --group-card-avatar-placeholder-bg: #555555;
+
+    /* Dark Mode Chat Interface - OPAQUE BACKGROUNDS */
+    --group-chat-ui-container-bg: #212529; /* Dark, opaque */
+    --group-chat-ui-log-bg: #212529;       /* Dark, opaque */
+    --group-chat-ui-header-footer-bg: #343a40; /* Darker gray, opaque */
+}
+
+/* --- Base View Structure for Groups View --- */
+#groups-view .view-header {
+    margin-bottom: var(--spacing-lg, 24px);
+    padding: 0 var(--spacing-md, 16px);
+    border-bottom: 1px solid var(--view-groups-border-light);
+}
+#groups-view .view-header h1 { color: var(--view-groups-text-primary); }
+#groups-view .view-header p { color: var(--view-groups-text-secondary); }
 
 #groups-view .view-content {
     display: flex;
     flex-direction: column;
     height: 100%;
-    overflow: hidden; /* Prevent scrolling on main container */
+    overflow: hidden;
+    background-color: var(--view-groups-bg-page); /* This is the page background behind the chat UI */
+    padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
 }
 
-.group-list-view {
-    height: 100%;
-    overflow-y: auto; /* Maintain scroll here */
-    padding: var(--spacing-md);
+/* Optional Hero Image Container (styles unchanged, assumed correct) */
+#groups-view .groups-hero-image-container {
+    width: 100%; max-width: 700px; margin: 0 auto var(--group-card-gap) auto;
+    flex-shrink: 0; padding: var(--spacing-sm, 10px); background-color: var(--group-card-bg);
+    border-radius: var(--view-groups-border-radius-card); border: 1px solid var(--view-groups-border-light);
+    box-shadow: var(--view-groups-shadow-medium);
+}
+#groups-view .groups-hero-image-container img {
+    display: block; width: 100%; height: auto; object-fit: cover;
+    border-radius: calc(var(--view-groups-border-radius-card) - 4px);
 }
 
-.group-chat-container {
+/* Container for the grid of available groups (styles unchanged, assumed correct) */
+#groups-view #group-list-container {
+    flex-grow: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--spacing-md, 16px);
+    -ms-overflow-style: none; scrollbar-width: none;
+}
+#groups-view #group-list-container::-webkit-scrollbar { display: none; }
+#groups-view #available-groups-ul {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--group-card-min-width), 1fr));
+    gap: var(--group-card-gap); list-style: none; padding: var(--spacing-xs, 4px); margin: 0;
+}
+#groups-view #group-loading-message {
+    grid-column: 1 / -1; color: var(--view-groups-text-muted);
+}
+
+/* --- Group Card Styles (Grid Item: .group-discovery-list-item) --- */
+/* (Styles unchanged from previous correct version, assumed correct) */
+#groups-view .group-discovery-list-item {
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: var(--group-card-padding); background-color: var(--group-card-bg);
+    border-radius: var(--view-groups-border-radius-card); border: 1px solid var(--view-groups-border-light);
+    box-shadow: var(--view-groups-shadow-soft);
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+    justify-content: space-between; overflow: hidden;
+}
+#groups-view .group-discovery-list-item:hover {
+    transform: translateY(-4px); box-shadow: var(--view-groups-shadow-card-hover);
+}
+#groups-view .group-discovery-list-item .group-card-avatar {
+    width: var(--group-card-avatar-size); height: var(--group-card-avatar-size); border-radius: 50%;
+    margin-bottom: var(--spacing-md, 16px); flex-shrink: 0; object-fit: cover;
+    background-color: var(--group-card-avatar-placeholder-bg);
+    border: 2px solid var(--group-card-bg);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.07), 0 1px 1px rgba(0,0,0,0.05);
+}
+#groups-view .group-discovery-list-item .group-card-avatar.icon-type {
+    display: flex; align-items: center; justify-content: center; font-size: 1.8em;
+    background-color: var(--view-groups-accent-primary); color: var(--view-groups-text-on-accent); border: none;
+}
+#groups-view .group-discovery-list-item .group-card-info {
+    min-width: 0; width: 100%; margin-bottom: var(--spacing-md, 16px);
+    display: flex; flex-direction: column; align-items: center; flex-grow: 1;
+}
+#groups-view .group-discovery-list-item .group-card-name {
+    font-weight: var(--font-weight-semibold, 600); color: var(--view-groups-text-primary);
+    margin-bottom: var(--spacing-xs, 6px); font-size: 1.1em; line-height: 1.3;
+    width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#groups-view .group-discovery-list-item .group-card-subtext {
+    font-size: 0.9em; color: var(--view-groups-text-secondary); line-height: 1.4;
+    width: 90%; height: calc(1.4em * 2); overflow: hidden; margin: top 5px; margin-bottom: -10px;
+}
+#groups-view .group-discovery-list-item .group-card-join-btn,
+#groups-view .group-discovery-list-item .group-card-view-chat-btn {
+    padding: var(--spacing-sm, 10px) var(--spacing-lg, 20px); border-radius: var(--view-groups-border-radius-button);
+    font-weight: var(--font-weight-medium, 500); font-size: 0.9em; cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s ease-out;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; border: 1px solid; text-decoration: none; min-width: 150px;
+    width: auto; max-width: 95%; line-height: 1.5; margin-top: auto;
+}
+#groups-view .group-discovery-list-item .group-card-join-btn:hover,
+#groups-view .group-discovery-list-item .group-card-view-chat-btn:hover {
+    transform: translateY(-2px); box-shadow: var(--view-groups-shadow-soft);
+}
+#groups-view .group-discovery-list-item .group-card-join-btn {
+    background-color: var(--view-groups-accent-primary); color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-accent-primary);
+}
+#groups-view .group-discovery-list-item .group-card-join-btn:hover {
+    background-color: var(--view-groups-accent-primary-hover); border-color: var(--view-groups-accent-primary-hover);
+}
+#groups-view .group-discovery-list-item .group-card-view-chat-btn {
+    background-color: var(--view-groups-info-color); color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+#groups-view .group-discovery-list-item .group-card-view-chat-btn:hover {
+    background-color: var(--view-groups-info-color-hover); border-color: var(--view-groups-info-color-hover);
+}
+#groups-view .group-discovery-list-item .group-card-join-btn i,
+#groups-view .group-discovery-list-item .group-card-view-chat-btn i {
+    font-size: 1em; line-height: 1;
+}
+
+/* In css/views/view_groups.css */
+
+/* ... other styles for #groups-view, .view-header, .view-content, etc. ... */
+
+
+
+/* Container for the small member avatars in the header */
+#groups-view #group-chat-interface #group-chat-members-avatars {
     display: flex;
+    align-items: center;
+    /* order: 3; margin-left: var(--spacing-sm, 10px); */ /* Remove order and margin if absolute */
+    max-width: 130px;
+    height: 32px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: absolute; /* <<< ADDED */
+    right: var(--spacing-md, 16px); /* <<< ADDED: Adjust as needed */
+    top: 50%; /* <<< ADDED */
+    transform: translateY(-50%); /* <<< ADDED: Vertical centering */
+}
+
+/* Individual small member avatar images */
+/* THIS IS THE CORRECTED SELECTOR with the correct class name */
+#groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%; /* <<< MAKES THE AVATAR IMAGE ITSELF CIRCULAR */
+    object-fit: cover;   /* Ensures image content fills the circle nicely */
+    background-color: var(--view-groups-text-muted); /* Placeholder background */
+    margin-left: -8px; /* Creates the overlap effect for subsequent avatars */
+    border: 2px solid var(--group-chat-ui-header-footer-bg); /* Border for the avatar, should match header bg */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1); /* Subtle shadow */
+    transition: transform 0.2s ease-out, z-index 0s 0.2s; /* Smooth hover effect */
+    cursor: pointer;
+}
+
+/* Remove left margin for the very first avatar in the stack */
+#groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-small:first-child {
+    margin-left: 0;
+}
+
+/* Hover effect for individual avatars */
+#groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-small:hover {
+    transform: translateY(-1px) scale(1.1); /* Slight lift and zoom */
+    z-index: 1; /* Bring hovered avatar to the front */
+}
+
+/* Styling for the "+N" indicator if more members exist than can be displayed */
+/* THIS IS THE CORRECTED SELECTOR with the correct class name */
+#groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-more {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%; /* <<< MAKES THE "+N" INDICATOR CIRCULAR */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: -8px; /* Overlap effect */
+    border: 2px solid var(--group-chat-ui-header-footer-bg); /* Border matching avatars */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    background-color: var(--view-groups-info-color); /* Distinct background */
+    color: var(--view-groups-text-on-accent);      /* Text color for the count */
+    font-size: 0.7em;
+    font-weight: var(--font-weight-semibold, 600);
+    cursor: pointer;
+    user-select: none;
+    z-index: 0;
+}
+#groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-more:hover {
+    transform: translateY(-1px) scale(1.1); /* Slight lift and zoom */
+    z-index: 1; /* Bring hovered avatar to the front */
+}
+/* ... other styles for #group-chat-log, footer.group-chat-footer, etc. ... */
+/* --- Group Chat Interface (when a group is entered) --- */
+#groups-view #group-chat-interface {
+    display: none;
     flex-direction: column;
     height: 100%;
     position: relative;
-    border: 1px solid var(--border-color-light);
-    border-radius: var(--border-radius-md);
-    background-color: var(--bg-white); /* This will be overridden by .chat-log-area's bg if different */
-    box-shadow: var(--shadow-md);
-    overflow: hidden; /* Prevent container scroll */
+    border: 1px solid var(--view-groups-border-light);
+    border-radius: var(--view-groups-border-radius-main);
+    background-color: var(--group-chat-ui-container-bg); /* <<< ENSURE THIS IS OPAQUE */
+    box-shadow: var(--view-groups-shadow-medium);
+    overflow: hidden;
 }
-
-.group-chat-header {
+#groups-view #group-chat-interface.active-chat-view { display: flex; }
+#groups-view #group-chat-interface header.group-chat-header {
     display: flex;
     align-items: center;
-    justify-content: center; /* Center the main content (the title) */
-    padding: 0 var(--spacing-md); /* Adjust padding if needed, left/right might be handled by absolute elements */
-    background-color: var(--bg-light);
-    border-bottom: 1px solid var(--border-color-light);
+    justify-content: center; /* <<< MODIFIED: Center the main axis content */
+    position: relative;       /* <<< ADDED: For absolute positioning of children */
+    padding: 0 var(--spacing-md, 16px); /* Keep padding for overall spacing if needed */
+    background-color: var(--group-chat-ui-header-footer-bg);
+    border-bottom: 1px solid var(--view-groups-border-light);
     flex-shrink: 0;
-    position: relative; /* CRITICAL: For absolute positioning of children */
-    top: 0; /* If not sticky, remove. If sticky, keep. */
-    /* z-index: 20; */ /* Only if sticky and needed */
-    height: 56px; /* Consistent height */
+    height: 60px;
+}
+#groups-view #group-chat-interface #leave-group-btn {
+    font-size: 0.9em; padding: var(--spacing-xs, 6px) var(--spacing-sm, 10px);
+    color: var(--view-groups-text-secondary); background-color: transparent;
+    border: 1px solid var(--view-groups-border-strong);
+    border-radius: var(--view-groups-border-radius-button);
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+    /* order: 1; margin-right: var(--spacing-sm, 10px); */ /* Remove order and margin if absolute */
+    position: absolute; /* <<< ADDED */
+    left: var(--spacing-md, 16px); /* <<< ADDED: Adjust as needed */
+    top: 50%; /* <<< ADDED */
+    transform: translateY(-50%); /* <<< ADDED: Vertical centering */
+}
+#groups-view #group-chat-interface #leave-group-btn:hover {
+    background-color: var(--view-groups-text-muted); color: var(--group-chat-ui-header-footer-bg);
+    border-color: var(--view-groups-text-muted);
+}
+#groups-view #group-chat-interface #active-group-name {
+    font-size: 1.15em; font-weight: var(--font-weight-semibold, 600);
+    color: var(--view-groups-text-primary); text-align: center; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; flex-grow: 1;
+    margin: 0 var(--spacing-sm, 10px); order: 2; cursor: pointer;
+}
+#groups-view #group-chat-interface #active-group-name:hover {
+    color: var(--view-groups-text-primary-hover);   
+    transform: translateY(-2px);
 }
 
-#leave-group-btn {
-    position: absolute; /* Position it absolutely */
-    left: var(--spacing-md); /* Distance from the left edge of the header */
-    top: 50%; /* Align vertically */
-    transform: translateY(-50%); /* Precise vertical centering */
-    /* font-size, padding from before are fine */
-    font-size: 0.9em;
-    padding: var(--spacing-xs) var(--spacing-sm);
-    z-index: 1; /* Ensure it's above the title if there's overlap text */
-}
-#active-group-name {
-    font-size: 1.1em;
-    font-weight: var(--font-weight-semibold);
-    /margin: 0 var(--spacing-sm);
-    flex-grow: 1; /* No longer needed if parent is justify-content: center */
-    text-align: center; /* Explicitly center text within its own block */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-top: auto;
-    /* Add max-width to prevent it from overlapping absolute positioned elements if title is very long */
-    /* Max width = header width - left button space - right avatars space - some padding */
-    /* This is an estimate, adjust based on your button/avatar widths */
-    max-width: calc(100% - 100px - 120px - (var(--spacing-md) * 2)); /* Example calculation */
+#groups-view #group-chat-interface #group-chat-log {
+    flex-grow: 1; overflow-y: auto; padding: var(--spacing-lg, 24px);
+    background-color: var(--group-chat-ui-log-bg); /* <<< ENSURE THIS IS OPAQUE */
+    display: flex; flex-direction: column; gap: var(--spacing-sm, 10px);
 }
 
-#group-chat-members-avatars {
-    position: absolute; /* Position it absolutely */
-    right: var(--spacing-md); /* Distance from the right edge of the header */
-    top: 50%; /* Align vertically */
-    transform: translateY(-50%); /* Precise vertical centering */
-    display: flex;
-    align-items: center;
-    z-index: 1; /* Ensure it's above the title if there's overlap text */
-    /* flex-shrink: 0; Not needed for absolute */
+#groups-view #group-chat-interface footer.group-chat-footer {
+    display: flex; align-items: center; flex-shrink: 0;
+    padding: var(--spacing-md, 16px);
+    border-top: 1px solid var(--view-groups-border-light);
+    background-color: var(--group-chat-ui-header-footer-bg); /* <<< ENSURE THIS IS OPAQUE */
 }
-#group-chat-members-avatars .member-avatar-small {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--border-radius-circle);
-    margin-left: -10px;
-    border: 2px solid var(--bg-white); /* For light mode header */
-    box-shadow: 0 0 4px rgba(0,0,0,0.15);
-    object-fit: cover;
-    background-color: var(--secondary-color-lighter);
+#groups-view #group-chat-interface #group-chat-input {
+    flex-grow: 1; margin-right: var(--spacing-sm, 10px);
+    padding: var(--spacing-sm, 10px) var(--spacing-md, 16px);
+    border: 1px solid var(--view-groups-border-strong);
+    border-radius: var(--view-groups-border-radius-button);
+    background-color: var(--group-card-bg); /* Match card bg for input - should be opaque */
+    color: var(--view-groups-text-primary); font-size: 0.95em;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
-#group-chat-members-avatars .member-avatar-small:first-child {
-    margin-left: 0;
+#groups-view #group-chat-interface #group-chat-input:focus {
+    outline: none; border-color: var(--view-groups-accent-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--view-groups-accent-primary) 20%, transparent);
 }
-#group-chat-members-avatars .more-members { /* Styles for the +N indicator */
-    /* ... (your existing styles are good) ... */
+#groups-view #group-chat-interface #send-group-message-btn {
+    flex-shrink: 0; padding: var(--spacing-sm, 10px) var(--spacing-lg, 20px);
+    border-radius: var(--view-groups-border-radius-button);
+    background-color: var(--view-groups-accent-primary);
+    color: var(--view-groups-text-on-accent); border: none;
+    transition: background-color 0.2s, transform 0.1s ease-out;
+}
+#groups-view #group-chat-interface #send-group-message-btn:hover {
+    background-color: var(--view-groups-accent-primary-hover); transform: translateY(-1px);
+}
+#groups-view #group-chat-interface #group-typing-indicator {
+    font-size: 0.8em; color: var(--view-groups-text-muted);
+    margin-left: var(--spacing-sm); font-style: italic; height: 1.5em;
 }
 
 
-/* #group-chat-log inherits from .chat-log-area general styles */
-/* Add specific padding for group chat log if footer/header heights are different */
-#group-chat-log {
-    flex-grow: 1; /* Ensures the chat log takes up available space */
-    overflow-y: auto; /* Keep scroll for messages */
-    padding: var(--spacing-md);
-    background-color: var(--bg-white);
+/* --- Responsive Adjustments (styles unchanged from previous correct version) --- */
+@media (max-width: 992px) { /* Tablets */
+    #groups-view #available-groups-ul {
+        grid-template-columns: repeat(auto-fill, minmax(calc(var(--group-card-min-width) - 25px), 1fr));
+        gap: calc(var(--group-card-gap) * 0.8);
+    }
+    #groups-view .group-discovery-list-item { padding: calc(var(--group-card-padding) * 0.85); }
+    #groups-view .group-discovery-list-item .group-card-name { font-size: 1em; }
+    #groups-view .group-discovery-list-item .group-card-subtext { font-size: 0.8em; height: calc(1.4em * 2); line-height: 1.4;}
+    #groups-view .group-discovery-list-item .group-card-join-btn,
+    #groups-view .group-discovery-list-item .group-card-view-chat-btn {
+        font-size: 0.88em; padding: var(--spacing-xs, 8px) var(--spacing-md, 16px); min-width: 120px;
+    }
+    #groups-view #group-chat-interface #active-group-name { font-size: 1.1em; }
 }
 
-/* If typing indicator bubble is used, no need for .typing-indicator-active on #group-chat-log to change scroll-padding */
+@media (max-width: 768px) { /* Mobile */
+    #groups-view { --group-card-aspect-ratio: 4 / 5; }
+    #groups-view .view-content { padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px); }
+    #groups-view #available-groups-ul {
+        grid-template-columns: repeat(auto-fill, minmax(calc(var(--group-card-min-width) - 70px), 1fr));
+        gap: var(--spacing-md, 16px);
+    }
+    #groups-view .group-discovery-list-item { padding: var(--spacing-md, 16px); }
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        width: calc(var(--group-card-avatar-size) * 0.8); height: calc(var(--group-card-avatar-size) * 0.8);margin-bottom: var(--spacing-sm, 10px); margin-top: var(--spacing-sm, 10px);
+     
+    }
+    #groups-view .group-discovery-list-item .group-card-name { font-size: 0.95em; margin-bottom: var(--spacing-xxs, 20px);}
+    #groups-view .group-discovery-list-item .group-card-subtext { font-size: 0.8em; height: calc(1.35em * 2); line-height: 1.35;}
+    #groups-view .group-discovery-list-item .group-card-info { margin-bottom: var(--spacing-sm, 40px); }
+    #groups-view .group-discovery-list-item .group-card-join-btn,
+    #groups-view .group-discovery-list-item .group-card-view-chat-btn {
+        width: 100%; font-size: 0.9em; max-width: 100%; padding: var(--spacing-sm, 10px);
+    }
 
-
-.group-chat-footer {
-    display: flex; /* Use flexbox to align items in the same row */
-    align-items: center; /* Vertically center input and button */
-    flex-shrink: 0; /* Prevent footer from shrinking */
-    position: sticky; /* Keep footer fixed at the bottom */
-    bottom: 0;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-top: 1px solid var(--border-color-light);
-    background-color: var(--bg-light);
-    z-index: 20;
-    /* min-height: 50px; /* Example fixed height for footer */
-}
-
-/* Remove styles for the dedicated #group-typing-indicator div as it's no longer used */
-/* #group-typing-indicator { ... } */
-/* #group-typing-indicator.active { ... } */
-
-
-/* Chat input box styling */
-#group-chat-input {
-    flex-grow: 1; /* Allow the input box to take up available space */
-    margin-right: var(--spacing-sm); /* Add spacing to the right */
-    width: 100%; /* Ensure it spans the full width of its container */
-    max-width: none; /* Remove any width constraints */
-    padding: var(--spacing-xs) var(--spacing-sm); /* Add padding for better usability */
-    border: 1px solid var(--border-color-light); /* Optional: Add a border for better visibility */
-    border-radius: var(--border-radius-md); /* Rounded corners for a modern look */
-    box-sizing: border-box; /* Ensure padding doesn't affect width */
-}
-
-#group-chat-send-btn {
-    flex-shrink: 0; /* Prevent the button from shrinking */
-    padding: var(--spacing-xs) var(--spacing-sm); /* Add padding for better usability */
-    border-radius: var(--border-radius-md); /* Rounded corners for consistency */
-    background-color: var(--primary-color); /* Button background color */
-    color: white; /* Button text color */
-    border: none; /* Remove border */
-    cursor: pointer; /* Pointer cursor for interactivity */
+    #groups-view #group-chat-interface header.group-chat-header {
+        height: auto; min-height: 50px; padding: var(--spacing-sm, 10px) var(--spacing-md, 12px);
+        flex-wrap: wrap; gap: var(--spacing-xs, 8px);
+    }
+    #groups-view #group-chat-interface #leave-group-btn { order: 1; font-size: 0.85em; margin: 0; }
+    #groups-view #group-chat-interface #active-group-name { order: 2; font-size: 1.05em; margin: 0 var(--spacing-xxs, 4px); }
+    #groups-view #group-chat-interface #group-chat-members-avatars { order: 3; margin: 0; }
+    #groups-view #group-chat-interface #group-chat-members-avatars .member-avatar-small,
+    #groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-more {
+        width: 24px; height: 24px; margin-left: -6px; font-size: 0.65em;
+    }
+    #groups-view #group-chat-interface footer.group-chat-footer { padding: var(--spacing-sm, 10px); gap: var(--spacing-xs, 6px); }
+    #groups-view #group-chat-interface #group-chat-input { padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px); font-size: 0.9em; }
+    #groups-view #group-chat-interface #send-group-message-btn { padding: var(--spacing-xs, 8px) var(--spacing-md, 14px); }
 }
 
-/* Chat message wrapper styling */
-.chat-message-wrapper {
-    display: flex;
-    align-items: flex-end;
-    margin-bottom: 8px;
-    width: fit-content; /* Make wrapper fit its content */
-    max-width: 75%; /* Match the bubble's max-width */
+@media (max-width: 480px) { /* Very Small Screens */
+    #groups-view { --group-card-aspect-ratio: 3 / 4; }
+    #groups-view #available-groups-ul { grid-template-columns: 1fr; gap: var(--spacing-sm, 12px); }
+    #groups-view .group-discovery-list-item { padding: var(--spacing-sm, 12px); }
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        width: calc(var(--group-card-avatar-size) * 0.7); height: calc(var(--group-card-avatar-size) * 0.7);
+    }
+    #groups-view .group-discovery-list-item .group-card-name { font-size: 0.9em; }
+    #groups-view .group-discovery-list-item .group-card-subtext { font-size: 0.75em; height: calc(1.3em * 2); line-height: 1.3;}
+    
+    #groups-view #group-chat-interface header.group-chat-header { justify-content: center; }
+    #groups-view #group-chat-interface #active-group-name { font-size: 1em; width: 100%; text-align: center; margin-bottom: var(--spacing-xs, 4px); }
+    #groups-view #group-chat-interface #leave-group-btn { font-size: 0.8em; padding: 6px 8px; }
+    #groups-view #group-chat-interface #leave-group-btn .button-text { display: none; }
+    #groups-view #group-chat-interface #leave-group-btn i { margin-right: 0; }
 }
-
-.chat-message-wrapper.user-wrapper {
-    margin-left: auto; /* Push user messages to the right */
-    flex-direction: row-reverse;
-}
-
-/* User chat bubble styling */
-.chat-message-ui.user {
-    background-color: var(--primary-color);
-    color: white;
-    border-bottom-right-radius: 5px;
-   
-    max-width: 100%; /* Take full width of wrapper */
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    word-break: break-word;
-    padding: 10px 14px;
-    box-sizing: border-box;
-    line-height: 1.4;
-}
-
-.chat-message-wrapper.user-wrapper .chat-message-ui {
-    margin-left: auto; /* Align bubble itself to the right */
-}
-
-/* Dark Mode for Group View specific elements */
-body.dark-mode .group-chat-container {
-    border-color: var(--border-color-dark);
-    /* background-color set by .chat-log-area dark mode style */
-}
-body.dark-mode .group-chat-header {
-    background-color: var(--bg-dark-tertiary);
-    border-bottom-color: var(--border-color-dark);
-}
-body.dark-mode #group-chat-members-avatars .member-avatar-small {
-    border-color: var(--bg-dark-tertiary); /* Match dark header */
-}
-body.dark-mode .group-chat-footer {
-    background-color: var(--bg-dark-tertiary);
-    border-top-color: var(--border-color-dark);
-}
-
-/* For group discovery list items */
-.group-discovery-list-item .lang-flag-lg { /* If using flags and want them larger */
-    width: 40px;
-    height: 30px;
-    margin-right: var(--spacing-md);
-    border-radius: var(--border-radius-sm);
-    object-fit: cover;
-    flex-shrink: 0;
-}
-.group-discovery-list-item .group-avatar-icon.large-group-icon { /* If using generic icon */
-    width: 48px; height: 48px; font-size: 1.5em;
-    /* ... other styles from .group-avatar-icon ... */
-}
-.group-discovery-list-item .list-item-subtext {
-    white-space: normal; /* Allow description to wrap */
-    overflow: visible;
-    text-overflow: clip;
-    display: -webkit-box; /* For multi-line ellipsis (optional) */
-    -webkit-line-clamp: 2; /* Max 2 lines for description */
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.3; /* Adjust line height */
-    max-height: calc(1.3em * 2); /* Max height for 2 lines */
-}
-
-.join-group-btn-list, .view-group-chat-btn-list {
-    /* Uses .action-btn-sm from buttons.css */
-    /* Ensure it aligns well with flex */
-    margin-left: var(--spacing-md);
-    flex-shrink: 0;
-}
-/* Style for "View Chat" button */
-.view-group-chat-btn-list {
-    font-size: 0.9rem; /* Match the size of "Join Group" buttons */
-    padding: 10px 15px; /* Same padding as "Join Group" buttons */
-    background-color: var(--info-color); /* Use a distinct color for "View Chat" */
-    color: var(--text-color-light); /* Ensure text is readable */
-    border: 1px solid var(--info-color-dark); /* Border color */
-    border-radius: var(--border-radius-md); /* Rounded corners */
-    cursor: pointer; /* Pointer cursor for interactivity */
-    display: inline-flex; /* Align icon and text properly */
-    align-items: center; /* Center content vertically */
-    gap: var(--spacing-xs); /* Space between icon and text */
-    transition: background-color 0.2s ease, border-color 0.2s ease; /* Smooth hover effect */
-}
-
-.view-group-chat-btn-list:hover {
-    background-color: var(--info-color-dark); /* Darker background on hover */
-    border-color: var(--info-color-darker); /* Darker border on hover */
-    color: var(--text-color-light); /* Ensure text remains visible */
-    transform: translateY(-2px); /* Slight lift effect */
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow for hover */
-}
-
-.view-group-chat-btn-list i {
-    font-size: 1.1em; /* Slightly larger icon size */
-}
-
-/* Dark Mode Adjustments */
-body.dark-mode .view-group-chat-btn-list {
-    background-color: var(--primary-color-lighter); /* Adjusted background for dark mode */
-    border-color: var(--primary-color-dark); /* Adjusted border for dark mode */
-    color: var(--text-color-light); /* Ensure text is visible in dark mode */
-}
-
-body.dark-mode .view-group-chat-btn-list:hover {
-    background-color: var(--primary-color-dark); /* Darker background on hover */
-    border-color: var(--primary-color-darker); /* Darker border on hover */
-    color: var(--text-color-light); /* Ensure text remains visible */
-}
-
-/* Add max-width to connector bubbles */
-.chat-message-ui.connector {
-    max-width: 75%; /* Prevent bubbles from exceeding 75% of the chat log width */
-    word-wrap: break-word; /* Ensure long words break properly */
-    overflow-wrap: break-word; /* Handle overflow for long text */
-}
-
-    overflow-wrap: break-word; /* Handle overflow for long text */
-}ody.dark-mode .chat-message-ui.connector {
-    background-color: var(--bg-dark-tertiary);
-/* Dark mode adjustments for connector bubbles */
-body.dark-mode .chat-message-ui.connector {
-    background-color: var(--bg-dark-tertiary);    color: var(--text-color-light);}

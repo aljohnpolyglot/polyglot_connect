@@ -1,4 +1,9 @@
-/* css/base/_reset.css */
+/*
+   ===================================================================
+   ||   MANIFEST 3: css/base/_reset.css                           ||
+   ||   The Genesis Block: Primordial Style Normalization           ||
+   ===================================================================
+*/
 /* A simple reset - consider using a more comprehensive one like Normalize.css or a modern reset */
 
 /* Box sizing rules */
@@ -39,7 +44,7 @@ body {
   line-height: 1.5; /* Default line height */
 }
 
-/* A elements that don't have a class getdefault styles */
+/* A elements that don't have a class get default styles */
 a:not([class]) {
   text-decoration-skip-ink: auto;
 }
@@ -63,6 +68,16 @@ select {
   color: inherit; /* Inherit text color for form elements */
 }
 
+/* Basic button reset */
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
 /* Remove all animations, transitions and smooth scroll for people that prefer not to see them */
 @media (prefers-reduced-motion: reduce) {
   html:focus-within {
@@ -76,14 +91,4 @@ select {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Basic button reset */
-button {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
 }

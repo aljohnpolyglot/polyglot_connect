@@ -1,110 +1,187 @@
-/* css/views/view_summary.css */
-/* Styles for the Summary View content area */
+/*
+   ===================================================================
+   ||   css/views/view_summary.css                                ||
+   ||   Styles for the Main Summary View content area             ||
+   ===================================================================
+*/
 
+/* --- Summary View Content Area --- */
 #summary-view .view-content {
-    padding: var(--spacing-md); /* Add some padding around the summary content */
-}
-/* In your lists.css or a relevant CSS file */
-.summary-list-item .list-item-subtext {
-    display: flex; /* Arrange date, time, duration in a row */
-    flex-wrap: wrap; /* Allow wrapping if space is tight */
-    gap: 0.5em;     /* Space between items */
-    font-size: 0.85em; /* Adjust overall size of this subtext line */
-    color: var(--text-muted-color); /* Or your preferred color */
-    align-items: center; /* Vertically align items if they wrap */
+    padding: var(--spacing-lg, 24px); /* Generous padding for the summary display */
+    display: flex; /* Added to help center .recap-modal-content-embedded if max-width is used */
+    flex-direction: column; /* Stack content vertically */
+    align-items: center; /* Center content like the recap block horizontally */
 }
 
-.summary-list-item .summary-item-date {
-    font-size: 0.85em; /* Specific styling for date if needed */
-    color: var(--text-color-secondary); /* Example styling */
+/* --- Placeholder Message --- */
+#summary-placeholder { /* Already styled by global .loading-message or .empty-list-msg */
+    /* No specific styles needed here if global is sufficient */
+    /* If unique styling is needed: */
+    /* font-size: 1.2em; */
+    /* color: var(--text-color-placeholder, #888); */
 }
 
-.summary-list-item .summary-item-time {
-    font-weight: bold; /* Specific styling for time if needed */
-    font-size: 0.85em; /* Consistent size with date */
-    color: var(--text-color-primary); /* Example styling */
+/* --- Embedded Recap Content Styling (when recap is shown directly in this view) --- */
+.recap-modal-content-embedded { /* Using 'modal' in class name for consistency if styles are shared/similar */
+    background-color: var(--bg-content-light, #ffffff); /* Light background for the recap block */
+    padding: var(--spacing-xl, 32px);
+    border-radius: var(--border-radius-lg, 12px); /* Larger radius for a prominent block */
+    box-shadow: var(--shadow-lg, 0 8px 25px rgba(0,0,0,0.1));
+    width: 100%; /* Take full width of parent by default */
+    max-width: 800px; /* Max width for readability */
+    /* margin: 0 auto; /* Centered by parent's align-items: center */
+    /* height: 100%; /* Let content dictate height, or set max-height if needed */
+    overflow-y: auto; /* Scroll if content exceeds viewport (if height is constrained) */
+    border: 1px solid var(--border-subtle-light, #e9ecef);
 }
 
-.summary-list-item .summary-item-duration {
-    /* Specific styling for duration if needed */
-    font-style: italic;
-}
-/* Styles for when recap content is embedded directly into the summary view */
-.recap-modal-content-embedded {
-    background-color: var(--bg-white);
-    padding: var(--spacing-lg);
-    border-radius: var(--border-radius-md);
-    box-shadow: var(--shadow-lg);
-    max-width: 800px; /* Or let it fill view-content */
-    margin: 0 auto; /* Center if max-width is set */
-    height: 100%; /* Fill available space */
-    overflow-y: auto; /* Scroll if content exceeds height */
-}
-.recap-modal-content-embedded h3 { /* Connector Name for this summary */
-    font-size: 1.5em;
-    color: var(--primary-color);
-    margin-bottom: var(--spacing-xs);
+.recap-modal-content-embedded .recap-connector-name-header { /* Assuming an H3 or H2 for the "Summary for [Partner]" */
+    font-size: 1.6em;
+    color: var(--text-color-headings, #343a40);
+    margin-bottom: var(--spacing-xs, 8px);
     text-align: center;
+    font-weight: var(--font-weight-semibold, 600);
 }
-.recap-modal-content-embedded p {
+
+.recap-modal-content-embedded .recap-session-details { /* Paragraph for date/duration */
     font-size: 0.95em;
-    margin-bottom: var(--spacing-sm);
+    color: var(--text-color-secondary-light, #495057);
+    margin-bottom: var(--spacing-lg, 24px);
     text-align: center;
 }
-.recap-modal-content-embedded p strong { font-weight: var(--font-weight-medium); }
-
-/* Re-use .recap-section styles from modal_recap.css or components/lists.css if general enough */
-.recap-modal-content-embedded .recap-section {
-    margin-bottom: var(--spacing-lg);
-    padding-bottom: var(--spacing-md);
-    border-bottom: 1px dashed var(--border-color-light);
+.recap-modal-content-embedded .recap-session-details strong {
+    font-weight: var(--font-weight-medium, 500);
 }
-.recap-modal-content-embedded .recap-section:last-of-type { /* Use last-of-type to select the actual last section */
+
+/* Section Styling within Embedded Recap (e.g., Key Topics, Vocabulary) */
+/* These styles can be shared with modal_recap.css if they are identical,
+   or specialized here if the embedded view needs a different look. */
+.recap-modal-content-embedded .recap-section {
+    margin-bottom: var(--spacing-xl, 32px); /* More space between sections */
+    padding-bottom: var(--spacing-lg, 24px);
+    border-bottom: 1px dashed var(--border-divider-light, #ced4da);
+}
+.recap-modal-content-embedded .recap-section:last-of-type {
     border-bottom: none;
     margin-bottom: 0;
+    padding-bottom: 0;
 }
-.recap-modal-content-embedded .recap-section h4 {
-    font-size: 1.1em;
-    color: var(--primary-color); /* Keep consistent with modal */
-    margin-bottom: var(--spacing-sm);
+
+.recap-modal-content-embedded .recap-section h4 { /* Section Titles */
+    font-size: 1.2em;
+    color: var(--primary-color, #007bff); /* Use primary theme color */
+    margin-top: 0;
+    margin-bottom: var(--spacing-md, 16px);
     display: flex;
     align-items: center;
+    font-weight: var(--font-weight-medium, 500);
 }
-.recap-modal-content-embedded .recap-section h4 i { margin-right: var(--spacing-sm); }
+.recap-modal-content-embedded .recap-section h4 i {
+    margin-right: var(--spacing-sm, 10px);
+    font-size: 1.1em; /* Slightly larger icon */
+}
+
 .recap-modal-content-embedded .recap-section ul {
     list-style: none;
-    padding-left: var(--spacing-xs);
+    padding-left: 0; /* Remove default UL padding */
+    margin: 0;
 }
 .recap-modal-content-embedded .recap-section ul li {
-    font-size: 0.9em;
-    color: var(--text-color-muted);
-    margin-bottom: var(--spacing-xs);
-    padding-left: var(--spacing-lg);
+    font-size: 0.95em; /* Readable text size */
+    color: var(--text-color-default-light, #212529);
+    margin-bottom: var(--spacing-sm, 10px); /* Space between list items */
+    padding-left: var(--spacing-lg, 24px); /* Space for custom bullet */
     position: relative;
+    line-height: 1.5;
 }
+
+/* Custom bullet for recap lists */
 .recap-modal-content-embedded .recap-section ul li::before {
-    content: '✓';
-    color: var(--success-color);
-    position: absolute; left: 0; top: 1px;
-    font-weight: var(--font-weight-bold);
+    content: '✓'; /* Default checkmark */
+    color: var(--success-color, #28a745);
+    position: absolute;
+    left: 0;
+    top: 1px; /* Adjust vertical alignment */
+    font-weight: var(--font-weight-bold, 700);
+    font-size: 1em;
 }
-#summary-view-download-btn {
-    display: block; /* Make button take full width or center it */
-    margin: var(--spacing-lg) auto 0 auto;
-    width: fit-content;
+/* Specific icon for vocabulary if desired */
+.recap-modal-content-embedded .recap-section.vocabulary-section ul li::before {
+    content: '📖'; /* Book icon for vocabulary */
+    font-family: "Font Awesome 6 Free"; /* Ensure Font Awesome is used */
+    font-weight: 900; /* For solid icons */
+    color: var(--info-color, #17a2b8); /* Different color for vocab */
+}
+/* Specific icon for improvement areas */
+.recap-modal-content-embedded .recap-section.improvement-section ul li::before {
+    content: '💡'; /* Lightbulb icon */
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    color: var(--warning-color, #ffc107); /* Different color for improvement */
+}
+/* For text blocks like "Coach's Note" or "Conversation Summary" */
+.recap-modal-content-embedded .recap-section .recap-text-block {
+    font-size: 0.95em;
+    color: var(--text-color-default-light, #212529);
+    line-height: 1.6;
+    background-color: var(--bg-subtle-light, #f8f9fa); /* Subtle background for text blocks */
+    padding: var(--spacing-md, 16px);
+    border-radius: var(--border-radius-sm, 4px);
+    border-left: 3px solid var(--primary-color-light, #a6cfff); /* Accent border */
 }
 
 
-/* Dark Mode for Summary View Embedded Recap */
+/* Download Button Styling (if specific to this view) */
+#summary-view-download-btn { /* Assumes this ID is unique to the button in this view */
+    display: block;
+    margin: var(--spacing-xl, 32px) auto 0 auto; /* More top margin, centered */
+    width: fit-content; /* Button size based on content */
+    /* Use general button styles from buttons.css, or add specific overrides here */
+    /* e.g., padding: var(--button-padding-y, 10px) var(--button-padding-x, 20px); */
+}
+
+
+/* --- Dark Mode for Summary View Embedded Recap --- */
 body.dark-mode .recap-modal-content-embedded {
-    background-color: var(--bg-dark-secondary);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    background-color: var(--bg-content-dark, #2c2f33);
+    box-shadow: var(--shadow-lg-dark, 0 8px 25px rgba(0,0,0,0.25));
+    border-color: var(--border-subtle-dark, #3e444c);
 }
-body.dark-mode .recap-modal-content-embedded h3 { color: var(--primary-color-lighter); }
-body.dark-mode .recap-modal-content-embedded p { color: var(--text-color-light); }
-body.dark-mode .recap-modal-content-embedded p strong { color: var(--text-color-light); }
-body.dark-mode .recap-modal-content-embedded .recap-section { border-bottom-color: var(--border-color-dark); }
-body.dark-mode .recap-modal-content-embedded .recap-section h4 { color: var(--primary-color-lighter); }
-body.dark-mode .recap-modal-content-embedded .recap-section ul li { color: #b0b3b8; }
-body.dark-mode .recap-modal-content-embedded .recap-section ul li::before { color: #32cd32; }
+body.dark-mode .recap-modal-content-embedded .recap-connector-name-header {
+    color: var(--text-color-headings-dark, #e9ecef);
+}
+body.dark-mode .recap-modal-content-embedded .recap-session-details {
+    color: var(--text-color-secondary-dark, #adb5bd);
+}
+body.dark-mode .recap-modal-content-embedded .recap-section {
+    border-bottom-color: var(--border-divider-dark, #495057);
+}
+body.dark-mode .recap-modal-content-embedded .recap-section h4 {
+    color: var(--primary-color-dark-highlight, #61dafb); /* Brighter accent for dark mode titles */
+}
+body.dark-mode .recap-modal-content-embedded .recap-section ul li {
+    color: var(--text-color-default-dark, #dee2e6);
+}
+body.dark-mode .recap-modal-content-embedded .recap-section ul li::before {
+    color: var(--success-color-dark, #32cd32); /* Ensure good contrast */
+}
+body.dark-mode .recap-modal-content-embedded .recap-section.vocabulary-section ul li::before {
+    color: var(--info-color-dark, #20c997);
+}
+body.dark-mode .recap-modal-content-embedded .recap-section.improvement-section ul li::before {
+    color: var(--warning-color-dark, #fd7e14);
+}
+body.dark-mode .recap-modal-content-embedded .recap-section .recap-text-block {
+    background-color: var(--bg-subtle-dark, #343a40);
+    color: var(--text-color-default-dark, #dee2e6);
+    border-left-color: var(--primary-color-dark, #03a9f4);
+}
 
+/* Styles for summary list items in the RIGHT SIDEBAR (if they need overriding from lists.css) */
+/* Example: #summary-list-ul .summary-list-item-wrapper .sidebar-item-subtext .summary-item-date { ... } */
+/* Your provided snippet for .summary-list-item .list-item-subtext seems to be targeting
+   the sidebar list item, so it should be in lists.css or a sidebar-specific component file,
+   not view_summary.css which is for the main view content.
+   The styles for .summary-item-date, .summary-item-time, .summary-item-duration
+   are already incorporated into lists.css's .sidebar-item-subtext for summary items.
+*/
