@@ -6,6 +6,7 @@
     display: flex;
     justify-content: center; /* Example: center the tips panel */
     padding-top: var(--spacing-xl);
+    align-items: center;
 }
 
 .tips-panel {
@@ -15,6 +16,7 @@
     box-shadow: var(--shadow-lg);
     max-width: 700px; /* Max width for the tips panel */
     width: 100%;
+    align-items: center;
 }
 
 .tips-panel h3 {
