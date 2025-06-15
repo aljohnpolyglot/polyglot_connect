@@ -97,10 +97,12 @@ async function callWithRetry<T>(
         if (!Array.isArray(messages) || messages.length === 0) { /* ... error ... */ throw new Error(`Messages must be a non-empty array for ${provider}`); }
         // Add more detailed message structure validation if needed
         // --- End Validation ---
+    const isGroq = provider === PROVIDERS.GROQ;
 
-        const baseUrl = provider === PROVIDERS.GROQ
-            ? "https://api.groq.com/openai/v1"
-            : "https://api.together.xyz/v1"; 
+        // The URL is now different for Groq vs. other providers
+        const fetchUrl = isGroq
+            ? 'https://square-bush-5dbc.mogatas-princealjohn-05082003.workers.dev/' // This is your secure bodyguard's address
+            : `https://api.together.xyz/v1/chat/completions`; // This is the direct call for Together
 
         const requestBody: any = { // Use 'any' for flexibility with optional params
             model: modelIdentifier,
@@ -117,11 +119,12 @@ async function callWithRetry<T>(
         
         try {
             // Define the specific fetch call as a function to pass to the retry helper
-            const apiFetchFn = async () => {
-                const response = await fetch(`${baseUrl}/chat/completions`, {
+             const apiFetchFn = async () => {
+                const response = await fetch(fetchUrl, { // Use our new fetchUrl
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${apiKey}`,
+                        // The worker adds the key for Groq. We still need it for others.
+                        'Authorization': isGroq ? '' : `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(requestBody)
