@@ -114,7 +114,7 @@ window.GEMINI_API_KEY_ALT = apiKeysConfig.GEMINI_API_KEY_ALT || undefined;
 console.log("app.ts: window.GEMINI_API_KEY_ALT set to:", window.GEMINI_API_KEY_ALT);
 window.GEMINI_API_KEY_ALT_2 = apiKeysConfig.GEMINI_API_KEY_ALT_2 || undefined;
 console.log("app.ts: window.GEMINI_API_KEY_ALT_2 set to:", window.GEMINI_API_KEY_ALT_2);
-window.GROQ_API_KEY = apiKeysConfig.GROQ_API_KEY || undefined;
+window.GROQ_API_KEY = apiKeysConfig.GROQ_API_KEY || 'proxy-handled';
 console.log("app.ts: window.GROQ_API_KEY set to:", window.GROQ_API_KEY);
 window.TOGETHER_API_KEY = apiKeysConfig.TOGETHER_API_KEY || undefined;
 console.log("app.ts: window.TOGETHER_API_KEY set to:", window.TOGETHER_API_KEY);
@@ -148,7 +148,7 @@ function initializeAppLogic(): void {
     console.log('app.ts: Starting critical module checks (within initializeAppLogic)...');
     const criticalModules: CriticalModuleDef[] = [
         { name: 'GEMINI_API_KEY', obj: window.GEMINI_API_KEY, isKey: true },
-        { name: 'GROQ_API_KEY', obj: window.GROQ_API_KEY, isKey: true },
+        // { name: 'GROQ_API_KEY', obj: window.GROQ_API_KEY, isKey: true },
         { name: 'TOGETHER_API_KEY', obj: window.TOGETHER_API_KEY, isKey: true },
 
         { name: 'polyglotHelpers', obj: window.polyglotHelpers as PolyglotHelpers | undefined, keyFn: 'sanitizeTextForDisplay'},

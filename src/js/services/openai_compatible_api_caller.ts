@@ -92,12 +92,15 @@ async function callWithRetry<T>(
         
         // --- Input Validation ---
         if (!provider || (provider !== PROVIDERS.GROQ && provider !== PROVIDERS.TOGETHER)) { /* ... error ... */ throw new Error(`Invalid provider: ${provider}`); }
-        if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '' || apiKey.includes('YOUR_') || (provider === PROVIDERS.GROQ && apiKey.includes('gsk_YOUR_'))) { /* ... error ... */ throw new Error(`Invalid API key for ${provider}`); }
+      const isGroq = provider === PROVIDERS.GROQ;
+if (!isGroq && (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '' || apiKey.includes('YOUR_'))) {
+    throw new Error(`Invalid API key for ${provider}`);
+}
         if (!modelIdentifier || typeof modelIdentifier !== 'string' || modelIdentifier.trim() === '') { /* ... error ... */ throw new Error(`Invalid modelIdentifier for ${provider}`); }
         if (!Array.isArray(messages) || messages.length === 0) { /* ... error ... */ throw new Error(`Messages must be a non-empty array for ${provider}`); }
         // Add more detailed message structure validation if needed
         // --- End Validation ---
-    const isGroq = provider === PROVIDERS.GROQ;
+   
 
         // The URL is now different for Groq vs. other providers
         const fetchUrl = isGroq
