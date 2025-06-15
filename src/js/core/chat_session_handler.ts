@@ -335,10 +335,6 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
             const currentModalTargetConnector = chatActiveTargetManager.getModalMessageTargetConnector();
             const isModalVisible = modalHandler.isVisible?.(domElements.messagingInterface);
             
-            console.error(`CSH.MODAL_STATE_CHECK for ${connector.id}:`);
-            console.error(`  - currentModalTargetConnector?.id: '${currentModalTargetConnector?.id}' (is it === connector.id?: ${currentModalTargetConnector?.id === connector.id})`);
-            console.error(`  - isModalVisible (from modalHandler): ${isModalVisible}`);
-            
             const isThisModalAlreadyOpenAndActiveForThisConnector = 
                 currentModalTargetConnector?.id === connector.id && isModalVisible;
 
@@ -364,57 +360,48 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
             }
             console.log("CSH_DEBUG: Calling uiUpdater.updateMessageModalHeader with connector:", JSON.parse(JSON.stringify(convo.connector || {})));
             uiUpdater.updateMessageModalHeader(convo.connector);
-            console.error("CSH.openMessageModalForConnector: BEFORE uiUpdater.clearMessageModalLog(). Log children:", domElements.messageChatLog?.children.length);
-            uiUpdater.clearMessageModalLog?.();
-            console.error("CSH.openMessageModalForConnector: AFTER uiUpdater.clearMessageModalLog(). Log children:", domElements.messageChatLog?.children.length);
+           
+         
             
-            console.error(`CSH_DEBUG_MODAL: Messages for ${connector.id} BEFORE rendering loop:`, JSON.parse(JSON.stringify(convo.messages || [])));console.error(`CSH_DEBUG_MODAL: Messages for ${connector.id} BEFORE rendering loop:`, JSON.parse(JSON.stringify(convo.messages || [])));
-          
+                      // Clear the log right before we decide what to put in it.
+            uiUpdater.clearMessageModalLog?.();
+
             if (Array.isArray(convo.messages) && convo.messages.length > 0) {
+                // If there is history, loop through and add each message.
                 console.log(`CSH_TS: Populating ${convo.messages.length} messages into modal for ${connector.id}.`);
                 convo.messages.forEach((msg: MessageInStore) => {
                     if (!msg) return;
                   
-                    let senderClass = msg.sender === 'user-voice-transcript' ? 'user' : (msg.sender === 'user' ? 'user' : 'connector');
-
-                    // console.log("CSH_DEBUG_MODAL_BUTTON_DATA (msg):", JSON.parse(JSON.stringify(msg)));
-                    // console.log("CSH_DEBUG_MODAL_BUTTON_DATA (msg.connectorIdForButton):", msg.connectorIdForButton);
-    
+                    const senderClass = msg.sender === 'user' ? 'user' : 'connector';
                     const msgOptions: ChatMessageOptions = {
                         timestamp: msg.timestamp,
-                        messageId: msg.id, // Pass messageId
+                        messageId: msg.id,
                         type: msg.type,
                         eventType: msg.eventType,
                         duration: msg.duration,
                         callSessionId: msg.callSessionId,
                         connectorIdForButton: msg.connectorIdForButton,
-                        connectorNameForDisplay: msg.connectorNameForDisplay
+                        connectorNameForDisplay: msg.connectorNameForDisplay,
+                        isVoiceMemo: msg.isVoiceMemo,
+                      audioSrc: msg.audioBlobDataUrl || undefined,
+                      imageUrl: msg.content_url || undefined,
+                        avatarUrl: convo.connector?.avatarModern,
+                        senderName: convo.connector?.profileName,
+                        connectorId: convo.connector?.id
                     };
     
-                    if (senderClass === 'connector' && convo.connector) {
-                        msgOptions.senderName = convo.connector.profileName;
-                        msgOptions.avatarUrl = convo.connector.avatarModern;
-                        msgOptions.connectorId = convo.connector.id;
-                    }
-    
-                    let textForDisplay = msg.text || "";
-    
-                    // VVVVVV THIS IS THE KEY ADDITION/CORRECTION VVVVVV
-                    if (msg.isVoiceMemo && msg.audioBlobDataUrl) {
-                        msgOptions.isVoiceMemo = true;
-                        msgOptions.audioSrc = msg.audioBlobDataUrl;
-                    } else if (msg.type === 'image' && msg.content_url) {
-                        msgOptions.imageUrl = msg.content_url;
-                    }
-                    // ^^^^^^ THIS IS THE KEY ADDITION/CORRECTION ^^^^^^
-    
-                    uiUpdater.appendToMessageLogModal?.(String(textForDisplay), senderClass!, msgOptions);
+                    uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
                 });
-            } else { 
-                console.log(`CSH_TS: New modal conversation with ${convo.connector!.profileName}.`);
-                if (domElements.messageChatLog && polyglotHelpers) {
+                    } else {
+                // This is a new conversation. Manually add the placeholder.
+                console.log(`CSH_TS: New modal conversation with ${convo.connector!.profileName}. Manually inserting placeholder.`);
+                if (domElements.messageChatLog && polyglotHelpers && convo.connector) {
                      domElements.messageChatLog.innerHTML = 
-                        `<p class="chat-log-placeholder">No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(convo.connector!.profileName || 'this contact')}.<br>Send a message to start!</p>`;
+                        `<div class="chat-log-empty-placeholder">
+                            <i class="far fa-comments"></i>
+                            <p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(convo.connector.profileName)}.</p>
+                            <p>Send a message to start!</p>
+                        </div>`;
                 }
             }
             uiUpdater.scrollMessageModalToBottom?.();

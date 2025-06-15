@@ -179,6 +179,7 @@ function appendChatMessage(
         return null;
     }
 
+  
     // Debug log for incoming user voice memos
     if (options.isVoiceMemo && senderClass.includes('user')) {
         console.log(`UIU.appendChatMessage USER VOICE MEMO: Text='${text}', Sender='${senderClass}', Options:`, JSON.parse(JSON.stringify(options)));
@@ -187,7 +188,12 @@ function appendChatMessage(
     if (options.isVoiceMemo && senderClass.includes('connector')) {
         console.log(`UIU.appendChatMessage CONNECTOR VOICE MEMO: Text='${text}', Sender='${senderClass}', Options:`, JSON.parse(JSON.stringify(options)));
     }
-
+    
+const manualPlaceholder = logElement.querySelector('.chat-log-empty-placeholder');
+    if (manualPlaceholder) {
+        // If it exists, this must be the first message. Clear the log before proceeding.
+        logElement.innerHTML = '';
+    }
 
     const messageTimestamp = options.timestamp ? new Date(options.timestamp) : new Date();
     let lastDisplayedDate = lastDisplayedTimestamps.get(logElement);
@@ -725,7 +731,7 @@ function appendChatMessage(
             if (cd.messageSendBtn) cd.messageSendBtn.disabled = false;
         };
 
-        const clearMessageModalLog = (): void => {
+                   const clearMessageModalLog = (): void => {
             const { domElements: cd } = getDepsLocal();
             if (cd.messageChatLog) {
                 cd.messageChatLog.innerHTML = '';
@@ -786,10 +792,12 @@ function appendChatMessage(
             const { domElements: cd } = getDepsLocal();
             if(cd.embeddedMessageSendBtn) cd.embeddedMessageSendBtn.disabled = !enable;
         };
-       const clearEmbeddedChatLog = (): void => { 
+            const clearEmbeddedChatLog = (): void => {
         const { domElements: cd } = getDepsLocal();
-        if(cd.embeddedChatLog) {
-            cd.embeddedChatLog.innerHTML = '';
+        if (cd.embeddedChatLog) {
+            // Add a hidden placeholder to prevent CSS :empty selectors from showing
+            // a "No messages" prompt while history is being loaded.
+            cd.embeddedChatLog.innerHTML = '<div class="log-is-loading" style="display: none;"></div>';
             lastDisplayedTimestamps.delete(cd.embeddedChatLog); // Clear timestamp state
         }
     };

@@ -20,7 +20,12 @@
     /* font-size: 1.2em; */
     /* color: var(--text-color-placeholder, #888); */
 }
-
+.loading-message {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+}
 /* --- Embedded Recap Content Styling (when recap is shown directly in this view) --- */
 .recap-modal-content-embedded { /* Using 'modal' in class name for consistency if styles are shared/similar */
     background-color: var(--bg-content-light, #ffffff); /* Light background for the recap block */

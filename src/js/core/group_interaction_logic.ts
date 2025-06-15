@@ -387,18 +387,19 @@ async function handleUserMessage(
 }
 // <<< END: REPLACE THE ENTIRE handleUserMessage FUNCTION >>>
 // <<< END OF REPLACEMENT 2.1 >>>
-    
+    // REPLACE THIS ENTIRE SECTION IN YOUR FILE //
+
 async function simulateAiMessageInGroup(
     isReplyToUser: boolean = false,
     userMessageText: string = "",
     imageContextForReply?: { base64Data?: string; mimeType?: string; }
 ): Promise<void> {
     if (aiResponding) {
-        console.log("GIL: AI is already responding, skipping.");
+        console.log("GIL: AI is already responding, skipping this turn.");
         return;
     }
     aiResponding = true;
-    const USER_ID_PLACEHOLDER = "user_player"; // <<< ADD THIS LINE
+    const USER_ID_PLACEHOLDER = "user_player";
     const currentGroupDef = groupDataManager.getCurrentGroupData();
     if (!currentGroupDef || !currentGroupTutorInternal) {
         console.error("GIL: Cannot simulate message, critical group data missing.");
@@ -407,20 +408,20 @@ async function simulateAiMessageInGroup(
     }
 
     const groupChatHistory = groupDataManager.getLoadedChatHistory() || [];
-    const lastMessageInFullHistory = groupChatHistory.length > 0 ? groupChatHistory[groupChatHistory.length - 1] : null;
-
     const activeAiSpeakers = currentGroupMembersInternal.filter(m => m.id !== "user_player" && polyglotHelpers.isConnectorCurrentlyActive(m));
+// ADD THIS LINE
+const lastMessageInFullHistory = groupChatHistory.length > 0 ? groupChatHistory[groupChatHistory.length - 1] : null;
     if (activeAiSpeakers.length === 0) {
         aiResponding = false;
         return;
     }
 
-       
+    // This variable will hold our chosen speaker. It starts as undefined.
     let speaker: Connector | undefined;
-    let localMentionedPersonaName: string | null = null; // <<< ADD THIS LINE
     const normalizedUserMessage = userMessageText ? polyglotHelpers.normalizeText(userMessageText) : "";
 
-    // PRIORITY 1: Find an explicitly mentioned speaker.
+    // --- PRIORITY 1: Explicit @Mention ---
+    // User mentions an AI's name directly. This gets top priority.
     if (isReplyToUser && userMessageText) {
         for (const potentialSpeaker of activeAiSpeakers) {
             const firstNamesToMatch = [
@@ -431,347 +432,366 @@ async function simulateAiMessageInGroup(
             const uniqueFirstNames = [...new Set(firstNamesToMatch)];
 
             for (const firstName of uniqueFirstNames) {
+                // Use a regular expression to match the whole word to avoid partial matches (e.g., "Ken" in "Kenji").
                 const namePattern = new RegExp(`\\b${firstName}\\b`, 'i');
                 if (namePattern.test(normalizedUserMessage)) {
                     speaker = potentialSpeaker;
                     console.log(`GIL: Speaker Priority 1 - User mentioned '${firstName}', selecting ${speaker.profileName}.`);
-                    break; 
+                    break;
                 }
             }
-            if (speaker) break; // Exit the main loop once a speaker is found
+            if (speaker) break; // Exit the outer loop once a speaker is found
         }
     }
 
-    // PRIORITY 2: If no one was mentioned, check for an implied follow-up question.
-    if (!speaker && isReplyToUser && userMessageText && lastMessageInFullHistory && lastMessageInFullHistory.speakerId !== 'user_player') {
-        const lastAiSpeaker = activeAiSpeakers.find(s => s.id === lastMessageInFullHistory.speakerId);
-        if (lastAiSpeaker && normalizedUserMessage.endsWith('?') && normalizedUserMessage.length < 35) {
-            speaker = lastAiSpeaker;
-            console.log(`GIL: Speaker Priority 2 - User sent a short question. Prioritizing last AI speaker: ${speaker.profileName}.`);
+    // --- PRIORITY 2: Implicit Follow-up to Last ENGAGED AI ---
+    // If no one was explicitly named, check if the user is continuing a direct conversation.
+    // This only triggers if an AI has recently replied to the user (`lastAiDirectlyEngagedByUserId` is set).
+  // REPLACE WITH THIS FINAL, UPGRADED BLOCK //
+
+    // --- PRIORITY 2: Implicit Follow-up to Last ENGAGED AI ---
+    // If no one was explicitly named, check if the user is continuing a direct conversation.
+    if (!speaker && lastAiDirectlyEngagedByUserId && isReplyToUser && userMessageText) {
+        let isLikelyFollowUp = false;
+
+        // --- KEYWORD LISTS FOR FOLLOW-UP DETECTION ---
+    // --- KEYWORD LISTS FOR FOLLOW-UP DETECTION ---
+// NOTE: All keywords are pre-normalized (lowercase, accents removed) to match the `normalizedUserMessage` variable.
+// This greatly improves matching robustness across different languages and user input styles.
+
+const simpleAffirmations: string[] = [
+    // English
+    "yes", "yeah", "yep", "yup", "sure", "okay", "ok", "alright", "right", "correct", "exactly", "true", "i agree", "me too", "sounds good", "got it", "understood", "fine", "good", "totally", "for sure", "certainly", "absolutely", "definitely", "you got it", "that's it",
+    // Spanish
+    "si", "claro", "vale", "bueno", "dale", "de acuerdo", "exacto", "correcto", "verdad", "asi es", "entiendo", "entendido", "ya veo", "perfecto", "cierto", "seguro", "ya", "esta bien", "eso es",
+    // French
+    "oui", "ouais", "bien sur", "d'accord", "exactement", "c'est ca", "c'est vrai", "entendu", "compris", "parfait", "absolument", "tout a fait", "carrement", "ca marche",
+    // German
+    "ja", "sicher", "klar", "okay", "ok", "in ordnung", "genau", "richtig", "stimmt", "absolut", "bestimmt", "verstanden", "genau so", "sicherlich", "einverstanden",
+    // Italian
+    "si", "certo", "va bene", "ok", "d'accordo", "esatto", "giusto", "certo che si", "ho capito", "perfetto", "assolutamente",
+    // Portuguese
+    "sim", "claro", "ta bom", "esta bem", "certo", "exato", "com certeza", "entendi", "perfeito", "absolutamente", "fechado", "beleza",
+    // Dutch
+    "ja", "zeker", "tuurlijk", "ok", "oke", "akkoord", "precies", "klopt", "begrepen", "helemaal", "prima",
+    // Russian (cyrillic)
+    "да", "ага", "конечно", "хорошо", "ладно", "точно", "именно", "правильно", "согласен", "согласна", "понял", "поняла", "понятно", "безусловно",
+    // Japanese (hiragana/kanji)
+    "はい", "ええ", "うん", "そうです", "そうですね", "その通り", "分かった", "分かりました", "了解", "なるほど", "確かに",
+    // Korean (hangul)
+    "네", "응", "맞아요", "그럼요", "알았어", "알겠습니다", "이해했어요", "좋아요", "당연하죠",
+    // Mandarin Chinese (pinyin/hanzi)
+    "shi de", "dui", "hao", "好的", "对", "是的", "没错", "当然", "明白了", "我同意",
+    // Arabic
+    "نعم", "ايوه", "اكيد", "طبعا", "تمام", "صح", "مضبوط", "بالتاكيد", "موافق", "فهمت",
+    // Hindi
+    "haan", "theek hai", "sahi hai", "bilkul", "samajh gaya", "samajh gayi", "ji",
+    // Indonesian
+    "ya", "iya", "tentu", "oke", "baik", "setuju", "paham", "mengerti", "benar", "betul",
+    // Polish
+    "tak", "pewnie", "oczywiscie", "zgoda", "dobrze", "ok", "racja", "dokladnie", "zrozumialem", "rozumiem",
+    // Swedish
+    "ja", "visst", "javisst", "okej", "ok", "precis", "exakt", "juste", "jag forstar", "absolut",
+    // Thai
+    "ใช่", "ค่ะ", "ครับ", "แน่นอน", "โอเค", "เข้าใจแล้ว", "ถูกต้อง",
+    // Turkish
+    "evet", "tabii", "tamam", "olur", "anlastik", "dogru", "kesinlikle", "anladim",
+    // Vietnamese
+    "vâng", "dạ", "đúng", "chắc chắn", "được", "ok", "tất nhiên", "hiểu rồi",
+    // Tagalog
+    "oo", "opo", "sige", "tama", "syempre", "gets ko", "naiintindihan ko",
+    // Norwegian
+    "ja", "sikkert", "selvfolgelig", "ok", "greit", "riktig", "akkurat", "forstatt",
+    "totally" // Universal slang
+];
+
+const simpleNegations: string[] = [
+    // English
+    "no", "nope", "nah", "not really", "i disagree", "i don't think so", "never", "incorrect", "false", "not at all", "certainly not", "absolutely not", "wrong",
+    // Spanish
+    "no", "claro que no", "para nada", "no estoy de acuerdo", "nunca", "incorrecto", "falso", "jamas", "en absoluto", "que va", "negativo",
+    // French
+    "non", "pas vraiment", "je ne suis pas d'accord", "jamais", "incorrect", "faux", "pas du tout", "absolument pas", "pas question",
+    // German
+    "nein", "nicht wirklich", "stimmt nicht", "falsch", "niemals", "auf keinen fall", "ich stimme nicht zu", "uberhaupt nicht", "keinesfalls",
+    // Italian
+    "no", "non proprio", "non sono d'accordo", "sbagliato", "assolutamente no", "per niente", "mai",
+    // Portuguese
+    "nao", "de jeito nenhum", "claro que nao", "discordo", "errado", "nunca", "jamais",
+    // Dutch
+    "nee", "niet echt", "oneens", "niet akkoord", "fout", "absoluut niet", "nooit",
+    // Russian (cyrillic)
+    "нет", "неа", "не совсем", "я не согласен", "я не согласна", "никогда", "неправильно", "неверно", "ни в коем случае",
+    // Japanese (hiragana/kanji)
+    "いいえ", "いや", "ううん", "違う", "そうじゃない", "間違っています", "そんなことない",
+    // Korean (hangul)
+    "아니요", "아니", "틀렸어요", "그렇지 않아요", "절대 아니에요",
+    // Mandarin Chinese (pinyin/hanzi)
+    "bu", "bushi", "budui", "不是", "不对", "我不同意", "当然不",
+    // Arabic
+    "لا", "لاء", "ابدا", "غير صحيح", "خطأ", "بالعكس", "مستحيل",
+    // Hindi
+    "nahin", "bilkul nahin", "galat", "main sahmat nahin hoon",
+    // Indonesian
+    "tidak", "bukan", "salah", "saya tidak setuju", "enggak",
+    // Polish
+    "nie", "skad", "zle", "nie sadze", "nie zgadzam sie", "nigdy",
+    // Swedish
+    "nej", "na", "inte direkt", "fel", "jag haller inte med", "aldrig",
+    // Thai
+    "ไม่", "ไม่เลย", "ไม่เห็นด้วย", "ผิด",
+    // Turkish
+    "hayir", "yanlis", "katilmiyorum", "asla", "hic de degil",
+    // Vietnamese
+    "không", "sai", "tôi không đồng ý", "đâu có",
+    // Tagalog
+    "hindi", "hindi po", "mali", "hindi ako sang-ayon",
+    // Norwegian
+    "nei", "ikke egentlig", "uenig", "feil", "aldri", "absolutt ikke"
+];
+
+const simpleContinuers: string[] = [
+    // English
+    "uh-huh", "mm-hmm", "mhm", "go on", "i see", "really", "oh", "interesting", "and", "so", "then", "well", "aha", "and then", "tell me more",
+    // Spanish
+    "aja", "hmm", "sigue", "continua", "ya veo", "ah si", "de verdad", "interesante", "y...", "entonces", "luego", "pues", "vaya", "cuentame mas",
+    // French
+    "euh-hein", "hmm", "continue", "vas-y", "je vois", "ah bon", "vraiment", "interessant", "et...", "donc", "alors", "puis", "ben", "dis-m'en plus",
+    // German
+    "aha", "hm", "mhm", "weiter", "ich verstehe", "ach so", "wirklich", "echt", "interessant", "und...", "also", "dann", "nun", "tja", "erzahl mehr",
+    // Italian
+    "uhm", "mmh", "continua", "davvero", "interessante", "capisco", "allora", "e poi", "dimmi di piu",
+    // Portuguese
+    "uhum", "hmm", "continue", "sei", "interessante", "e entao", "me diga mais",
+    // Dutch
+    "hmm", "mhm", "ga door", "ik snap het", "echt", "interessant", "en", "vertel",
+    // Russian (cyrillic)
+    "угу", "ага", "хм", "продолжай", "понимаю", "ясно", "правда", "интересно", "и...", "так", "ну",
+    // Japanese (hiragana/kanji)
+    "ふむふむ", "へえ", "ほう", "それで", "なるほど", "本当", "面白い", "続けて",
+    // Korean (hangul)
+    "음", "아", "어", "네", "계속하세요", "진짜요", "그래요", "그래서요",
+    // Mandarin Chinese (pinyin/hanzi)
+    "en", "嗯", "然后呢", "有意思", "真的吗", "我明白了", "继续说",
+    // Arabic
+    "اها", "هممم", "كمل", "كملي", "فاهم", "بجد", "معقول", "وبعدين",
+    // Hindi
+    "hmm", "acha", "phir", "aur batao", "sach mein",
+    // Indonesian
+    "hmm", "oh gitu", "terus", "lanjut", "menarik", "begitu ya",
+    // Polish
+    "aha", "uhm", "kontynuuj", "naprawde", "ciekawe", "rozumiem", "no i",
+    // Swedish
+    "jaha", "okej", "hmm", "fortsatt", "jag forstar", "verkligen", "intressant", "och sen da",
+    // Thai
+    "อืม", "อ๋อ", "แล้วไงต่อ", "จริงเหรอ", "น่าสนใจ", "เล่ามาอีก",
+    // Turkish
+    "himm", "hı-hı", "devam et", "anliyorum", "gercekten mi", "ilginc", "ee", "sonra",
+    // Vietnamese
+    "uhm", "vậy à", "rồi sao", "thật hả", "thú vị", "kể tiếp đi",
+
+    // Tagalog
+    "tapos", "talaga", "ah talaga", "ganun ba", "kwento mo pa",
+    // Norwegian
+    "aha", "javel", "hmm", "fortsett", "jeg skjonner", "virkelig", "interessant", "og sa"
+];
+
+const questionKeywords: string[] = [
+    // English
+    "what", "where", "when", "who", "why", "how", "which", "whose", "explain", "question",
+    // Spanish
+    "que", "cual", "quien", "como", "cuando", "donde", "cuanto", "porque", "por que", "cuyo", "explica", "pregunta",
+    // French
+    "que", "quoi", "qui", "comment", "quand", "ou", "combien", "pourquoi", "lequel", "laquelle", "explique",
+    // German
+    "was", "wo", "wann", "wer", "warum", "wieso", "weshalb", "wie", "welche", "wessen", "erklar",
+    // Italian
+    "cosa", "che", "dove", "quando", "chi", "perche", "come", "quale", "quanto", "spiega",
+    // Portuguese
+    "o que", "onde", "quando", "quem", "porque", "por que", "como", "qual", "quanto", "explique",
+    // Dutch
+    "wat", "waar", "wanneer", "wie", "waarom", "hoe", "welke", "wiens", "leg uit",
+
+    // Russian (cyrillic)
+    "что", "где", "когда", "кто", "почему", "зачем", "как", "какой", "чей", "объясни",
+    // Japanese (hiragana/kanji)
+    "何", "どこ", "いつ", "誰", "なぜ", "どうして", "どう", "どの", "誰の", "教えて",
+    // Korean (hangul)
+    "뭐", "무엇을", "어디", "언제", "누구", "왜", "어떻게", "어떤", "설명해",
+    // Mandarin Chinese (pinyin/hanzi)
+    "什么", "哪里", "何时", "谁", "为什么", "怎么", "哪个", "解释",
+    // Arabic
+    "ماذا", "ما", "اين", "متى", "من", "لماذا", "كيف", "اي", "اشرح",
+    // Hindi
+    "kya", "kahan", "kab", "kaun", "kyon", "kaise", "kaun sa", "samjhao",
+    // Indonesian
+    "apa", "dimana", "kapan", "siapa", "mengapa", "kenapa", "bagaimana", "yang mana", "jelaskan",
+    // Polish
+    "co", "gdzie", "kiedy", "kto", "dlaczego", "jak", "ktory", "czyj", "wyjasnij",
+    // Swedish
+    "vad", "var", "nar", "vem", "varfor", "hur", "vilken", "vilket", "vems", "forklara",
+    // Thai
+    "อะไร", "ที่ไหน", "เมื่อไหร่", "ใคร", "ทำไม", "อย่างไร", "อันไหน", "อธิบาย",
+    // Turkish
+    "ne", "nerede", "ne zaman", "kim", "neden", "niye", "nasil", "hangi", "acikla",
+    // Vietnamese
+    "gì", "đâu", "khi nào", "ai", "tại sao", "sao", "thế nào", "cái nào", "giải thích",
+    // Tagalog
+    "ano", "saan", "kailan", "sino", "bakit", "paano", "alin", "ipaliwanag",
+    // Norwegian
+    "hva", "hvor", "nar", "hvem", "hvorfor", "hvordan", "hvilken", "hvis", "forklar"
+];
+
+// This list is checked with higher priority. It contains phrases that very strongly
+// indicate the user is directly addressing the last speaker.
+const directYouPhrases: string[] = [
+    // English
+    "you", "and you", "what about you", "how about you", "your turn", "you are", "you're", "do you", "are you", "did you", "can you", "will you", "could you", "would you", "have you", "what do you",
+    // Spanish
+    "tu", "usted", "vos", "y tu", "y usted", "y vos", "que tal tu", "que hay de ti", "a ti", "y a ti", "eres", "estas", "tienes", "puedes", "sabes", "has", "crees que",
+    // French
+    "toi", "vous", "et toi", "et vous", "ton avis", "votre avis", "tu es", "vous etes", "as-tu", "avez-vous", "peux-tu", "pouvez-vous", "sais-tu", "savez-vous", "penses-tu",
+    // German
+    "du", "sie", "und du", "und sie", "und dir", "und ihnen", "was ist mit dir", "was meinst du", "du bist", "sind sie", "bist du", "kannst du", "konnen sie", "hast du", "haben sie", "denkst du",
+    // Italian
+    "tu", "lei", "e tu", "e lei", "che ne dici di te", "secondo te", "tu sei", "lei e", "hai", "puoi", "sai", "pensi che",
+    // Portuguese
+    "voce", "e voce", "o que me diz de voce", "e tu", "pra voce", "voce e", "voce esta", "tem", "pode", "sabe", "acha que",
+    // Dutch
+    "jij", "u", "en jij", "en u", "wat vind jij", "jij bent", "ben jij", "heb jij", "kun jij", "kan je",
+    // Russian (cyrillic)
+    "ты", "вы", "а ты", "а вы", "как насчет тебя", "а у тебя", "у тебя", "ты можешь", "вы можете", "ты думаешь",
+    // Japanese (hiragana/kanji)
+    "あなた", "君は", "あなたはどう", "どう思いますか", "できますか", "知っていますか", // Note: "you" is often omitted, but these phrases are direct.
+    // Korean (hangul)
+    "너는", "당신은", "어때요", "어떠세요", "할 수 있어요", "아세요", "생각해요",
+    // Mandarin Chinese (pinyin/hanzi)
+    "ni", "nin", "你", "您", "你呢", "你怎么看", "你可以", "你知道吗", "你觉得",
+    // Arabic
+    "انت", "انتي", "حضرتك", "وانت", "وانتي", "شو رايك", "رايك ايه", "تقدر", "تقدرين", "بتعرف", "هل تعتقد",
+    // Hindi
+    "aap", "tum", "aur aap", "aur tum", "aapke bare me", "aap kya sochte hain", "kya aap",
+    // Indonesian
+    "kamu", "anda", "kalau kamu", "bagaimana denganmu", "menurutmu", "apakah kamu", "bisa",
+    // Polish
+    "ty", "pan", "pani", "a ty", "co ty na to", "twoim zdaniem", "czy mozesz", "czy wiesz",
+    // Swedish
+    "du", "och du", "du da", "vad tycker du", "kan du", "vet du", "tror du",
+    // Thai
+    "คุณ", "แล้วคุณล่ะ", "คุณคิดว่าไง", "คุณทำได้ไหม", "คุณรู้ไหม",
+    // Turkish
+    "sen", "siz", "ya sen", "peki ya siz", "sence", "sen ne dusunuyorsun", "yapabilir misin", "biliyor musun",
+    // Vietnamese
+    "bạn", "còn bạn", "bạn thì sao", "bạn nghĩ sao", "bạn có thể", "bạn có biết",
+    // Tagalog
+    "ikaw", "eh ikaw", "para sayo", "sa tingin mo", "kaya mo ba", "alam mo ba",
+    // Norwegian
+    "du", "og du", "hva med deg", "hva synes du", "kan du", "vet du", "tror du"
+];
+
+        // --- FOLLOW-UP DETECTION LOGIC ---
+
+        // Check 2a: Is the user's message an exact match for a simple, short response?
+        if ([...simpleAffirmations, ...simpleNegations, ...simpleContinuers].includes(normalizedUserMessage)) {
+            isLikelyFollowUp = true;
+            console.log(`GIL Follow-up Trigger: Matched a simple short response ("${normalizedUserMessage}").`);
+        }
+
+        // Check 2b: If not, check for other follow-up signals in order of priority.
+        if (!isLikelyFollowUp) {
+            if (normalizedUserMessage.endsWith("?")) {
+                isLikelyFollowUp = true;
+                console.log(`GIL Follow-up Trigger: Message ends with a question mark.`);
+            } else {
+                // Check for specific "you" phrases first, as they are strong signals.
+                for (const phrase of directYouPhrases) {
+                    if (normalizedUserMessage.startsWith(phrase + " ") || normalizedUserMessage === phrase) {
+                        isLikelyFollowUp = true;
+                        console.log(`GIL Follow-up Trigger: Matched a direct 'you' phrase ("${phrase}").`);
+                        break;
+                    }
+                }
+                // If still no match, check for general question keywords.
+                if (!isLikelyFollowUp) {
+                    for (const keyword of questionKeywords) {
+                        if (normalizedUserMessage.startsWith(keyword + " ") || normalizedUserMessage === keyword) {
+                            isLikelyFollowUp = true;
+                            console.log(`GIL Follow-up Trigger: Matched a question keyword ("${keyword}").`);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- DECISION ---
+        if (isLikelyFollowUp) {
+            const lastEngagedAI = activeAiSpeakers.find(s => s.id === lastAiDirectlyEngagedByUserId);
+            if (lastEngagedAI) {
+                speaker = lastEngagedAI;
+                console.log(`GIL: Speaker Priority 2 - Follow-up confirmed. Prioritizing last engaged AI: ${speaker.profileName}.`);
+            } else {
+                lastAiDirectlyEngagedByUserId = null; 
+            }
+        } else {
+            console.log(`GIL: User message ("${normalizedUserMessage.substring(0,30)}...") does not appear to be a direct follow-up. Resetting conversation stickiness.`);
+            lastAiDirectlyEngagedByUserId = null;
         }
     }
-    
-    // PRIORITY 3: If still no speaker, use the default round-robin logic.
+
+    // --- PRIORITY 3: Default Round-Robin / Proactive Turn ---
+    // This is the fallback if no specific speaker has been chosen by the logic above.
     if (!speaker) {
-        console.log(`GIL: Speaker Priority 3 - No specific mention or follow-up detected. Using default round-robin.`);
+        console.log(`GIL: Speaker Priority 3 - No specific target detected. Using default round-robin/proactive logic.`);
         const activeNonTutorAISpeakers = activeAiSpeakers.filter(s => s.id !== currentGroupTutorInternal!.id);
         const tutorIsActiveAndPresent = activeAiSpeakers.some(s => s.id === currentGroupTutorInternal!.id);
 
-        if (!isReplyToUser) { // Proactive turn by an AI
-            if (tutorIsActiveAndPresent && Math.random() < 0.4) {
-                speaker = currentGroupTutorInternal;
-            } else if (activeNonTutorAISpeakers.length > 0) {
-                lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
-                speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-            } else {
-                speaker = currentGroupTutorInternal; // Fallback to tutor
-            }
-        } else { // General reply to the user
+        if (isReplyToUser) { // AI is replying to a general user message.
             if (activeNonTutorAISpeakers.length > 0) {
                 lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
                 speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-            } else {
-                speaker = currentGroupTutorInternal; // Fallback if only tutor is left
+                console.log(`GIL: Replying to user (round-robin) with non-tutor: ${speaker?.profileName}`);
+            } else if (tutorIsActiveAndPresent) {
+                speaker = currentGroupTutorInternal; // Fallback to tutor
+                 console.log(`GIL: Replying to user with tutor (only active AI): ${speaker?.profileName}`);
             }
-        
+        } else { // This is a proactive turn by an AI (not a direct reply).
+            if (tutorIsActiveAndPresent && Math.random() < 0.4) { // 40% chance for tutor to initiate
+                speaker = currentGroupTutorInternal;
+                console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (by chance).`);
+            } else if (activeNonTutorAISpeakers.length > 0) {
+                lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
+                speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
+                 console.log(`GIL: Non-tutor AI (${speaker?.profileName}) taking a proactive turn.`);
+            } else if (tutorIsActiveAndPresent) {
+                speaker = currentGroupTutorInternal; // Fallback to tutor
+                console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (only active AI).`);
+            }
         }
-                // --- ADD THIS LINE TO FIX THE BUG ---
-           
-        
+    }
 
-                // VVVVVV ADD THIS NEW IF BLOCK VVVVVV
-                if (!speaker && lastAiDirectlyEngagedByUserId && userMessageText) { 
-                    // If no one explicitly named by full name, AND there was a recent direct engagement,
-                    // AND user actually sent some text (not an empty proactive reply trigger)
-                    const normalizedUserMsg = polyglotHelpers.normalizeText(userMessageText); // Use your helper
-                    let isLikelyFollowUpQuestion = normalizedUserMsg.endsWith("?"); // Start with the most reliable check
-    
-                    if (!isLikelyFollowUpQuestion) { // Only check keywords if no question mark
-                        const questionKeywords: string[] = [
-                            // English (normalized)
-                            "what", "where", "when", "who", "why", "how", "do you", "is it", "are they", "can you", "could you", "will you", "would you", "should i", "which", "tell me", "explain", "question",
-                            // Spanish (normalized)
-                            "que", "cual", "quien", "como", "cuando", "donde", "cuanto", "porque", "por que", "para que", "acaso", "verdad que", "dime", "explica", "pregunta",
-                            // French (normalized)
-                            "qu'est-ce que", "que", "quoi", "qui", "ou", // 'ou' (or) vs 'où' (where) - normalizeText should make 'où' -> 'ou'
-                            "quand", "comment", "pourquoi", "combien", "est-ce que", "lequel", "laquelle", "lesquels", "lesquelles", "dis-moi", "expliquez", "question",
-                            // German (normalized)
-                            "was", "wo", "wann", "wer", "wem", "wen", "wessen", "warum", "wieso", "weshalb", "wie", "welche", "welcher", "welches", "kannst du mir sagen", "erklar", "frage", // erklären -> erklar
-                            // Italian (normalized)
-                            "che", "cosa", "chi", "come", "dove", "quando", "perche", "quanto", "quale", "quali", "spiega", "dimmi", "domanda", "cose", "cosa e", "cos'e'",
-                            // Portuguese (normalized - combining Brazil & Portugal for simplicity here)
-                            "o que", "que", "qual", "quem", "como", "onde", "quando", "por que", "porque", // also common for why
-                            "quanto", "quanta", "diga-me", "explique", "pergunta",
-                            // Indonesian (normalized)
-                            "apa", "siapa", "di mana", "kapan", "mengapa", "bagaimana", "berapa", "apakah", "yang mana", "jelaskan", "beri tahu saya", "pertanyaan",
-                            // Tagalog (normalized - many question words are already simple)
-                            "ano", "sino", "saan", "nasaan", "kailan", "bakit", "paano", "magkano", "ilan", "gaano", "alin", "tanong", "sabihin mo", "ipaliwanag mo",
-                            // Russian (Cyrillic - keep as is, assuming user input is also Cyrillic)
-                            "что", "кто", "где", "когда", "как", "почему", "зачем", "сколько", "какой", "какая", "какое", "какие", "чей", "чья", "чьё", "чьи", "скажи", "объясни", "вопрос",
-                            // Swedish (normalized)
-                            "vad", "vem", "var", "vart", // where, whereto
-                            "nar", // när
-                            "hur", "varfor", "vilken", "vilket", "vilka", "fraga", // fråga
-                            // Norwegian (normalized)
-                            "hva", "hvem", "hvor", "nar", // når
-                            "hvordan", "hvorfor", "hvilken", "hvilket", "hvilke", "sporsmal", // spørsmål
-                            // Dutch (normalized)
-                            "wat", "wie", "waar", "wanneer", "hoe", "waarom", "hoeveel", "welke", "vraag",
-                            // Polish (normalized - ą -> a, ę -> e, ć -> c, ł -> l, ń -> n, ó -> o, ś -> s, ź -> z, ż -> z)
-                            "co", "kto", "gdzie", "kiedy", "jak", "dlaczego", "czemu", "ile", "ktory", "ktora", "ktore", "pytanie",
-                            // Turkish (normalized - ı -> i, ö -> o, ü -> u, ç -> c, ğ -> g, ş -> s)
-                            "ne", "kim", "nereye", "nerede", "nereden", "ne zaman", "nasil", "neden", "nicin", "kac", "hangi", "soru",
-                            // Japanese (Romanized - very basic, relies on 'ka' or these words at start)
-                            "nani", "doko", "itsu", "dare", "naze", "do", "doushite", "ikura", "dore", "donata", "shitsumon",
-                            // Korean (Romanized - very basic)
-                            "mueot", "mwoga", "nugu", "eodi", "eonje", "wae", "eotteoke", "eolmana", "eotteon", "jilmun",
-                            // Mandarin Chinese (Pinyin - very basic, relies on 'ma' or question words at start)
-                            "shenme", "nali", "nar", "shei", "shui", "weishenme", "zenme", "duoshao", "jidian", "ma", "wenti",
-                            // --- Less certain about simple startsWith for these, ? is more reliable ---
-                            // Arabic (Transliterations - very basic, heavily depends on user's transliteration style)
-                            "ma", "man", "ayna", "mata", "kayfa", "limadha", "kam", "ayy", "sual",
-                            // Hindi (Transliterations - very basic)
-                            "kya", "kaun", "kaha", "kab", "kyon", "kaise", "kitna", "kaun sa", "prashn", "sawal",
-                            // Vietnamese (Tones removed by typical normalization, very basic starters)
-                            "cai gi", "ai ", "dau ", "khi nao", "tai sao", "lam sao", "bao nhieu", "nao ", "cau hoi",
-                            // Thai (Transliterations - very basic)
-                            "arai", "khrai", "thinai", "muarai", "thammai", "yangrai", "thaorai", "khamtham"
-                        ];
-    
-                        const simpleAffirmations: string[] = [
-                            // English
-                            "yes", "yeah", "yep", "yup", "sure", "okay", "ok", "alright", "right", "correct", "exactly", "precisely", "indeed", "definitely", "absolutely", "true", "i agree", "me too", "sounds good", "got it", "understood", "fine", "good", "totally", "for sure", "certainly",
-                            // Spanish (normalized)
-                            "si", "claro", "vale", "bueno", "dale", "de acuerdo", "exacto", "correcto", "verdad", "asi es", "entiendo", "ya veo", "perfecto", "cierto", "seguro", "ya",
-                            // French (normalized)
-                            "oui", "ouais", "bien sur", "d'accord", "exactement", "c'est ca", "c'est vrai", "entendu", "compris", "parfait", "absolument", "tout a fait",
-                            // Indonesian (normalized)
-                            "ya", "iya", "tentu", "baik", "oke", "setuju", "benar", "betul", "paham", "mengerti", "sip", "pasti", "jelas",
-                            // Tagalog (normalized)
-                            "oo", "opo", "sige", "tama", "syempre", "talaga", "gets ko", "naiintindihan ko", "okey", "sigurado", "tunay",
-                            // Russian (Cyrillic)
-                            "да", "конечно", "хорошо", "ладно", "правильно", "точно", "верно", "согласен", "согласна", "понял", "поняла", "именно", "безусловно", "разумеется",
-                            // German (normalized)
-                            "ja", "sicher", "klar", "okay", "ok", "in ordnung", "genau", "richtig", "stimmt", "absolut", "bestimmt", "verstanden",
-                            // Italian (normalized)
-                            "si", "certo", "va bene", "ok", "d'accordo", "esatto", "giusto", "vero", "capito", "perfetto", "assolutamente",
-                            // Portuguese (normalized)
-                            "sim", "claro", "esta bem", "ok", "de acordo", "exato", "certo", "verdade", "entendi", "perfeito", "com certeza"
-                            // Add more languages from your filter list here as needed (Japanese, Korean, Mandarin, etc.)
-                            // For those, you'd need common short affirmation words in their normalized/native script.
-                        ];
-    
-                        const simpleNegations: string[] = [
-                            // English
-                            "no", "nope", "nah", "not really", "i disagree", "i don't think so", "never", "incorrect", "false", "not at all", "certainly not",
-                            // Spanish (normalized)
-                            "no", "claro que no", "para nada", "no estoy de acuerdo", "nunca", "incorrecto", "falso", "jamas", "en absoluto",
-                            // French (normalized)
-                            "non", "pas vraiment", "je ne suis pas d'accord", "jamais", "incorrect", "faux", "pas du tout", "absolument pas",
-                            // Indonesian (normalized)
-                            "tidak", "bukan", "nggak", "enggak", "tidak juga", "saya tidak setuju", "belum tentu", "salah", "tak",
-                            // Tagalog (normalized)
-                            "hindi", "hindi po", "ayaw ko", "ayoko", "hindi ako sang-ayon", "hindi rin", "mali", "di",
-                            // Russian (Cyrillic)
-                            "нет", "не совсем", "не согласен", "не согласна", "никогда", "неправильно", "неверно", "вообще нет", "ни в коем случае",
-                            // German (normalized)
-                            "nein", "nicht wirklich", "stimmt nicht", "falsch", "niemals", "auf keinen fall", "ich stimme nicht zu",
-                            // Italian (normalized)
-                            "no", "non proprio", "non sono d'accordo", "mai", "sbagliato", "falso", "per niente", "assolutamente no",
-                            // Portuguese (normalized)
-                            "nao", "claro que nao", "de modo algum", "discordo", "nunca", "errado", "falso", "nem pensar"
-                        ];
-    
-                        const simpleContinuers: string[] = [
-                            // English
-                            "uh-huh", "mm-hmm", "mhm", "go on", "i see", "really", "oh", "interesting", "and", "so", "then", "well", "aha",
-                            // Spanish (normalized)
-                            "aja", "hmm", "sigue", "continua", "ya veo", "ah si", "de verdad", "interesante", "y ", "entonces", "luego", "pues", "vaya",
-                            // French (normalized)
-                            "euh-hein", "hmm", "continue", "vas-y", "je vois", "ah bon", "vraiment", "interessant", "et ", "donc", "alors", "puis", "ben",
-                            // Indonesian (normalized)
-                            "hm-hm", "oh gitu", "lanjut", "terus", "oh ya", "menarik", "dan ", "jadi", "lalu", "nah", "wah",
-                            // Tagalog (normalized)
-                            "oho", "ganun ba", "tuloy mo lang", "talaga", "interesante", "tapos", "at ", "so", "e", "ayun",
-                            // Russian (Cyrillic) - Many are particles or interjections.
-                            "ага", "угу", "продолжай", "понятно", "да ", "правда ", "интересно", "и ", "так ", "ну ", "вот", "так вот",
-                            // German (normalized)
-                            "aha", "hm", "mhm", "weiter", "ich verstehe", "ach so", "wirklich", "interessant", "und", "also", "dann", "nun", "tja",
-                            // Italian (normalized)
-                            "aha", "mmh", "continua", "capisco", "davvero", "ah si", "interessante", "e ", "allora", "quindi", "beh", "mah",
-                            // Portuguese (normalized)
-                            "aham", "uhum", "continue", "entendo", "vejo", "serio", "pois e", "interessante", "e ", "entao", "logo", "bem"
-                        ];
-                        const subtleContinuersAndInterestPhrases: string[] = [
-                            // English (normalized - these often START or ARE a user's phrase)
-                            "really", "oh really", "is that so", "seriously", "for real", "no way", "wow", "huh", "hmm", "interesting", "tell me more", "go on", "and then", "so then", "aha", "i see", "gotcha", "ok and", "right and", "true and", "what else", "anything else", "and so", "like what", "such as", "for instance", "for example", "true that", "you don't say", "get out",
-    
-                            // Spanish (normalized)
-                            "de verdad", "en serio?", "en serio", "asi pues", "ah si", "vaya", "anda", "cuentame mas", "y luego que", "entonces que", "interesante", "ya veo", "que mas", "algo mas", "como que", "por ejemplo", "no me digas",
-    
-                            // French (normalized)
-                            "vraiment", "ah bon", "serieux", "sans blague", "c'est vrai ca", "dis-moi plus", "et alors", "ah d'accord", "interessant", "je vois", "quoi d'autre", "autre chose", "comme quoi", "par exemple", "c'est pas vrai",
-    
-                            // Indonesian (normalized)
-                            "oh ya", "benarkah", "serius", "masa sih", "wah menarik", "terus gimana", "lanjutkan", "apalagi", "ada lagi", "contohnya", "seperti apa", "oh begitu",
-    
-                            // Tagalog (normalized)
-                            "talaga", "ganun ba", "seryoso", "nga naman", "kwento mo pa", "tapos ano", "ano pa", "tulad ng ano", "halimbawa", "ay sus", "weh",
-    
-                            // Russian (Cyrillic)
-                            "правда", "серьёзно", "да ну", "вот как", "ого", "ух ты", "хм интересно", "расскажи подробнее", "продолжай", "и что потом", "ага", "понятно", "что еще", "что-нибудь еще", "например", "да что ты", "не может быть",
-    
-                            // German (normalized)
-                            "wirklich", "echt", "im ernst", "ach so", "ist das so", "erzahl mehr", "und dann", "interessant", "ich verstehe", "was noch", "zum beispiel", "nein sowas", "tatsachlich",
-    
-                            // Italian (normalized)
-                            "davvero", "sul serio", "ma dai", "ah si", "caspita", "interessante", "racconta di piu", "e poi", "allora", "capisco", "cos'altro", "ad esempio", "ma va",
-    
-                            // Portuguese (normalized)
-                            "a serio", "verdade", "e mesmo", "interessante", "conte-me mais", "e depois", "entao", "entendo", "o que mais", "por exemplo", "nao me diga"
-                        ];
-                        for (const qWord of questionKeywords) {
-                            // For phrases or very short words, require a space after to avoid partial matches inside other words
-                            if (qWord.includes(" ") || qWord.includes("'") || qWord.length <= 3) {
-                                if (normalizedUserMsg.startsWith(qWord + " ")) { // Must be followed by a space
-                                    isLikelyFollowUpQuestion = true;
-                                    break;
-                                }
-                            } else { // For most single keywords
-                                 if (normalizedUserMsg.startsWith(qWord + " ") || normalizedUserMsg === qWord) { // Starts with + space OR is exact word
-                                    isLikelyFollowUpQuestion = true;
-                                    break;
-                                }
-                                if (!isLikelyFollowUpQuestion) {
-                                    const allSimpleShortResponses = [
-                                        ...simpleAffirmations, // Use the new, broader list name
-                                        ...simpleNegations,   // Use the new, broader list name
-                                        ...simpleContinuers   // Use the new, broader list name
-                                    ];
-                                    // For these very short responses, we want an EXACT match of the normalizedUserMsg
-                                    if (allSimpleShortResponses.includes(normalizedUserMsg)) {
-                                        isLikelyFollowUpQuestion = true; // Treat this as a reason to give turn back
-                                        console.log(`GIL: User message ("${normalizedUserMsg}") is a short affirmative/negative/continuer (EN). Treating as follow-up.`);
-                                    }
-                                    else { // If not an exact simple short response, check for subtle continuers
-                                        for (const phrase of subtleContinuersAndInterestPhrases) {
-                                            if (normalizedUserMsg.startsWith(phrase)) {
-                                                isLikelyFollowUpQuestion = true;
-                                                console.log(`GIL: User message ("${normalizedUserMsg}") starts with a subtle continuer/interest phrase ("${phrase}"). Treating as follow-up.`);
-                                                break; // Found a match
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                            }
-                        }
-                    }
-    
-                    if (isLikelyFollowUpQuestion) {
-                        const lastEngagedAI = activeAiSpeakers.find(s => s.id === lastAiDirectlyEngagedByUserId);
-                        if (lastEngagedAI) {
-                            speaker = lastEngagedAI;
-                            console.log(`GIL: Prioritizing ${speaker.profileName} (ID: ${speaker.id}) for follow-up as user's message suggests a continuation with AI (${lastAiDirectlyEngagedByUserId}).`);
-                        } else {
-                            console.log(`GIL: User's message suggests continuation, but last engaged AI (${lastAiDirectlyEngagedByUserId}) not active/found. Resetting.`);
-                            lastAiDirectlyEngagedByUserId = null; 
-                        }
-                    } else {
-                        console.log(`GIL: User message ("${normalizedUserMsg.substring(0,20)}") doesn't strongly suggest a direct continuation with last engaged AI (${lastAiDirectlyEngagedByUserId}). Resetting.`);
-                        lastAiDirectlyEngagedByUserId = null;
-                    }
-                }
-                // ^^^^^^ END OF REVISED isFollowUpQuestion LOGIC BLOCK ^^^^^^
-            // ^^^^^^ END OF ADDED IF BLOCK ^^^^^^
+    // Final check to ensure a speaker was selected.
+    if (!speaker || !speaker.profileName) {
+        console.error("GIL: Could not select a valid AI speaker from active members.", { finalSpeaker: speaker });
+        aiResponding = false;
+        return;
+    }
 
+    console.log(`GIL.simulateAiMessageInGroup: AI ${speaker.profileName} to speak. IsReplyToUser: ${isReplyToUser}`);
 
-            }
-
-            if (!speaker && isReplyToUser && userMessageText && lastMessageInFullHistory && lastMessageInFullHistory.speakerId !== 'user_player') {
-                const lastAiSpeaker = activeAiSpeakers.find(s => s.id === lastMessageInFullHistory.speakerId);
-    
-                // A simple heuristic: is the user's message a short question?
-                // A short message ending in '?' is very likely a direct follow-up.
-                if (lastAiSpeaker && normalizedUserMessage.endsWith('?') && normalizedUserMessage.length < 30) {
-                    speaker = lastAiSpeaker;
-                    console.log(`GIL: User sent a short question. Prioritizing last AI speaker: ${speaker.profileName}.`);
-                }
-            }
-
-
-           if (!speaker) { 
-                const activeNonTutorAISpeakers = activeAiSpeakers.filter(s => s.id !== currentGroupTutorInternal!.id);
-                const tutorIsActiveAndPresent = activeAiSpeakers.some(s => s.id === currentGroupTutorInternal!.id); 
-
-                if (isReplyToUser) { // isReplyToUser is a parameter, correctly scoped
-                    if (activeNonTutorAISpeakers.length > 0) {
-                        lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
-                        speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-                        console.log(`GIL: Replying to user (no mention) with non-tutor: ${speaker?.profileName}`);
-                    } else if (tutorIsActiveAndPresent) {
-                        speaker = currentGroupTutorInternal;
-                        console.log(`GIL: Replying to user (no mention) with tutor (only active AI): ${speaker?.profileName}`);
-                    } else {
-                        console.warn("GIL: Reply to user, but no suitable active AI speaker found.");
-                        aiResponding = false; return;
-                    }
-                } else { // Proactive turn
-                    if (tutorIsActiveAndPresent && Math.random() < 0.4) { 
-                        speaker = currentGroupTutorInternal;
-                        console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (by chance).`);
-                    } else if (activeNonTutorAISpeakers.length > 0) {
-                        lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
-                        speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-                        console.log(`GIL: Non-tutor AI (${speaker?.profileName}) taking a proactive turn.`);
-                    } else if (tutorIsActiveAndPresent) {
-                        speaker = currentGroupTutorInternal;
-                        console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (only active AI).`);
-                    } else {
-                        console.warn("GIL: Proactive turn, but no suitable active AI speaker found.");
-                        aiResponding = false; return;
-                    }
-                }
-            }
-
-            if (!speaker || !speaker.profileName) {
-                console.error("GIL: Could not select a valid AI speaker from active members.", speaker);
-                aiResponding = false;
-                return;
-            }
-          
-            // This is a simplified selection. You can re-insert your more complex
-            // logic for picking a speaker based on mentions or turns.
-            lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeAiSpeakers.length;
-            speaker = activeAiSpeakers[lastAiSpeakerIndex];
-        
-            if (!speaker || !speaker.profileName) {
-                console.error("GIL: Could not select a valid AI speaker.");
-                aiResponding = false;
-                return;
-            }
-
-
-            
-
-
-
-            console.log(`GIL.simulateAiMessageInGroup: AI ${speaker.profileName} to speak. IsReplyToUser: ${isReplyToUser}`);
-
-            if (thinkingBubbleElement) thinkingBubbleElement.remove();
-            const typingText = `${speaker.profileName.split(' ')[0]} is typing...`;
-            thinkingBubbleElement = uiUpdater.appendToGroupChatLog(
-                typingText,
-                speaker.profileName!,
-                false,
-                speaker.id,
-                {
-                    isThinking: true,
-                    avatarUrl: speaker.avatarModern,
-                    timestamp: Date.now()
-                }
-            );
-
+    if (thinkingBubbleElement) thinkingBubbleElement.remove();
+    const typingText = `${speaker.profileName.split(' ')[0]} is typing...`;
+    thinkingBubbleElement = uiUpdater.appendToGroupChatLog(
+        typingText,
+        speaker.profileName!,
+        false,
+        speaker.id,
+        {
+            isThinking: true,
+            avatarUrl: speaker.avatarModern,
+            timestamp: Date.now()
+        }
+    );
 
             const localIsRespondingToImage = isReplyToUser && !!imageContextForReply?.base64Data;
             let localImageToProcess: { base64Data: string; mimeType: string; } | null = null;
@@ -958,14 +978,11 @@ async function simulateAiMessageInGroup(
                 
           } else if (isReplyToUser && userMessageText) {
                     // AI is directly replying to the user's most recent text/VM transcript
-                    if (localMentionedPersonaName && localMentionedPersonaName === speaker.profileName) {
-                        taskSpecifics = `- The user (${userInstructionHowAIShouldReferToUser}) SPECIFICALLY MENTIONED YOU (${speaker.profileName}) saying: "${polyglotHelpers.sanitizeTextForDisplay(userMessageText)}". Respond directly and thoughtfully. Add your perspective before (optionally) asking a follow-up.`;
-                    } else {
-                        taskSpecifics = `- You are directly replying to the user (${userInstructionHowAIShouldReferToUser}) who just said: "${polyglotHelpers.sanitizeTextForDisplay(userMessageText)}".
-                            1. Acknowledge their point clearly.
-                            2. Add YOUR persona's perspective, a brief related thought, or a short consistent anecdote.
-                            3. THEN, if natural, you might ask an open-ended follow-up question. Avoid just asking "What about you?".`;
-                    };
+               // REPLACE WITH THIS
+taskSpecifics = `- You are directly replying to the user (${userInstructionHowAIShouldReferToUser}) who just said: "${polyglotHelpers.sanitizeTextForDisplay(userMessageText)}".
+1. Acknowledge their point clearly.
+2. Add YOUR persona's perspective, a brief related thought, or a short consistent anecdote.
+3. THEN, if natural, you might ask an open-ended follow-up question. Avoid just asking "What about you?".`;
                     if (speaker.id === currentGroupTutorInternal!.id) { // If the current speaker IS the Tutor
                         taskSpecifics = `- You are the TUTOR, ${speaker.profileName}. Your primary role is to facilitate a natural and engaging ${groupLanguage} conversation for the user (${userInstructionHowAIShouldReferToUser}) and the AI learners.
                             **Current Goal: Facilitate effectively. Avoid dominating.**

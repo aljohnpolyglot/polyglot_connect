@@ -103,37 +103,44 @@ console.log('chat_ui_manager.ts: Core functional dependencies (methods) appear r
         });
         
         // --- START: Pasted from chat_view_manager.ts ---
-        function showEmbeddedChatInterface(connector: Connector): void {
+              function showEmbeddedChatInterface(connector: Connector): void {
             const { domElements, uiUpdater } = getDeps();
             if (!domElements?.embeddedChatContainer || !domElements.messagesPlaceholder || !connector?.id) {
                 console.error("ChatUiManager: Missing DOM elements or valid connector for showEmbeddedChat.");
                 return;
             }
+            // Ensure the header is visible when a chat is active
+            const header = domElements.appShell?.querySelector('.embedded-chat-main-header');
+            if (header) (header as HTMLElement).style.display = 'flex';
+
             domElements.messagesPlaceholder.style.display = 'none';
             domElements.embeddedChatContainer.style.display = 'flex';
             uiUpdater.updateEmbeddedChatHeader?.(connector);
         }
-
-        function hideEmbeddedChatInterface(): void {
+              function hideEmbeddedChatInterface(): void {
             const { domElements } = getDeps();
             if (!domElements.embeddedChatContainer || !domElements.messagesPlaceholder) return;
+
+            // Hide the entire header when no chat is active
+            const header = domElements.appShell?.querySelector('.embedded-chat-main-header');
+            if (header) (header as HTMLElement).style.display = 'none';
 
             (domElements.embeddedChatContainer as HTMLElement).style.display = 'none';
             (domElements.messagesPlaceholder as HTMLElement).style.display = 'block';
             
+            // This logic is now mostly redundant but kept for robustness
             const headerName = domElements.embeddedChatHeaderName as HTMLElement | null;
             if (headerName) headerName.textContent = "Your Conversations";
             const headerDetails = domElements.embeddedChatHeaderDetails as HTMLElement | null;
             if (headerDetails) headerDetails.textContent = "Select a chat or start a new one.";
             const headerAvatar = domElements.embeddedChatHeaderAvatar as HTMLImageElement | null;
-            if (headerAvatar) headerAvatar.src = "/images/placeholder_avatar.png"; // Use root-relative path for public assets
+            if (headerAvatar) headerAvatar.src = "/images/placeholder_avatar.png";
 
             const embContainer = domElements.embeddedChatContainer as HTMLElement | null;
             if (embContainer?.dataset.currentConnectorId) {
                 delete embContainer.dataset.currentConnectorId;
             }
         }
-
         function showGroupChatView(groupName: string, members: Connector[]): void {
             const { domElements, uiUpdater } = getDeps();
             if (!domElements.groupListContainer || !domElements.groupChatInterfaceDiv || !groupName || !members) {

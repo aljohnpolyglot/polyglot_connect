@@ -113,22 +113,22 @@ const helpersModuleInstance: HelpersModuleInterface = (() => {
         if (!countryCode || typeof countryCode !== 'string') return '🏳️'; 
         const cc = countryCode.toUpperCase().trim();
         const flagEmojis: Record<string, string> = {
+            // Existing
             FR: "🇫🇷", ES: "🇪🇸", MX: "🇲🇽", AR: "🇦🇷", CO: "🇨🇴", DE: "🇩🇪", AT: "🇦🇹",
             CH: "🇨🇭", IT: "🇮🇹", PT: "🇵🇹", BR: "🇧🇷", RU: "🇷🇺", SE: "🇸🇪", ID: "🇮🇩",
             GB: "🇬🇧", US: "🇺🇸", CA: "🇨🇦", AU: "🇦🇺", NZ: "🇳🇿", PH: "🇵🇭", JP: "🇯🇵",
             KR: "🇰🇷", CN: "🇨🇳",
-            // --- ADD NEW MAPPINGS ---
-    ae: "🇦🇪", // UAE for Arabic
-    no: "🇳🇴", // Norway
-    in: "🇮🇳", // India for Hindi
-    pl: "🇵🇱", // Poland
-    nl: "🇳🇱", // Netherlands
-    kr: "🇰🇷", // South Korea
-    cn: "🇨🇳", // China for Mandarin
-    tr: "🇹🇷", // Turkey
-    vn: "🇻🇳", // Vietnam
-    th: "🇹🇭", // Thailand
-    globe: "🌐" // Fallback already there
+            // Added & Corrected
+            AE: "🇦🇪", // UAE for Arabic
+            NO: "🇳🇴", // Norway
+            IN: "🇮🇳", // India for Hindi
+            PL: "🇵🇱", // Poland
+            NL: "🇳🇱", // Netherlands
+            TR: "🇹🇷", // Turkey
+            VN: "🇻🇳", // Vietnam
+            TH: "🇹🇭", // Thailand
+            FI: "🇫🇮", // Finland
+            GLOBE: "🌐" // Fallback
         };
         return flagEmojis[cc] || '🏳️';
     };

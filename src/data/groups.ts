@@ -171,6 +171,146 @@ const groupsDataArray: Group[] = [
         // For now, the criteria above should find them.
         excludeIds: ["santi_esp_madridista"] // Don't re-select the host as a general member
     }
+},
+// Add to D:\polyglot_connect\src\data\groups.ts (within the groupsDataArray)
+{
+    id: "french_la_republique_fr",
+    name: "La République",
+    language: "French",
+    groupPhotoUrl: "/images/groups/la_republique.png", // Create image: e.g., stylized Marianne or a town hall (Mairie)
+    description: "Un espace pour un débat citoyen et passionné sur la France d'aujourd'hui. Culture, société, actualité... discutons de tout ce qui fait La République, dans le respect et la fraternité.",
+    tutorId: "fatou_fra_student", // The political science student is a perfect moderator
+    maxLearners: 10,
+    tags: ["debate", "society", "current events", "French culture", "civic discussion", "advanced"],
+    category: "Community Hangout",
+    communityTags: ["Débat Français", "Société Française", "Culture Actuelle"],
+    memberSelectionCriteria: {
+        language: "French",
+        role: "native", // Ensures high-level, authentic discussion
+        country: "France", // Selects from our diverse pool of French personas
+        excludeIds: [
+            "fatou_fra_student", // Exclude the host
+            // Optionally exclude personas who might be less suited for debate
+            "leo_fra_bookseller" // Could be too cynical and derail conversation
+        ] 
+    }
+},
+// Add to D:\polyglot_connect\src\data\groups.ts (within the groupsDataArray)
+{
+    id: "italian_lunita_it",
+    name: "L'Unità",
+    language: "Italian",
+    groupPhotoUrl: "/images/groups/lunita_italia.png", // Create image: e.g., a map of Italy with lines connecting different cities
+    description: "Un luogo dove le voci di tutta Italia si uniscono. Discutiamo di ciò che ci rende italiani oggi, tra orgoglio regionale e identità nazionale. Benvenuti ne L'Unità!",
+    tutorId: "giorgio_ita_tutor", // Giorgio from Rome is a perfect, neutral host to unite the regions
+    maxLearners: 10,
+    tags: ["italian culture", "debate", "society", "regional diversity", "community", "advanced"],
+    category: "Community Hangout",
+    communityTags: ["Cultura Italiana", "Dibattito Sociale", "Made in Italy"],
+    memberSelectionCriteria: {
+        language: "Italian",
+        role: "native",
+        country: "Italy",
+        excludeIds: [
+            "giorgio_ita_tutor" // Exclude the host from being selected as a general member
+        ]
+    }
+},
+// Add to D:\polyglot_connect\src\data\groups.ts (within the groupsDataArray)
+{
+    id: "german_deutschhaus_de",
+    name: "DeutschHaus",
+    language: "German",
+    groupPhotoUrl: "/images/groups/deutschhaus.png", // Create image: e.g., a stylized German timber-frame house or the Brandenburg Gate
+    description: "Willkommen im DeutschHaus! Ein virtueller Treffpunkt für alle Stimmen Deutschlands. Von den Alpen bis zur Nordsee, von Berlin bis Bayern – hier diskutieren wir über Kultur, Gesellschaft und was uns heute als Deutsche ausmacht.",
+    tutorId: "anja_ger_librarian", // The thoughtful librarian from Leipzig is the ideal moderator to balance the diverse opinions.
+    maxLearners: 10,
+    tags: ["german culture", "society", "debate", "regional diversity", "current events", "community"],
+    category: "Community Hangout",
+    communityTags: ["Deutsche Kultur", "Gesellschaftsdebatte", "Made in Germany"],
+    memberSelectionCriteria: {
+        language: "German",
+        role: "native",
+        country: "Germany",
+        excludeIds: [
+            "anja_ger_librarian" // Exclude the host so she doesn't appear twice
+        ]
+    }
+},
+// Add to D:\polyglot_connect\src\data\groups.ts (within the groupsDataArray)
+{
+    id: "portuguese_brasilidade_pt_br",
+    name: "Brasilidade",
+    language: "Portuguese (Brazil)",
+    groupPhotoUrl: "/images/groups/brasilidade.png", // Create image: e.g., a collage of a carnival mask, a berimbau, and the Brazilian flag
+    description: "Um espaço para celebrar o que é ser brasileiro! Música, sotaques, culinária, e a nossa mistura única de culturas. Um bate-papo quente e descontraído para todos os cantos do Brasil.",
+    tutorId: "lucas_bra_capoeira", // The charismatic capoeira mestre from Salvador is a great host
+    maxLearners: 10,
+    tags: ["brazilian culture", "community", "casual chat", "music", "diversity", "Portuguese (Brazil)"],
+    category: "Community Hangout",
+    communityTags: ["Cultura Brasileira", "Bate-papo", "Música Brasileira"],
+    memberSelectionCriteria: {
+        language: "Portuguese (Brazil)",
+        role: "native",
+        country: "Brazil",
+        excludeIds: [ "lucas_bra_capoeira" ]
+    }
+},
+{
+    id: "portuguese_casa_portuguesa_pt_pt",
+    name: "Casa Portuguesa",
+    language: "Portuguese (Portugal)",
+    groupPhotoUrl: "/images/groups/casa_portuguesa.png", // Create image: e.g., a typical Portuguese door with azulejos
+    description: "Abra a porta e entre na nossa casa. Um recanto para falar de Portugal com saudade e futuro. Da literatura ao fado, da história à gastronomia, partilhamos a nossa identidade.",
+    tutorId: "beatriz_por_fado", // The soulful fado singer from Lisbon is the perfect host
+    maxLearners: 10,
+    tags: ["portuguese culture", "saudade", "history", "fado", "community", "Portuguese (Portugal)"],
+    category: "Community Hangout",
+    communityTags: ["Cultura Portuguesa", "História de Portugal", "Fado"],
+    memberSelectionCriteria: {
+        language: "Portuguese (Portugal)",
+        role: "native",
+        country: "Portugal",
+        excludeIds: [ "beatriz_por_fado" ]
+    }
+},
+{
+    id: "indonesian_rumah_nusantara_id",
+    name: "Rumah Nusantara",
+    language: "Indonesian",
+    groupPhotoUrl: "/images/groups/rumah_nusantara.png", // Create image: a stylized map of the archipelago or a Joglo house
+    description: "Selamat datang di Rumah Nusantara! Sebuah ruang untuk menyatukan suara dari Sabang sampai Merauke. Mari berbagi cerita, tradisi, dan berdiskusi tentang Bhinneka Tunggal Ika (Unity in Diversity).",
+    tutorId: "budi_idn_teacher", // The wise and patient teacher from Yogyakarta is an ideal moderator
+    maxLearners: 10,
+    tags: ["indonesian culture", "diversity", "community", "tradition", "Bhinneka Tunggal Ika"],
+    category: "Community Hangout",
+    communityTags: ["Budaya Indonesia", "Diskusi Nusantara", "Tradisi Lokal"],
+    memberSelectionCriteria: {
+        language: "Indonesian",
+        role: "native",
+        country: "Indonesia",
+        excludeIds: [ "budi_idn_teacher" ]
+    }
+},
+{
+    id: "spanish_viva_espana_es",
+    name: "Viva España",
+    language: "Spanish",
+    groupPhotoUrl: "/images/groups/viva_espana.png", // Create image: e.g., a stylized bull, the Spanish flag, or a famous landmark like the Sagrada Familia or Alhambra
+    description: "Un punto de encuentro para españoles. Aquí debatimos sobre nuestra cultura, las tradiciones, la vida moderna y las diferencias que nos enriquecen. De Galicia a Andalucía, de Madrid a Barcelona, esta es nuestra tertulia.",
+    tutorId: "javier_esp_leader", // Our new host from Seville
+    maxLearners: 10,
+    tags: ["spain", "spanish culture", "debate", "community", "traditions", "regionalism"],
+    category: "Community Hangout",
+    communityTags: ["Cultura Española", "Debate Español", "Hecho en España"],
+    memberSelectionCriteria: {
+        language: "Spanish",
+        role: "native",
+        country: "Spain", // CRITICAL: This ensures only personas from Spain are selected
+        excludeIds: [
+            "javier_esp_leader" // Exclude the host from being selected as a general member
+        ]
+    }
 }
 ];
 

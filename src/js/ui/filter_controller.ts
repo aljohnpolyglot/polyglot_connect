@@ -176,14 +176,18 @@ function initializeActualFilterController(): void {
         console.warn("FilterController: populateFilterDropdowns - SKIPPING 'filterRoleSelect'. Element found:", !!domElements.filterRoleSelect, "Data found:", !!polyglotFilterRoles);
     }
     console.log("FilterController: populateFilterDropdowns - FINISHED."); // Existing log good
-    if (domElements.filterGroupCategorySelect && polyglotGroupsData) { // <<< Original if condition
+    if (domElements.filterGroupCategorySelect && polyglotGroupsData) {
         console.log("FilterController: populateFilterDropdowns - Populating 'filterGroupCategorySelect'.");
+        
+        // Dynamically get unique categories from groupsData, filter, sort, and then map
+        const sortedCategories = Array.from(new Set(polyglotGroupsData.map(g => g.category).filter(Boolean) as string[]))
+                                      .sort((a, b) => a.localeCompare(b));
+
         const categories = [
             { name: "All Categories", value: "all" },
-            // Dynamically get unique categories from groupsData
-            ...Array.from(new Set(polyglotGroupsData.map(g => g.category).filter(Boolean))) // <<< Problem line for Error 7
-                  .map(cat => ({ name: cat as string, value: cat as string }))
+            ...sortedCategories.map(cat => ({ name: cat, value: cat }))
         ];
+
         populateSelectWithOptions(domElements.filterGroupCategorySelect, categories, polyglotHelpers, false);
     } else {
         console.warn("FilterController: populateFilterDropdowns - SKIPPING 'filterGroupCategorySelect'. Element found:", !!domElements.filterGroupCategorySelect, "Data found:", !!polyglotGroupsData);
@@ -192,7 +196,7 @@ function initializeActualFilterController(): void {
 }
 
 
-        function populateSelectWithOptions(
+function populateSelectWithOptions(
     selectElement: HTMLSelectElement | null,
     optionsArray: Array<{ value: string; name: string; flagCode?: string | null }>,
     helpers: PolyglotHelpers,
@@ -215,10 +219,34 @@ function initializeActualFilterController(): void {
         return;
     }
 
-    selectElement.innerHTML = ''; // Clears existing
-    console.log(`FilterController: populateSelectWithOptions - Cleared select element ${selectElement.id}. Iterating ${optionsArray.length} options.`);
+    // --- Automatic Alphabetical Sorting ---
+    let sortedOptions = [...optionsArray]; // Create a mutable copy
+    const allOption = sortedOptions.find(opt => opt && opt.value === 'all');
+    if (allOption) {
+        // If an "all" option exists, separate it, sort the rest, then prepend it.
+        const otherOptions = sortedOptions.filter(opt => !opt || opt.value !== 'all');
+        otherOptions.sort((a, b) => {
+            if (!a || !a.name) return 1;  // push invalid items to the end
+            if (!b || !b.name) return -1;
+            return a.name.localeCompare(b.name);
+        });
+        sortedOptions = [allOption, ...otherOptions];
+        console.log(`FilterController: Sorted options for ${selectElement.id} while preserving 'all' option at the top.`);
+    } else {
+        // Otherwise, just sort the whole array.
+        sortedOptions.sort((a, b) => {
+            if (!a || !a.name) return 1;
+            if (!b || !b.name) return -1;
+            return a.name.localeCompare(b.name);
+        });
+        console.log(`FilterController: Sorted all options for ${selectElement.id} alphabetically.`);
+    }
+    // --- End of Sorting ---
 
-    optionsArray.forEach((opt, index) => {
+    selectElement.innerHTML = ''; // Clears existing
+    console.log(`FilterController: populateSelectWithOptions - Cleared select element ${selectElement.id}. Iterating ${sortedOptions.length} sorted options.`);
+
+    sortedOptions.forEach((opt, index) => {
         if (!opt || typeof opt.value === 'undefined' || typeof opt.name === 'undefined') {
             console.warn(`FilterController: populateSelectWithOptions - Invalid option data at index ${index} for ${selectElement.id}:`, opt);
             return; // Skip this invalid option
@@ -232,7 +260,6 @@ function initializeActualFilterController(): void {
         }
         option.textContent = textContent;
         selectElement.appendChild(option);
-        // console.log(`FilterController: populateSelectWithOptions - Appended option: ${textContent} (value: ${opt.value}) to ${selectElement.id}`);
     });
     console.log(`FilterController: populateSelectWithOptions - FINISHED for select element: ${selectElement.id}. Child count: ${selectElement.children.length}`);
 }
