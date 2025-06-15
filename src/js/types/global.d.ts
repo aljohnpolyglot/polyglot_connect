@@ -643,6 +643,7 @@ export interface YourDomElements { // Ensure EXPORT
 // --- INTERFACE for PolyglotHelpers ---
 // It uses the EXPORTED Connector and TranscriptTurn types.
 export interface PolyglotHelpersOnWindow {
+  formatRelativeTimestamp(lastActivity: string | number): unknown;
   isConnectorCurrentlyActive: (connector: Connector | null | undefined) => boolean;
   calculateAge: (birthdateString?: string | null) => number | null;
   getFlagCdnUrl: (countryCode: string, width?: number | null) => string;

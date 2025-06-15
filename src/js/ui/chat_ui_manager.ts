@@ -174,43 +174,7 @@ console.log('chat_ui_manager.ts: Core functional dependencies (methods) appear r
             const textMessageHandler = chatOrchestrator.getTextMessageHandler?.();
             const voiceMemoHandler = chatOrchestrator.getVoiceMemoHandler?.();
 
-            // --- Embedded Chat Listeners ---
-            if (domElements.embeddedMessageSendBtn && domElements.embeddedMessageTextInput) {
-                domElements.embeddedMessageSendBtn.addEventListener('click', () => {
-                    const targetId = chatOrchestrator.getCurrentEmbeddedChatTargetId?.();
-                    const textValue = (domElements.embeddedMessageTextInput as HTMLInputElement).value;
-                    if (textMessageHandler?.sendEmbeddedTextMessage && targetId && textValue.trim() !== "") {
-                        textMessageHandler.sendEmbeddedTextMessage(textValue, targetId);
-                    }
-                });
-                (domElements.embeddedMessageTextInput as HTMLInputElement).addEventListener('keypress', (e: KeyboardEvent) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        const targetId = chatOrchestrator.getCurrentEmbeddedChatTargetId?.();
-                        const textValue = (domElements.embeddedMessageTextInput as HTMLInputElement).value;
-                        if (textMessageHandler?.sendEmbeddedTextMessage && targetId && textValue.trim() !== "") {
-                            textMessageHandler.sendEmbeddedTextMessage(textValue, targetId);
-                        }
-                    }
-                });
-            }
-            if (domElements.embeddedMessageAttachBtn && domElements.embeddedMessageImageUpload) {
-                (domElements.embeddedMessageAttachBtn as HTMLButtonElement).addEventListener('click', () => {
-                    const targetId = chatOrchestrator.getCurrentEmbeddedChatTargetId?.();
-                    if (targetId) {
-                        (domElements.embeddedMessageImageUpload as HTMLInputElement).value = '';
-                        (domElements.embeddedMessageImageUpload as HTMLInputElement).click();
-                    } else { alert("Please open a chat before attaching an image.");}
-                });
-            }
-            if (domElements.embeddedMessageMicBtn) {
-                (domElements.embeddedMessageMicBtn as HTMLButtonElement).addEventListener('click', () => {
-                    const targetId = chatOrchestrator.getCurrentEmbeddedChatTargetId?.();
-                    if (voiceMemoHandler?.handleNewVoiceMemoInteraction && targetId) {
-                        voiceMemoHandler.handleNewVoiceMemoInteraction('embedded', domElements.embeddedMessageMicBtn as HTMLButtonElement, targetId);
-                    }
-                });
-            }
+    
 
             // --- Message Modal Listeners ---
             if (domElements.messageSendBtn && domElements.messageTextInput) {
