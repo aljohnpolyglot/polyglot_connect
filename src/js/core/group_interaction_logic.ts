@@ -935,6 +935,8 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
             console.warn("GIL Engine: AI returned an empty scene script.");
         }
 
+        hasProddedSinceUserSpoke = false; // <<< ADD THIS LINE TO FIX THE LOOP
+
         const nextCheckDelay = 10000 + Math.random() * 5000; // 10-15 seconds
         // This is the pause *after* the AI has spoken. It's waiting for the user to reply.
         console.log(`%cGIL Engine: AI has spoken. Waiting for user reply or idle timeout in ${(nextCheckDelay / 1000).toFixed(1)}s.`, 'color: #17a2b8; font-style: italic;');
