@@ -22,15 +22,27 @@
 }
 
 /* --- Wrapper for Each Message Unit (Avatar (optional) + Bubble) --- */
+/* --- Wrapper for Each Message Unit (Avatar (optional) + Bubble) --- */
 .chat-message-wrapper {
     display: flex;
-    align-items: flex-end;  /* Aligns avatar (if present) with bottom of bubble's last line */
-    max-width: 80%;         /* Max width of the entire message unit relative to chat-log-area */
-    width: fit-content;     /* Wrapper shrinks to content width, up to max-width */
-    position: relative;       /* For timestamp tooltips or other absolute elements */
-    /* margin-bottom is handled by gap on .chat-log-area */
+    /* align-items: flex-end; -- This is the key change. We let the content stack naturally. */
+    gap: var(--spacing-xs, 8px); /* Add a gap between avatar and the bubble container */
+    max-width: 80%;         
+    width: fit-content;     
+    position: relative;       
+}
+/* NEW: Container for all message bubbles from a single speaker turn */
+.chat-message-bubble-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start; /* Default for connectors */
+    gap: 3px; /* The small gap between consecutive bubbles */
 }
 
+/* For user messages, align the bubbles to the right within their container */
+.user-wrapper .chat-message-bubble-container {
+    align-items: flex-end;
+}
 .chat-message-wrapper.user-wrapper {
     align-self: flex-end; /* Aligns this wrapper to the right of .chat-log-area */
     flex-direction: row-reverse; /* Bubble first, then avatar (if shown) */
@@ -107,11 +119,14 @@
 
 /* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
 /* HTML: <strong class="chat-message-sender-name">Sender:</strong> <span class="chat-message-text">...</span> */
+/* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
+/* HTML: <strong class="chat-message-sender-name">Sender:</strong> <br> <span class="chat-message-text">...</span> */
+/* NOTE: We now rely on a <br> tag inserted by the JS for line breaks, so we remove display:block and margin-bottom */
 .chat-message-sender-name {
     font-weight: var(--font-weight-semibold, 600);
     font-size: 0.8em;
-    display: block;
-    margin-bottom: var(--spacing-xxs, 4px); /* Space between name and text */
+    /* display: block; -- REMOVED */
+    /* margin-bottom: var(--spacing-xxs, 4px); -- REMOVED */
     color: var(--chat-sender-name-color, var(--text-color-muted, #6c757d));
 }
 /* User messages typically don't show sender name */
@@ -511,3 +526,25 @@ body.dark-mode .custom-chat-tooltip {
     /* For simplicity, let's assume it can grow a bit */
     flex-direction: column; /* Stack previews on top of main input area */
 }
+/* --- CSS for Consecutive Messages --- */
+
+  
+  
+  /* Hide the sender's name on their consecutive messages in a group chat */
+ /* Hide the sender's name on their consecutive messages in a group chat */
+.chat-message-wrapper.is-consecutive .chat-message-sender-name {
+    display: none;
+  }
+  
+  /* Also hide the <br> tag that immediately follows the hidden sender name */
+  .chat-message-wrapper.is-consecutive .chat-message-sender-name + br {
+    display: none;
+  }
+  /* Optional: Adjust bubble corners for a more "merged" look */
+  .connector-wrapper:not(.is-consecutive) + .connector-wrapper.is-consecutive .chat-message-ui.connector {
+     border-top-left-radius: 4px;
+  }
+  
+  .user-wrapper:not(.is-consecutive) + .user-wrapper.is-consecutive .chat-message-ui.user {
+     border-top-right-radius: 4px;
+  }
