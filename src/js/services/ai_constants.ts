@@ -29,7 +29,7 @@ export const LIVE_API_SETUP_TIMEOUT_MS = 15000;
            // <<< NEW OPENROUTER MODEL CONFIGURATION >>>
         OPENROUTER_MODELS: {
             // Powerful and intelligent, a great second attempt after Groq
-            TEXT_CHAT: "nousresearch/nous-hermes-2-mixtral-8x7b-dpo", // <<< THE NEW, CHEAPER, SMARTER MODEL
+            TEXT_CHAT: "meta-llama/llama-3.1-8b-instruct:free", // <<< THE NEW, CHEAPER, SMARTER MODEL
             // Top-tier model for high-quality summaries
             RECAP: "google/gemini-1.5-pro",
             // Excellent and reliable vision model

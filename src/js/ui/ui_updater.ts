@@ -42,7 +42,7 @@ window.uiUpdater = {
     clearEmbeddedChatLog: () => console.warn("UIU structural: clearEmbeddedChatLog called before full init."),
     appendToGroupChatLog: () => { console.warn("UIU structural: appendToGroupChatLog called before full init."); return null; },
     updateGroupChatHeader: () => console.warn("UIU structural: updateGroupChatHeader called before full init."),
-    setGroupTypingIndicatorText: () => console.warn("UIU structural: setGroupTypingIndicatorText called before full init."),
+
     clearGroupChatInput: () => console.warn("UIU structural: clearGroupChatInput called before full init."),
     clearGroupChatLog: () => console.warn("UIU structural: clearGroupChatLog called before full init."),
     populateRecapModal: () => console.warn("UIU structural: populateRecapModal called before full init."),
@@ -87,7 +87,7 @@ interface UiUpdaterModule {
     clearEmbeddedChatLog: () => void;
     appendToGroupChatLog: (text: string, senderNameFromArg: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => HTMLElement | null;
     updateGroupChatHeader: (groupName: string, members: Connector[]) => void;
-    setGroupTypingIndicatorText: (text: string) => void;
+  
     clearGroupChatInput: () => void;
     clearGroupChatLog: () => void;
     populateRecapModal: (recapData: RecapData | null) => void; // Allow null recapData
@@ -96,7 +96,7 @@ interface UiUpdaterModule {
     updateSendPhotoButtonVisibility: (connector: Connector | null, buttonElement: HTMLElement | null) => void; // Allow null connector
     showProcessingSpinner: (logElement: HTMLElement, messageId?: string | null) => HTMLElement | null;
     removeProcessingSpinner: (logElement: HTMLElement, messageId?: string | null) => void;
-    appendSystemMessage: (logElement: HTMLElement | null, text: string, isError?: boolean) => HTMLElement | null;
+    appendSystemMessage: (logElement: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean) => HTMLElement | null;
     scrollEmbeddedChatToBottom?: () => void;
     scrollMessageModalToBottom?: () => void;
 }
@@ -169,6 +169,35 @@ const methods = ((): UiUpdaterModule => {
       // D:\polyglot_connect\src\js\ui\ui_updater.ts
 // Inside the initializeActualUiUpdater -> const methods = ((): UiUpdaterModule => { ... })();
 
+
+
+// PASTE THIS NEW FUNCTION:
+// REPLACE WITH THIS LINE (this is the correct version):
+function appendSystemMessage(logEl: HTMLElement | null, text: string, isError: boolean = false, isTimestamp: boolean = false): HTMLElement | null {
+    if (!logEl) return null;
+
+    const messageWrapper = document.createElement('div');
+    const messageDiv = document.createElement('div');
+
+    if (isTimestamp) {
+        messageWrapper.classList.add('system-event-wrapper');
+        messageDiv.classList.add('chat-session-timestamp');
+        messageDiv.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    } else {
+        messageWrapper.classList.add('system-message-wrapper');
+        messageDiv.classList.add('system-message');
+        if (isError) messageDiv.classList.add('error-message-bubble');
+        messageDiv.textContent = text;
+    }
+
+    messageWrapper.appendChild(messageDiv);
+    logEl.appendChild(messageWrapper);
+    scrollChatLogToBottom(logEl);
+    return messageWrapper;
+}
+
+
+
 function appendChatMessage(
     logElement: HTMLElement | null,
     text: string, // For voice memos, this might be empty if player is primary, or transcript
@@ -193,19 +222,30 @@ function appendChatMessage(
         logElement.innerHTML = '';
     }
 
-    const messageTimestamp = options.timestamp ? new Date(options.timestamp) : new Date();
-    let lastDisplayedDate = lastDisplayedTimestamps.get(logElement);
-    let shouldDisplayTimestamp = false;
+   // REPLACE WITH THIS BLOCK:
+// =================== START: REPLACE WITH THIS BLOCK (in ui_updater.ts) ===================
+const messageTimestamp = options.timestamp ? new Date(options.timestamp) : new Date();
+let lastDisplayedDate = lastDisplayedTimestamps.get(logElement);
+let shouldDisplayTimestamp = false;
 
-    if (!lastDisplayedDate) {
+// Check if this is the very first message being added to a completely empty log.
+const isFirstMessageInLog = logElement.children.length === 0;
+
+if (isFirstMessageInLog) {
+    // FIX: Always show a timestamp for the very first message.
+    shouldDisplayTimestamp = true;
+} else if (lastDisplayedDate) {
+    // This is a subsequent message, check the time difference from the last displayed timestamp.
+    const timeDiffMinutes = (messageTimestamp.getTime() - lastDisplayedDate.getTime()) / (1000 * 60);
+    if (messageTimestamp.toDateString() !== lastDisplayedDate.toDateString() ||
+        timeDiffMinutes > TIME_DIFFERENCE_THRESHOLD_MINUTES) {
         shouldDisplayTimestamp = true;
-    } else {
-        const timeDiffMinutes = (messageTimestamp.getTime() - lastDisplayedDate.getTime()) / (1000 * 60);
-        if (messageTimestamp.toDateString() !== lastDisplayedDate.toDateString() ||
-            timeDiffMinutes > TIME_DIFFERENCE_THRESHOLD_MINUTES) {
-            shouldDisplayTimestamp = true;
-        }
     }
+} else if (!lastDisplayedDate) {
+    // This case handles when the log has content (from history), but no timestamp has been shown yet in this session.
+    shouldDisplayTimestamp = true;
+}
+// ===================  END: REPLACE WITH THIS BLOCK (in ui_updater.ts)  ===================
 
     if (shouldDisplayTimestamp &&
         options.type !== 'call_event' && // Don't show for call events if they have their own time
@@ -579,9 +619,7 @@ function appendChatMessage(
             });
         };
 
-        function appendSystemMessage(logEl: HTMLElement | null, text: string, isError: boolean = false): HTMLElement | null {
-            return appendChatMessage(logEl, text, `system-message${isError ? ' error' : ''}`, { isError });
-        }
+   
 
         const updateVirtualCallingScreen = (connector: Connector, sessionTypeAttempt: string): void => {
             const { domElements: currentDomElements, polyglotHelpers: currentPolyglotHelpers } = getDepsLocal();
@@ -885,7 +923,13 @@ const appendToGroupChatLog = (
             }
         };
         
-        const setGroupTypingIndicatorText = (text: string): void => { /* Placeholder */ };
+  
+      
+      
+      
+      
+      
+      
         const clearGroupChatInput = (): void => { /* Placeholder */ };
         const clearGroupChatLog = (): void => { 
             const { domElements: cd } = getDepsLocal();
@@ -979,7 +1023,7 @@ const appendToGroupChatLog = (
             showImageInDirectCall, clearDirectCallActivityArea, appendToMessageLogModal, showImageInMessageModal,
             updateMessageModalHeader, resetMessageModalInput, clearMessageModalLog, appendToEmbeddedChatLog,
             showImageInEmbeddedChat, updateEmbeddedChatHeader, clearEmbeddedChatInput, toggleEmbeddedSendButton,
-            clearEmbeddedChatLog, appendToGroupChatLog, updateGroupChatHeader, setGroupTypingIndicatorText,
+            clearEmbeddedChatLog, appendToGroupChatLog, updateGroupChatHeader, /* <<< setGroupTypingIndicatorText REMOVED */
             clearGroupChatInput, clearGroupChatLog, populateRecapModal, displaySummaryInView,
             updateTTSToggleButtonVisual, updateSendPhotoButtonVisibility, showProcessingSpinner,
             removeProcessingSpinner, appendSystemMessage,
@@ -998,7 +1042,7 @@ const appendToGroupChatLog = (
             clearMessageModalLog: () => {}, appendToEmbeddedChatLog: () => null, showImageInEmbeddedChat: () => {},
             updateEmbeddedChatHeader: () => {}, clearEmbeddedChatInput: () => {}, toggleEmbeddedSendButton: () => {},
             clearEmbeddedChatLog: () => {}, appendToGroupChatLog: () => null, updateGroupChatHeader: () => {},
-            setGroupTypingIndicatorText: () => {}, clearGroupChatInput: () => {}, clearGroupChatLog: () => {},
+            clearGroupChatInput: () => {}, clearGroupChatLog: () => {},
             populateRecapModal: () => {}, displaySummaryInView: () => {}, updateTTSToggleButtonVisual: () => {},
             updateSendPhotoButtonVisibility: () => {}, showProcessingSpinner: () => null, removeProcessingSpinner: () => {},
             appendSystemMessage: () => null, scrollEmbeddedChatToBottom: () => {}, scrollMessageModalToBottom: () => {}

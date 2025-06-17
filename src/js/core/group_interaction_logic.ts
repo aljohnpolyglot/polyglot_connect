@@ -43,14 +43,90 @@ let hasProddedSinceUserSpoke: boolean = false; // <<< ADD THIS LINE
 let isRenderingScene: boolean = false; // <<< ADD THIS LINE
 let currentSceneCancellationToken: { isCancelled: boolean } | null = null; // <<< ADD THIS LINE
     // --- DEPENDENCY GETTER ---
-    const getDeps = () => ({
-        polyglotHelpers: window.polyglotHelpers!,
-        groupDataManager: window.groupDataManager!,
-        groupUiHandler: window.groupUiHandler!,
-        activityManager: window.activityManager!,
-        aiService: window.aiService!,
-        aiApiConstants: window.aiApiConstants!
-    });
+  // REPLACE WITH THIS BLOCK:
+const getDeps = () => ({
+    polyglotHelpers: window.polyglotHelpers!,
+    groupDataManager: window.groupDataManager!,
+    groupUiHandler: window.groupUiHandler!,
+    activityManager: window.activityManager!,
+    aiService: window.aiService!,
+    aiApiConstants: window.aiApiConstants!,
+    uiUpdater: window.uiUpdater!,
+    chatOrchestrator: window.chatOrchestrator!, // <<< ADD THIS LINE
+    tutor: tutor // <<< ADD THIS LINE
+});
+
+
+
+// PASTE THIS ENTIRE NEW HELPER FUNCTION:
+/**
+ * Generates ONLY the tutor's initial welcome message for a new group.
+ * @returns A single-element array with the tutor's message, or null.
+ */
+async function generateTutorWelcome(group: Group, tutor: Connector): Promise<string[] | null> {
+    console.log(`%c[Tutor Welcome] Generating dedicated welcome message from ${tutor.profileName}.`, 'color: #fd7e14;');
+    const { aiService } = getDeps();
+    
+    const welcomePrompt = `
+    You are ${tutor.profileName}, the host/tutor of a new group chat called "${group.name}".
+    Your ONLY task is to write a single, warm, welcoming message to the group.
+    - Greet everyone.
+    - State the group's name.
+    - Briefly mention its purpose (e.g., "to discuss Italian culture").
+    - Keep it to one or two sentences.
+    - Your ENTIRE response MUST be in the format: [${tutor.profileName}]: message
+
+    --- EXAMPLE ---
+    [Giorgio]: Ciao a tutti e benvenuti al "Circolo di Dante"! Sono emozionato di condividere con voi la mia passione per la cultura italiana! 🇮🇹
+    `;
+
+    try {
+        // Use a fast model for this simple task
+        const response = await aiService.generateTextMessage(welcomePrompt, tutor, [], 'groq');
+        if (response && typeof response === 'string' && response.startsWith(`[${tutor.profileName}]`)) {
+            console.log(`[Tutor Welcome] Success. Message: ${response}`);
+            return [response];
+        }
+        console.warn(`[Tutor Welcome] Failed to generate a valid welcome message.`);
+        return null;
+    } catch (error) {
+        console.error(`[Tutor Welcome] Error generating welcome message:`, error);
+        return null;
+    }
+}
+// PASTE THIS ENTIRE NEW HELPER FUNCTION:
+/**
+ * Generates a personal, one-on-one welcome message from the tutor to the user.
+ * @returns A single-element array with the tutor's message, or null.
+ */
+async function generateOneOnOneWelcome(group: Group, tutor: Connector): Promise<string[] | null> {
+    console.log(`%c[1-on-1 Welcome] Generating dedicated 1-on-1 welcome from ${tutor.profileName}.`, 'color: #6610f2;');
+    const { aiService } = getDeps();
+
+    const oneOnOnePrompt = `
+    You are the host, **${tutor.profileName}**. You've just started a new chat group called "${group.name}", but so far, only one other person has joined: the user.
+    Your task is to write a warm, personal welcome message directly to the user.
+    --- SCENE REQUIREMENTS ---
+    1.  Acknowledge the Situation: Start by welcoming the user personally. It's just the two of you for now.
+    2.  State Your Role: Briefly mention you are the host/tutor for the group.
+    3.  Direct Question: End your message by asking the user a direct, open-ended question to start the conversation. This is the most important part.
+    4.  Output Format: Your ENTIRE response MUST be a SINGLE line in the format \`[${tutor.profileName}]: message\`.
+    --- GOOD EXAMPLE ---
+    [Mateus]: Olá! Bem-vindo ao "Exploradores de Portugal". Por enquanto, somos só nós os dois. Eu sou o Mateus, o teu guia por aqui. Para começar, o que despertou o teu interesse em Portugal?
+    `;
+
+    try {
+        const response = await aiService.generateTextMessage(oneOnOnePrompt, tutor, [], 'groq');
+        if (response && typeof response === 'string' && response.startsWith(`[${tutor.profileName}]`)) {
+            console.log(`[1-on-1 Welcome] Success. Message: ${response}`);
+            return [response];
+        }
+        return null;
+    } catch (error) {
+        console.error(`[1-on-1 Welcome] Error generating welcome message:`, error);
+        return null;
+    }
+}
 
     // --- SPECIALIZED RULE BUILDERS (Your New Idea) ---
 
@@ -157,14 +233,34 @@ NO_CHANGE
     function buildCommunityHangoutRules(groupMembers: Connector[], group: Group): string {
         const hangoutTopic = group.tags?.join(', ') || 'your shared interests';
         const moderator = groupMembers.find(m => m.id === group.tutorId);
-        const moderatorRules = moderator ? `\n### Persona Directives for ${moderator.profileName} (Moderator):\n- **Core Role:** You are the hangout's moderator. Keep the conversation positive and flowing.\n- **Behavior:** If the chat goes silent, bring up a new question related to ${hangoutTopic}. Gently include quiet people.` : '';
-        const memberRules = groupMembers.filter(m => m.id !== group.tutorId).map(member => `\n### Persona Directives for ${member.profileName} (Member):\n- **Core Role:** Chat with friends about ${hangoutTopic}.\n- **Behavior:** Share opinions, ask questions, and use slang/emojis that fit your persona.`).join('');
-        return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a fun, casual online chat.\n${moderatorRules}${memberRules}`;
+         const substanceMandate = `
+       SUBSTANCE MANDATE (NO "ALL BUN, NO MEAT"): Your dialogue MUST be grounded in plausible real-world knowledge. When discussing topics like culture, politics, or social issues, reference specific, real-world examples, names, events, companies, social issues, places, songs, celebrities, pop culture references, or policies from your training data. Avoid generic, empty statements.
+HAVE STRONG OPINIONS: Characters should have distinct viewpoints based on their persona and be willing to engage in friendly (or even heated) debate.
+CREATE REAL DEBATE: Challenge each other's points with counter-arguments, clarifying questions, and real-world examples.`;
+const moderatorRules = moderator ? `\n### Persona Directives for ${moderator.profileName} (Moderator):\n- **Core Role:** You are the hangout's moderator. Keep the conversation flowing and ensure everyone gets a chance to speak.\n- **Behavior:** If a debate gets too heated, gently steer it to a new angle. If the chat goes silent, bring up a new, thought-provoking question related to ${hangoutTopic}.` : '';
+  
+const memberRules = groupMembers.filter(m => m.id !== group.tutorId).map(member => `\n### Persona Directives for ${member.profileName} (Member):\n- **Core Role:** Chat with friends about ${hangoutTopic}.\n- **Behavior:** Share opinions, ask questions, and use slang/emojis that fit your persona. Don't be afraid to disagree.`).join('');
+
+return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a lively, authentic, and substantive online discussion.\n${substanceMandate}\n${moderatorRules}${memberRules}`;
+   
+   
     }
 
     function buildSportsClubRules(groupMembers: Connector[], group: Group): string {
         const sportsTopic = group.tags?.join(', ') || 'our team';
-        return `# SECTION 2: SPECIALIZED RULES - SPORTS CLUB (Topic: ${sportsTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a passionate, knowledgeable, and lively chat for sports fans.`;
+        return `# SECTION 2: SPECIALIZED RULES - SPORTS CLUB (Topic: ${sportsTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a passionate, knowledgeable, and lively chat for sports fans.
+        
+        - **BE SPECIFIC:** Reference real-world events (players, matches, transfers, standings, famous seasons) from your training data.
+- **HAVE STRONG OPINIONS:** Characters must have biased, fan-like opinions and defend them. A Real Madrid fan should sound like one.
+- **CREATE REAL DEBATE:** Challenge each other's points with counter-examples and "what about..." questions.
+- **NO EMPTY PHRASES:** Do not use generic filler like "Passion is key" or randomly shout "GOOOL!". Every message should add to the debate.`;
+        
+        
+        
+ 
+ 
+ 
+ 
     }
 
     // --- MASTER PROMPT BUILDER ---
@@ -184,7 +280,7 @@ NO_CHANGE
       
       
       
-      
+        
         const masterRules = `# SECTION 0: MASTER DIRECTIVE - GROUP CHAT SIMULATION...
         **YOUR PRIMARY GOAL:** You are a master AI puppeteer... controlling: ${memberList}.
        **RULE 0.1: THE UNBREAKABLE OUTPUT FORMAT:** This is the most important rule and you must never violate it. Your ENTIRE response MUST STRICTLY and ONLY be in the format \`[SpeakerName]: message\`.
@@ -195,7 +291,16 @@ NO_CHANGE
             - **CRITICAL SUB-RULE (HIGHEST PRIORITY): Handle Direct Questions.** If the last message was a direct question to a specific persona by name (e.g., "Anja, what do you think?"), that persona **MUST** be the next speaker and **MUST** answer the question directly. Do not have another persona interrupt.
             - **General Flow:** If no specific persona was addressed, you may then apply your general logic to intelligently decide which persona should speak next.
         **RULE 0.3: THE PERSONA INTEGRITY MANDATE:** You MUST perfectly embody the specified persona.
-        **RULE 0.4: THE FINAL OUTPUT VALIDATION:** Before you output, validate it against RULE 0.1.`;
+        **RULE 0.4: THE FINAL OUTPUT VALIDATION:** Before you output, validate it against RULE 0.1.
+        RULE 0.5: THE REALITY GROUNDING MANDATE: You MUST ground all specific statements in plausible reality based on your training data. DO NOT invent fictional people, places, statistics, social issues, or events. Your dialogue should feel like it's coming from people who live in the real world. Opinions are encouraged, but they must be about real things.
+--- BAD EXAMPLE (Fictional Invention): ---
+[Santi]: That reminds me of the fictional player, Ricardo "El Fantasma" Vargas, who played for the made-up team Real Cóndores CF.
+--- GOOD EXAMPLE (Grounded in Reality): ---
+[Santi]: That reminds me of how Guti used to play for Real Madrid. So much creativity, but sometimes inconsistent.`;
+        
+        
+        
+        
         
         let specializedRules = '';
         switch (group.category) {
@@ -218,125 +323,148 @@ NO_CHANGE
         return `${masterRules}${userSummarySection}\n${specializedRules}\n${personaSections}`;
     }
 
-    // --- AI RESPONSE GENERATION LOGIC ---
+  
+   function normalizeString(str: string): string {
+       if (!str) return '';
+       return str
+           .normalize("NFD") // Decomposes combined characters into base characters and diacritics
+           .replace(/[\u0300-\u036f]/g, "") // Removes the diacritic marks
+           .toLowerCase(); // Converts to lowercase
+   }
 
-   // <<< REPLACE THE FUNCTION SIGNATURE WITH THIS >>>
-// =================== START: REPLACE THE ENTIRE FUNCTION ===================
-// <<< ADD THIS ENTIRE NEW HELPER FUNCTION >>>
-// <<< REPLACE THE ENTIRE renderScene FUNCTION WITH THIS >>>
-// <<< REPLACE THE renderScene FUNCTION WITH THIS SLIGHTLY SIMPLER VERSION >>>
-// <<< REPLACE THE ENTIRE renderScene FUNCTION >>>
-// <<< CHANGE THE RETURN TYPE >>>
-// =================== START: REPLACE THE ENTIRE FUNCTION ===================
-// =================== START: REPLACE THE ENTIRE FUNCTION ===================
 
-async function renderScene(lines: string[]): Promise<number> {
-    isRenderingScene = true; // <<< SET FLAG AT THE START
-    const startTime = Date.now();
-    const totalLinesInScene = lines.length;
 
-    // Create a new cancellation token for THIS specific scene rendering.
+
+async function playScene(lines: string[], isGrandOpening: boolean): Promise<void> {
+    console.log(`%c[ScenePlayer] STARTING BATCH. isGrandOpening: ${isGrandOpening}. Total Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
+    const batchStartTime = Date.now();
+    isRenderingScene = true;
     const cancellationToken = { isCancelled: false };
     currentSceneCancellationToken = cancellationToken;
 
-    // <<< CHANGE 2: Add `currentIndex` parameter to the recursive function.
-    const renderNextLine = async (lineArray: string[], currentIndex: number): Promise<void> => {
-        // --- CANCELLATION CHECK ---
+    const { groupDataManager, groupUiHandler, activityManager } = getDeps();
+    
+    // <<< FIX: Get the history length ONCE before the loop begins.
+    const historyLengthBeforeBatch = groupDataManager.getLoadedChatHistory().length;
+
+    for (const [index, line] of lines.entries()) {
         if (cancellationToken.isCancelled) {
-            console.log("[Scene Renderer]: Scene rendering cancelled by user activity.");
-            const { activityManager } = getDeps();
-            members.forEach(member => {
-                activityManager.clearAiTypingIndicator(member.id, 'group');
-            });
-            return;
+            break;
         }
 
-        if (lineArray.length === 0) {
-            return; // Base case: all lines are done.
+        // <<< FIX: This is the new, robust condition for the special instant welcome.
+        // It is ONLY true if it's the Grand Opening, the chat was completely empty before this batch,
+        // and it's the very first message (index 0) of this batch.
+        const isTheVeryFirstWelcomeMessage = isGrandOpening && historyLengthBeforeBatch === 0 && index === 0;
+
+        const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+        if (!match) {
+            console.warn(`[ScenePlayer] Skipping line ${index + 1}/${lines.length} due to format mismatch: "${line}"`);
+            continue;
         }
         
-        const { activityManager, groupDataManager, groupUiHandler } = getDeps();
-        const [currentLine, ...remainingLines] = lineArray;
+        const speakerName = match[1].trim();
+        const responseText = match[2].trim();
+        const speaker = members.find(m => normalizeString(m.profileName).startsWith(normalizeString(speakerName)));
 
-        let speakerName: string | undefined, responseText: string | undefined;
-
-        // --- Parsing Logic ---
-        const strictMatch = currentLine.match(/\[(.*?)\]:\s*(.*)/s);
-        const fallbackMatch = currentLine.match(/([\w\sÉéàâçèêëîïôûùüÿñæœÀÂÇÈÊËÎÏÔÛÙÜŸÑÆŒ]+):\s*(.*)/s);
-
-        if (strictMatch && strictMatch[1] && strictMatch[2]) {
-            speakerName = strictMatch[1].trim();
-            responseText = strictMatch[2].trim();
-        } else if (fallbackMatch && fallbackMatch[1] && fallbackMatch[2]) {
-            const potentialName = fallbackMatch[1].trim();
-            if (members.some((m: Connector) => m.profileName === potentialName)) {
-                speakerName = potentialName;
-                responseText = fallbackMatch[2].trim();
-            }
+        if (!speaker) {
+            console.warn(`[ScenePlayer] Skipping line ${index + 1}/${lines.length}. Could not find speaker: "${speakerName}"`);
+            continue;
         }
 
-        if (speakerName && responseText) {
-            // --- NEW: Flexible Speaker Matching ---
-            // First, try for an exact match. This is the fastest and most common case.
-            let speakerConnector = members.find((m: Connector) => m.profileName === speakerName);
+        console.log(`%c[ScenePlayer] ${index + 1}/${lines.length}: Preparing message from ${speaker.profileName}...`, 'color: #17a2b8;');
+
+        // First, add the message to the internal history for all cases.
+        const historyItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+        groupDataManager.addMessageToCurrentGroupHistory(historyItem);
+        lastMessageTimestamp = Date.now();
+        
+        const isFirstMessageEver = historyLengthBeforeBatch === 0 && index === 0;
+        const isFirstMessageOfBatch = index === 0;
+        
+        if (isFirstMessageEver) {
+            // PATH 1: INSTANT
+            // This runs ONLY for the very first message in an empty chat. No delay.
+            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+            console.log(`%c[ScenePlayer] First message ever appended instantly.`, 'color: #28a745');
+        
+        } else if (isFirstMessageOfBatch) {
+            // PATH 2: FAST
+            // This runs for the first message of any OTHER batch. Short "typing" delay only.
+            const wordCount = responseText.split(' ').length;
+            const typingDurationMs = Math.min(800 + (wordCount * 120), 2500);
+        
+            console.log(`%c    ...first message of batch, fast delay of ${(typingDurationMs / 1000).toFixed(1)}s.`, 'color: #6c757d; font-style: italic;');
             
-            // If no exact match, try a "starts with" match. This catches nicknames like "Javi M." for "Javi".
-            if (!speakerConnector) {
-                speakerConnector = members.find((m: Connector) => speakerName.startsWith(m.profileName));
+            if (typingDurationMs > 0) {
+                activityManager.simulateAiTyping(speaker.id, 'group');
+                await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+                activityManager.clearAiTypingIndicator(speaker.id, 'group');
             }
-            // --- END: Flexible Speaker Matching ---
-
-            if (speakerConnector) {
-                activityManager.simulateAiTyping(speakerConnector.id, 'group');
-                
-                const wordCount = responseText.split(' ').length;
-                const typingDurationMs = 1500 + (wordCount / 3) * 1000;
-                const finalDelay = Math.min(Math.max(typingDurationMs, 2000), 7000) + Math.random() * 1000;
-
-                // <<< CHANGE 3: Update the console log with the progress counter.
-                console.log(`[Scene Pacing ${currentIndex}/${totalLinesInScene}]: Message: "${responseText.substring(0,20)}...", WordCount: ${wordCount}, Delay: ${finalDelay.toFixed(0)}ms`);
-
-                // START: NEW ORDER - STATE UPDATE FIRST
-                lastMessageTimestamp = Date.now();
-                const historyItem: GroupChatHistoryItem = { speakerId: speakerConnector.id, speakerName, text: responseText, timestamp: Date.now() };
-                groupDataManager.addMessageToCurrentGroupHistory(historyItem);
-                // END: NEW ORDER
-
-                // NOW, wait for the typing delay
-                await new Promise(resolve => setTimeout(resolve, finalDelay));
-
-                // Check for cancellation AGAIN after the delay, before showing the message
-                if (cancellationToken.isCancelled) {
-                    // We don't need to do anything here, the function will just exit cleanly.
-                    // The message is in history, but won't be displayed, which is fine.
-                    // The main loop will re-render it from history on next load if needed.
-                    return; 
-                }
-
-                // Finally, update the UI
-                activityManager.clearAiTypingIndicator(speakerConnector.id, 'group');
-                groupUiHandler.appendMessageToGroupLog(responseText, speakerName, false, speakerConnector.id);
-            }
-        }
         
-        // <<< CHANGE 4: Pass the incremented index in the recursive call.
-        await renderNextLine(remainingLines, currentIndex + 1);
-    };
+            if (cancellationToken.isCancelled) break;
+            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+            console.log(`%c[ScenePlayer] First message of batch appended fast.`, 'color: #28a745');
+       
+       
+       
+       
+        } else {
+            // For all other messages, use the normal paced approach with typing indicators.
+            const wordCount = responseText.split(' ').length;
 
-    // <<< CHANGE 5: Start the recursive process with the initial index of 1.
-    await renderNextLine(lines, 1);
+            // --- TWEAKABLE TIMING VALUES ---
 
-    // Clean up the token after the scene is done.
-    currentSceneCancellationToken = null;
-    
-    const durationMs = Date.now() - startTime;
-    if (!cancellationToken.isCancelled) {
-         console.log(`%c[Scene Renderer]: All lines rendered. Scene took ${(durationMs / 1000).toFixed(1)}s to display.`, 'color: #17a2b8; font-style: italic;');
+            // 1. DURATION of the "is typing..." bubble.
+            // Formula: base_time + (time_per_word * word_count), up to a max_time.
+            // Default: 800ms base, 120ms per word, max 2.5 seconds.
+        const typingDurationMs = Math.min(800 + (wordCount * 120), 2500); // Max 2.5 seconds
+
+            // 2. PAUSE before the typing indicator appears. (Simulates "thinking").
+            // Formula: base_pause + random_additional_pause.
+            // Default: 150ms base, plus up to 200ms random.
+            let initialWaitMs = 7000 + Math.random() * 8000; 
+
+
+              // 3. EXTRA INTERVAL for the "Grand Opening" introductions. This logic remains the same.
+            // It just adds a little extra randomness to the intros.
+            if (isGrandOpening) {
+                const grandOpeningExtraDelay = Math.random() * 2000;
+                initialWaitMs += grandOpeningExtraDelay;
+            }
+
+            // --- END OF TWEAKABLE VALUES ---
+            
+            console.log(`%c    ...delaying for ${((initialWaitMs + typingDurationMs) / 1000).toFixed(1)}s (pause + typing).`, 'color: #6c757d; font-style: italic;');
+
+            // The rest of the logic uses the values calculated above.
+            if (initialWaitMs > 0) await new Promise(resolve => setTimeout(resolve, initialWaitMs));
+            if (cancellationToken.isCancelled) break;
+            
+            if (typingDurationMs > 0) {
+                activityManager.simulateAiTyping(speaker.id, 'group');
+                await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+                if (cancellationToken.isCancelled) {
+                    activityManager.clearAiTypingIndicator(speaker.id, 'group');
+                    break;
+                }
+            }
+
+            activityManager.clearAiTypingIndicator(speaker.id, 'group');
+            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+            console.log(`%c[ScenePlayer] ${index + 1}/${lines.length}: Message appended.`, 'color: #28a745');
+        }
     }
-    
-    isRenderingScene = false; // <<< CLEAR FLAG AT THE END
-    return durationMs;
+
+    isRenderingScene = false;
+    currentSceneCancellationToken = null;
+    const batchDuration = (Date.now() - batchStartTime) / 1000;
+    console.log(`%c[ScenePlayer] BATCH FINISHED. Rendered ${lines.length} messages in ${batchDuration.toFixed(1)} seconds.`, 'color: #8a2be2; font-weight: bold;');
 }
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
+
+// ===================  END: REPLACE WITH THIS BLOCK  ===================
+// ===================  END: REPLACE WITH THIS BLOCK  ===================
 
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 
@@ -359,8 +487,19 @@ async function generateAiTextResponse(
 
     let systemPrompt = '';
     let instructionText = '';
+    const MAX_RECENT_HISTORY = 8; // <<< Let's set a much smaller limit
+
     const groupHistory = groupDataManager.getLoadedChatHistory();
-    const recentHistoryText = groupHistory.slice(-15).map(msg => `${msg.speakerName}: ${msg.text}`).join('\n');
+    
+    // Slice only the last few messages to prevent the echo chamber effect
+    const recentHistory = groupHistory.slice(-MAX_RECENT_HISTORY);
+
+    // Now, create the text string from this shorter history
+    const recentHistoryText = recentHistory.map(msg => {
+        // Fallback for older history items that might be missing a name
+        const speaker = msg.speakerName || 'Unknown'; 
+        return `${speaker}: ${msg.text}`;
+    }).join('\n');
 
     // --- STATE-BASED PROMPT SELECTION ---
 
@@ -396,59 +535,40 @@ async function generateAiTextResponse(
 ${personaSections}
 ${specializedRules}
 `;
-        
 if (isGrandOpening) {
-    // --- NEW: Check if the group is essentially a one-on-one chat ---
-    if (members.length <= 1) { 
-        console.warn(`GIL: GRAND OPENING with only ${members.length} members. Switching to a direct, personal welcome prompt.`);
+    // This block is now ONLY for generating the "other members" introductions.
+    // The tutor and 1-on-1 logic is handled by the conversationEngineLoop.
+    console.log("GIL: Building prompt for 'other members' Grand Opening introductions.");
+    if (tutor) {
+        const otherMembers = members.filter(m => m.id !== tutor!.id);
+        const otherMemberNames = polyglotHelpers.formatReadableList(otherMembers.map(m => m.profileName), "and");
+        
         instructionText = `
-You are the host, **${tutor.profileName}**. You've just started a new chat group called "${currentGroup.name}", but so far, only one other person has joined: the user.
-
-Your task is to write a warm, personal welcome message directly to the user.
-
---- SCENE REQUIREMENTS ---
-1.  **Acknowledge the Situation:** Start by welcoming the user personally. It's just the two of you for now.
-2.  **State Your Role:** Briefly mention you are the host/tutor for the group.
-3.  **Direct Question:** End your message by asking the user a direct, open-ended question to start the conversation. This is the most important part.
-4.  **Output Format:** Your ENTIRE response MUST be a SINGLE line in the format \`[${tutor.profileName}]: message\`.
-
---- GOOD EXAMPLE ---
-[Mateus]: Olá! Bem-vindo ao "Exploradores de Portugal". Por enquanto, somos só nós os dois. Eu sou o Mateus, o teu guia por aqui. Para começar, o que despertou o teu interesse em Portugal?
-
---- BAD EXAMPLE (Talks to a non-existent group) ---
-[Mateus]: Bem-vindos todos! Vamos começar a nossa discussão!
-`;
-    } else {
-            console.log("GIL: Building a SIMPLE prompt for a GRAND OPENING scene.");
-            instructionText = `
-Write a "Grand Opening" scene for a new chat group called "${currentGroup.name}". The group's topic is "${currentGroup.tags?.join(', ') || 'general discussion'}".
-
---- SCENE REQUIREMENTS ---
-1.  **Host's Welcome:** The host, **${tutor.profileName}**, MUST speak first with a warm, in-character welcome.
-2.  **Member Introductions:** Have 2-4 other members introduce themselves briefly, reacting naturally to the host or each other.
-3.  **Invite the User:** The VERY LAST message of the scene MUST be from any persona, asking the user a direct question to invite them into the conversation.
-4.  **Total Length:** Generate between 4 to 8 messages.
-
---- GOOD EXAMPLE ---
-[Budi]: Selamat datang di "Rumah Nusantara"! I'm Budi. I'm excited to chat with you all about Indonesian culture.
-[Dewi]: Hi Budi! I'm Dewi, it's great to be here. I love talking about our food.
-[Rizki]: Hey everyone, I'm Rizki. I'm more interested in the history side of things.
-[Budi]: That's great, Rizki! We have a lot to cover then.
-[Dewi]: What about you? What part of our culture are you most excited to talk about?
-
---- BAD EXAMPLE (Too short, no user question) ---
-[Budi]: Welcome everyone.
-`;
-    } // <<< ADD THIS CLOSING BRACE TO END THE isGrandOpening BLOCK
-} else if (isReEngagement) { // Now this correctly connects to the `if (isGrandOpening)`
+        The host, **${tutor.profileName}**, has just welcomed everyone to the new chat group, "${currentGroup.name}".
+        Your task is to write the immediate follow-up scene where the other members react and introduce themselves.
+        --- CHARACTERS FOR THIS SCENE ---
+        ${otherMemberNames}
+        --- SCENE REQUIREMENTS ---
+        1. DO NOT include the host (${tutor.profileName}) in your response. They have already spoken.
+        2. Have 2-4 of the other members introduce themselves briefly.
+        3. The VERY LAST message MUST be from one of the members, asking the user a direct question.
+        --- GOOD EXAMPLE ---
+        (Assuming the host, Giorgio, just said "Welcome!")
+        [Olivia]: Ciao a tutti! Sono Olivia. So excited to be here!
+        [Kenji]: Hello everyone, I'm Kenji.
+        [Manon]: Hi! What about you? Are you also excited to learn Italian?
+        `;
+    }
+} else if (isReEngagement) {
     console.log("GIL: Building a natural CONTINUATION prompt for a RE-ENGAGEMENT scene.");
     instructionText = `
 The user has just re-joined this chat. Do NOT welcome them back. Instead, create a natural continuation of the last message in the conversation history to make the world feel persistent.
-
 --- SCENE REQUIREMENTS ---
-1.  **Direct Continuation:** A new persona (different from the last speaker) must respond directly to the last message in the history as if only a few seconds have passed.
-2.  **Keep it Flowing:** The response can be a counter-argument, an agreement with an added thought, or a question related to the last message.
-3.  **Total Length:** Generate between 1 to 3 messages to gently restart the conversation.
+1.  **Originality is Key:** The new scene MUST introduce a new angle, question, or slightly different topic related to the last message. DO NOT simply have a character repeat a point they or someone else has already made in the recent history.
+2.  **New Speaker:** A new persona (different from the last speaker in the history) MUST be the first to speak.
+3.  **Interaction, Not Just Statements:** The scene should show interaction. Have a character ask a question, and have another character answer it or offer a different opinion. Avoid having one person just make a statement.
+4.  **No Consecutive Messages:** For this re-engagement scene, DO NOT have the same character speak two times in a row.
+5.  **Total Length:** Generate between 2 to 5 messages.
 
 --- GOOD EXAMPLE ---
 Last message in history was "[Lorenzo]: Passion is great, but it doesn't always win you the Scudetto."
@@ -489,10 +609,12 @@ Your task is to gently "prod" or "nudge" them for a response without being pushy
                 // Normal case: Group idle chatter
                 console.log("GIL: Building MASTER prompt for an IDLE USER conversation block.");
             instructionText = `
-The user has been silent. Generate a realistic "Conversation Block" (3-10 messages) to continue the chat based on the last topic.
+The user has been silent. Generate a realistic "Conversation Block" (3-15 messages) to continue the chat based on the last topic.
 
---- RULES ---
-- The block must be a natural continuation of the last message in the history.
+--- CRITICAL RULES ---
+**DO NOT repeat the last message from the history.**
+- MUST BE AN ORIGINAL CONTINUATION: Your response MUST NOT be a rephrasing or a repeat of any idea, question, or theme already present in the recent conversation history. The goal is to move the conversation forward with a new thought, question, or angle.
+- A **different persona** (NOT the one who spoke last) MUST be the first to speak in your new block.
 - It should feel like a real, messy group chat. Include agreements, disagreements, short reactions ("lol", "ikr?", "🤔"), and even consecutive messages from one person.
 - Involve at least 2-3 different speakers.
 - Do NOT mention the user's silence.
@@ -507,6 +629,24 @@ YOUR RESPONSE:
 
 --- BAD EXAMPLE (Starts a new, unrelated topic) ---
 [Fabio]: Speaking of other things, what's everyone's favorite pizza topping?
+--- GOOD EXAMPLE (Advances the topic) ---
+History includes a debate about PSG vs Real Madrid.
+
+YOUR RESPONSE:
+[Isa]: Speaking of big club money, I wonder if the new financial rules will actually level the playing field this year.
+[Mateo]: I doubt it, the top clubs always find a way around the rules.
+[Javi M.]: Exactly. It's about history and prestige, not just who has the newest money.
+
+--- BAD EXAMPLE (Repeats a previous topic) ---
+History includes a debate about PSG vs Real Madrid.
+YOUR RESPONSE:
+[Santi]: You know, Barcelona also has a great team. Let's talk about them.
+[Isa]: Yeah, their defense is solid this year!
+
+--- BAD EXAMPLE (Repeats the last message) ---
+[Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
+[Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
+
 `;}
 } else { // Responding directly to the user
     console.log("GIL: Building MASTER prompt for a direct RESPONSE to the user.");
@@ -515,7 +655,7 @@ The user has just sent a message. Your task is to generate a realistic, in-chara
 
 --- RESPONSE LOGIC ---
 
-1.  **Analyze the User's Message:** First, determine if the user is talking to one specific person by name, or making a general statement/question to the group.
+1.  **Analyze the User's Message:** : First, determine the user's intent. Are they talking to a specific person? Are they making a general statement? Or are they making a controversial, rival, or off-topic comment?
 
 2.  **IF the user addresses ONE person** (e.g., "en serio rafa?", "ciao sofia, come stai?"):
     -   That specific person (**Rafa** or **Sofia**) MUST give the reply.
@@ -527,6 +667,11 @@ The user has just sent a message. Your task is to generate a realistic, in-chara
     -   Other speakers can then react to that first speaker or to the user, creating a natural, flowing group conversation.
     -   The responses should be short and natural.
     -   Your output can be MULTIPLE lines, each in the format \`[SpeakerName]: message\`.
+4. IF the user makes a RIVAL or OFF-TOPIC comment (e.g., mentioning a rival team like PSG in a La Liga chat, or bringing up something totally unrelated):
+CRITICAL: At least ONE persona MUST react directly to this comment, often with a dismissive, teasing, or confrontational tone that fits their personality.
+This is where the fan passion comes out. They should not ignore the comment. They should challenge it, make fun of it, or express mock outrage.
+Other members can then jump in to agree with the first speaker or to change the subject back to what they care about.
+
 
 --- GOOD EXAMPLE (Direct Question) ---
 User's message: "ciao sofia, come stai?"
@@ -557,6 +702,31 @@ History:
 YOUR RESPONSE:
 [Roberto]: Speaking of Ronaldo, did you see his goal last week?
 [Larissa]: Oh yeah, that was amazing!
+
+--- GOOD EXAMPLE (Forward Momentum) ---
+History includes a debate about globalization vs. tradition.
+YOUR RESPONSE:
+[Liselotte]: This is a fascinating debate. It reminds me of the arguments between the Frankfurt School thinkers, like Adorno, who were very critical of the "culture industry" which is a form of globalization. He would probably agree with you, Markus.
+[Jonas]: That's a bit academic, isn't it? On a practical level, my bike co-op uses global supply chains to get parts, but our goal is purely local: less traffic in our city. It's a mix, right?
+
+--- GOOD EXAMPLE (Rival Comment) ---
+History:
+...
+[Javi M.]: Atlético has the best defense in Spain.
+[You]: hola a todos yo soy un fan de PSG jajajajajaja
+YOUR RESPONSE:
+[Santi]: ¿PSG? ¡Jajaja! Mucho dinero pero poca historia. Aquí hablamos de fútbol de verdad, amigo.
+[Isa]: Déjalo, Santi. No vale la pena. Volviendo a lo importante, ¿crees que la defensa del Atleti puede parar a Lewandowski?
+--- BAD EXAMPLE (Ignoring the Rival Comment) ---
+History:
+...
+[Javi M.]: Atlético has the best defense in Spain.
+[You]: hola a todos yo soy un fan de PSG jajajajajaja
+YOUR RESPONSE:
+[Santi]: Hablando de defensas, creo que la del Barça es mejor este año.
+
+
+
 `;
 }
     }
@@ -848,110 +1018,99 @@ function startCooldownWithLogging(targetCooldownMs: number) {
 }
 
 // in group_interaction_logic.ts
-
-function setEngineTimeoutWithLogs(callback: () => void, totalDelayMs: number) {
-    // START: BUG FIX - ALWAYS CLEAR THE PREVIOUS TIMER CHAIN
+// =================== START: REPLACE WITH THIS BLOCK ===================
+// =================== START: ADD THIS ENTIRE FUNCTION ===================
+function setIdleCheckTimerWithLogs(callback: () => void, totalDelayMs: number) {
     if (conversationLoopId) {
         clearTimeout(conversationLoopId);
     }
-    // END: BUG FIX
 
     const LOG_INTERVAL = 10000; // Log every 10 seconds
 
-    console.log(`%cGIL Engine: New timer set. Next AI activity in ${(totalDelayMs / 1000).toFixed(1)} seconds.`, 'color: #6c757d; font-style: italic;');
+    console.log(`%c[Engine] No human input detected. Waiting for user... Initializing next check in ${(totalDelayMs / 1000).toFixed(1)} seconds.`, 'color: #6c757d; font-style: italic;');
 
     const scheduleNextLog = (remainingTime: number) => {
-        if (remainingTime <= LOG_INTERVAL) {
-            conversationLoopId = setTimeout(callback, remainingTime);
-            return;
-        }
+        const nextTick = Math.min(remainingTime, LOG_INTERVAL);
 
         conversationLoopId = setTimeout(() => {
-            const newRemainingTime = remainingTime - LOG_INTERVAL;
-            console.log(`%cGIL Engine: T-minus ${(newRemainingTime / 1000).toFixed(0)} seconds...`, 'color: #6c757d; font-style: italic;');
-            scheduleNextLog(newRemainingTime);
-        }, LOG_INTERVAL);
+            const newRemainingTime = remainingTime - nextTick;
+            if (newRemainingTime > 0) {
+                console.log(`%c[Engine] T-minus ~${Math.round(newRemainingTime / 1000)} seconds until next AI activity check...`, 'color: #6c757d; font-style: italic;');
+                scheduleNextLog(newRemainingTime);
+            } else {
+                callback(); // Time's up, run the loop
+            }
+        }, nextTick);
     };
 
     scheduleNextLog(totalDelayMs);
 }
 
-// =================== START: REPLACE THE ENTIRE FUNCTION ===================
+
+
+
 
 async function conversationEngineLoop(forceImmediateGeneration: boolean = false, isFirstRunAfterJoin: boolean = false): Promise<void> {
-   
-     // --- NEW: BUSY CHECK ---
-     if (isRenderingScene) {
-        console.log("GIL Engine: Aborting loop start because a scene is already rendering.");
-        return; // Exit immediately if the renderer is active
-    }
-   
-    if (!conversationFlowActive) {
-        if (conversationLoopId) clearTimeout(conversationLoopId);
-        return;
-    }
+    if (isRenderingScene || !conversationFlowActive) return;
 
-    const { groupDataManager, activityManager, } = getDeps();
-    if (!tutor) {
-        return;
-    }
-    
-    const now = Date.now();
-    const timeSinceLastMessage = now - lastMessageTimestamp;
-    
-    // We generate if it's the first run (re-engagement) OR if it's a regular idle timeout.
-    const shouldGenerate = isFirstRunAfterJoin || (timeSinceLastMessage > 25000 && !hasProddedSinceUserSpoke);
+    // Clear any previously scheduled loop to prevent duplicates
+    if (conversationLoopId) clearTimeout(conversationLoopId);
+
+    const { groupDataManager } = getDeps();
+    const currentGroup = groupDataManager.getCurrentGroupData();
+    if (!tutor || !currentGroup) return;
+
+    // Determine if the AI should speak
+    const timeSinceLastMessage = Date.now() - (lastMessageTimestamp || 0);
+    const shouldGenerate = isFirstRunAfterJoin || (timeSinceLastMessage > 10000 && !hasProddedSinceUserSpoke);
 
     if (shouldGenerate) {
-        console.log(`GIL Engine: Triggering scene generation. Forced: ${forceImmediateGeneration}, FirstRun: ${isFirstRunAfterJoin}`);
-        if (!isFirstRunAfterJoin) { // Only prod if it's a true idle timeout
-             hasProddedSinceUserSpoke = true;
-        }
-
-        activityManager.simulateAiTyping(tutor.id, 'group');
-        
         const history = groupDataManager.getLoadedChatHistory();
-        const isGrandOpening = history.length === 0 && (forceImmediateGeneration || isFirstRunAfterJoin);
-        // THIS IS THE KEY FIX: Re-engagement is now triggered by the first run, not by forcing.
-        const isReEngagement = history.length > 0 && isFirstRunAfterJoin; 
-        
-        const sceneLines = await generateAiTextResponse(
-            !isFirstRunAfterJoin, // It's an "engine trigger" if it's NOT the first run.
-            isGrandOpening,
-            isReEngagement
-        );
+        const isGrandOpening = history.length === 0 && isFirstRunAfterJoin;
 
-        activityManager.clearAiTypingIndicator(tutor.id, 'group');
-        
-        if (sceneLines.length > 0) {
-            console.log(`GIL Engine: Got a scene with ${sceneLines.length} lines. Handing off to renderer.`);
-            await renderScene(sceneLines);
-            
-            // BUG FIX: Save the history only AFTER the entire scene has been rendered.
-            groupDataManager.saveCurrentGroupChatHistory(true);
-            
-            console.log("GIL Engine: Scene rendering and history saving complete.");
+        if (isGrandOpening) {
+            console.log(`%c[Engine] Orchestrating Grand Opening... Member count: ${members.length}`, 'color: #fd7e14; font-weight: bold;');
+            if (members.length <= 1) {
+                console.log(`[Engine] Taking 1-on-1 chat path.`);
+                const oneOnOneWelcome = await generateOneOnOneWelcome(currentGroup, tutor);
+                if (oneOnOneWelcome) await playScene(oneOnOneWelcome, true);
+            } else {
+                console.log(`[Engine] Taking multi-member group path.`);
+                const tutorWelcomeLine = await generateTutorWelcome(currentGroup, tutor);
+                if (tutorWelcomeLine) await playScene(tutorWelcomeLine, true);
+                
+                await new Promise(resolve => setTimeout(resolve, 1500)); 
+
+                const otherMembersScene = await generateAiTextResponse(false, true, false);
+                if (otherMembersScene?.length > 0) await playScene(otherMembersScene, true);
+            }
         } else {
-            console.warn("GIL Engine: AI returned an empty scene script.");
+            console.log(`%c[Engine] Generating standard ongoing conversation block...`, 'color: #007bff;');
+            if (!isFirstRunAfterJoin) hasProddedSinceUserSpoke = true;
+            
+            const isReEngagement = history.length > 0 && isFirstRunAfterJoin;
+            const sceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
+
+            if (sceneLines?.length > 0) await playScene(sceneLines, false);
         }
 
-        hasProddedSinceUserSpoke = false; // <<< ADD THIS LINE TO FIX THE LOOP
+        groupDataManager.saveCurrentGroupChatHistory(true);
+        hasProddedSinceUserSpoke = false; // Reset prod state after AI speaks
 
-        const nextCheckDelay = 10000 + Math.random() * 5000; // 10-15 seconds
-        // This is the pause *after* the AI has spoken. It's waiting for the user to reply.
-        console.log(`%cGIL Engine: AI has spoken. Waiting for user reply or idle timeout in ${(nextCheckDelay / 1000).toFixed(1)}s.`, 'color: #17a2b8; font-style: italic;');
-        setEngineTimeoutWithLogs(() => conversationEngineLoop(false, false), nextCheckDelay);
-        
-        return; 
+        // Set timer for the next check after AI activity
+        const nextCheckDelay = 5000 + Math.random() * 5000; 
+        console.log(`%c[Engine] Interaction complete. Next idle check in ${(nextCheckDelay / 1000).toFixed(1)} seconds.`, 'color: #6c757d;');
+        conversationLoopId = setTimeout(() => conversationEngineLoop(false, false), nextCheckDelay);
+
+    } else {
+        // AI decided not to speak, use the T-minus logger to wait for user input.
+        const IDLE_THRESHOLD = 30000; // This is a separate value used for the logger. It should generally be a bit higher than the prod threshold.
+        const timeUntilNextCheck = IDLE_THRESHOLD - timeSinceLastMessage + 1000; // Check 1s after threshold is passed
+        setIdleCheckTimerWithLogs(() => conversationEngineLoop(false, false), timeUntilNextCheck);
     }
-
-    // Fallback timer if we didn't generate.
-    const standardCheckDelay = 20000 + Math.random() * 5000;
-    // The user hasn't been idle long enough for the AI to speak. It will check again.
-    console.log(`%cGIL Engine: "Hmm, user's still quiet. It hasn't been long enough for me to jump in. I'll check again in ~${(standardCheckDelay / 1000).toFixed(0)}s."`, 'color: #6c757d; font-style: italic;');
-    setEngineTimeoutWithLogs(() => conversationEngineLoop(false, false), standardCheckDelay);
 }
 
+// ===================  END: REPLACE WITH THIS BLOCK  ===================
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
     // --- PUBLIC INTERFACE (ADAPTED TO MATCH OLD `GroupInteractionLogic`) ---
 // <<< REPLACE THE ENTILE BLOCK WITH THIS CORRECTED STRUCTURE >>>
@@ -1060,10 +1219,11 @@ const groupInteractionLogic = {
              return;
         }
         
-        const responseLines = await generateAiTextResponse(false, false, false, undefined);
-        
-        if (responseLines.length > 0) {
-            await renderScene(responseLines);
+        const responseLines = await generateAiTextResponse(false, false, false, userMessageText);
+
+        if (responseLines && responseLines.length > 0) {
+            // A user message is never a "Grand Opening", so pass `false`.
+            await playScene(responseLines, false);
         }
         
         console.log("GIL: User interaction complete. Restarting idle check engine.");

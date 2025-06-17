@@ -521,7 +521,7 @@ export interface YourDomElements { // Ensure EXPORT
     activeGroupNameHeader: HTMLElement | null; // Likely <h3>
     groupChatMembersAvatarsDiv: HTMLElement | null;
     groupChatLogDiv: HTMLElement | null;
-    groupTypingIndicator: HTMLElement | null;
+
     groupChatInput: HTMLInputElement | null;
     sendGroupMessageBtn: HTMLButtonElement | null;
     leaveGroupBtn: HTMLButtonElement | null;
@@ -535,7 +535,7 @@ export interface YourDomElements { // Ensure EXPORT
     applyGroupFiltersBtn: HTMLButtonElement | null;
     filterGroupCategorySelect?: HTMLSelectElement | null;
     filterGroupNameInput?: HTMLInputElement | null; // <<< ADD THIS
-    
+    groupTypingIndicator: HTMLElement | null;
     
     //Group members modal
     groupHeaderInfoTrigger: HTMLElement | null; // New
@@ -814,7 +814,7 @@ export interface UiUpdater {
   clearEmbeddedChatLog: () => void;
   appendToGroupChatLog: (text: string, senderNameFromArg: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => HTMLElement | null;
   updateGroupChatHeader: (groupName: string, members: Connector[]) => void; // Assuming Connector type for members
-  setGroupTypingIndicatorText: (text: string) => void;
+
   clearGroupChatInput: () => void;
   clearGroupChatLog: () => void;
   populateRecapModal: (recapData: RecapData) => void; // Use RecapData type
@@ -823,7 +823,7 @@ export interface UiUpdater {
   updateSendPhotoButtonVisibility: (connector: Connector, buttonElement: HTMLElement | null) => void;
   showProcessingSpinner: (logElement: HTMLElement, messageId?: string | null) => HTMLElement | null;
   removeProcessingSpinner: (logElement: HTMLElement, messageId?: string | null) => void;
-  appendSystemMessage: (logElement: HTMLElement, text: string, isError?: boolean) => HTMLElement | null;
+  appendSystemMessage: (logElement: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean) => HTMLElement | null;
   // Add scroll functions if they need to be part of the public API of uiUpdater
   scrollEmbeddedChatToBottom?: () => void;
   scrollMessageModalToBottom?: () => void;
@@ -867,7 +867,7 @@ export interface ChatMessageOptions {
 }
 export interface ActivityManager {
   isConnectorActive: (connector: Connector | null | undefined) => boolean;
-  simulateAiTyping: (connectorId: string, chatType?: string, aiMessageText?: string) => void;
+  simulateAiTyping: (connectorId: string, chatType?: string, aiMessageText?: string) => HTMLElement | null | void;
   clearAiTypingIndicator: (connectorId: string, chatType?: string, thinkingMsgElement?: HTMLElement | null) => void;
   getAiReplyDelay: (connector: Connector | null | undefined, messageLength?: number) => number;
 }

@@ -548,3 +548,71 @@ body.dark-mode .custom-chat-tooltip {
   .user-wrapper:not(.is-consecutive) + .user-wrapper.is-consecutive .chat-message-ui.user {
      border-top-right-radius: 4px;
   }
+  /* =========================================================
+   Group Chat Typing Indicator - Inherited Bubble Style
+   ========================================================= */
+
+/* 
+ * This is the new, moved element that holds the typing text.
+ * We will make it behave and look exactly like a connector's
+ * "is typing" bubble from your chat_bubbles.css.
+*/
+#group-chat-typing-indicator {
+    /* --- Core Bubble Shape & Position --- */
+    display: flex; /* Use flexbox for alignment */
+    align-items: center; /* Vertically center the text */
+    position: relative; /* Needed for any potential absolute child elements */
+    width: fit-content; /* Only be as wide as the text inside */
+    max-width: 85%; /* Don't let it get too wide on small screens */
+    padding: 10px 18px; /* Standard bubble padding */
+    margin: 4px 16px 8px; /* Top, Horizontal, Bottom margin */
+    border-radius: 18px; /* Standard bubble radius */
+    align-self: flex-start; /* Align to the left, like a connector message */
+
+    /* --- Inherit Colors & Fonts from CSS Variables --- */
+    /* This ensures it matches your theme and dark mode automatically */
+    color: var(--chat-typing-indicator-text, var(--text-color-muted, #6c757d));
+    background-color: var(--chat-typing-indicator-bg, var(--bg-alt-color-subtle, #f8f9fa));
+    font-style: italic;
+    font-size: 0.9em;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
+
+    /* --- Animation & Visibility --- */
+    /* We use opacity and transform for a smooth "fade-in" effect */
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none; /* Can't be clicked */
+    visibility: hidden; /* Start completely hidden */
+}
+
+/* 
+ * The JavaScript will add this class to make the indicator appear.
+*/
+#group-chat-typing-indicator.visible {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+}
+
+/* 
+ * Inherit the animated ellipsis from your other bubbles.
+ * We are re-using the exact same animation you defined.
+*/
+#group-chat-typing-indicator::after {
+    content: '.';
+    display: inline-block;
+    animation: ellipsis-animation 1.4s infinite steps(3, end);
+    position: relative;
+    left: 1px;
+    margin-left: 5px; /* Add a little space before the dots */
+}
+
+/* 
+ * Ensure the dark mode styles are also applied.
+ * This reuses the variables you already set up for dark mode.
+*/
+body.dark-mode #group-chat-typing-indicator {
+    background-color: var(--chat-typing-indicator-bg-dark, var(--bg-dark-hover, #303132));
+    color: var(--chat-typing-indicator-text-dark, var(--text-color-muted-dark, #868e96));
+}

@@ -73,10 +73,15 @@ function initializeActualGroupUiHandler(): void {
     if (!resolvedDeps) { // This check ensures resolvedDeps is not null if we proceed
         console.error("group_ui_handler.ts: CRITICAL - Core functional dependencies not ready. Halting GroupUiHandler setup.");
        window.groupUiHandler = { 
-        initialize: () => console.error("GUH not init"), displayAvailableGroups: () => console.error("GUH not init"),
-        showGroupChatView: () => console.error("GUH not init"), hideGroupChatViewAndShowList: () => console.error("GUH not init"),
-        updateGroupTypingIndicator: () => console.error("GUH not init"), clearGroupInput: () => console.error("GUH not init"),
-        appendMessageToGroupLog: () => console.error("GUH not init"), clearGroupChatLog: () => console.error("GUH not init"),
+        initialize: () => console.error("GUH not init"),
+        displayAvailableGroups: () => console.error("GUH not init"),
+        showGroupChatView: () => console.error("GUH not init"),
+        hideGroupChatViewAndShowList: () => console.error("GUH not init"),
+        // This line is the only change. It now returns null.
+        updateGroupTypingIndicator: () => console.error("GUH not init"),
+        clearGroupInput: () => console.error("GUH not init"),
+        appendMessageToGroupLog: () => console.error("GUH not init"),
+        clearGroupChatLog: () => console.error("GUH not init"),
         openGroupMembersModal: () => console.error("GUH not init (members modal)")
     } as GroupUiHandlerModule;
         document.dispatchEvent(new CustomEvent('groupUiHandlerReady'));
@@ -414,18 +419,59 @@ const hideGroupChatViewAndShowList = (): void => {
     }
     currentChatUiManager.hideGroupChatView();
 };
+// PASTE THIS NEW VERSION
+// PASTE THIS NEW VERSION
+// PASTE THIS NEW VERSION
+// =================== START: REPLACE WITH THIS BLOCK (in group_ui_handler.ts) ===================
+// =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
+// =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
+function updateGroupTypingIndicator(text: string): void {
+    const domElements = window.domElements;
+    const uiUpdater = window.uiUpdater;
+    const polyglotConnectors = window.polyglotConnectors;
 
-        function updateGroupTypingIndicator(text: string): void {
-            const indicatorElement = domElements.groupTypingIndicator as HTMLElement | null;
-            const chatLogElement = domElements.groupChatLogDiv as HTMLElement | null;
+    if (!domElements?.groupChatLogDiv || !uiUpdater || !polyglotConnectors) {
+        console.error("GUH.updateTyping: Missing critical dependencies for bubble indicator.");
+        return;
+    }
 
-            if (!indicatorElement) return;
+    const logElement = domElements.groupChatLogDiv;
 
-            const trimmedText = text ? String(text).trim() : "";
-            indicatorElement.textContent = trimmedText;
-            indicatorElement.classList.toggle('active', !!trimmedText);
-            if (chatLogElement) chatLogElement.classList.toggle('typing-indicator-active', !!trimmedText);
+    // First, find and remove any old typing bubble
+    const existingIndicator = logElement.querySelector('.is-typing-indicator-bubble');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+
+    const trimmedText = text ? String(text).trim() : "";
+
+    // If new text is provided, create a new bubble
+    if (trimmedText) {
+        const nameMatch = trimmedText.match(/^(.*?)\s+is typing/);
+        const speakerName = nameMatch ? nameMatch[1] : null;
+        let speakerId = 'unknown_speaker';
+
+        if (speakerName) {
+            const speakerConnector = polyglotConnectors.find(c => c.profileName === speakerName);
+            if (speakerConnector) speakerId = speakerConnector.id;
         }
+        
+        const newIndicatorBubble = uiUpdater.appendToGroupChatLog(
+            trimmedText,
+            speakerName || "",
+            false,
+            speakerId,
+            { isThinking: true }
+        );
+
+        // Add a class so we can find it next time
+        if (newIndicatorBubble) {
+            newIndicatorBubble.classList.add('is-typing-indicator-bubble');
+        }
+    }
+}
+// ===================  END: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts)  ===================
+// ===================  END: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts)  ===================
 
         function clearGroupInput(): void {
             if (domElements.groupChatInput) (domElements.groupChatInput as HTMLInputElement).value = '';
@@ -462,8 +508,14 @@ function appendMessageToGroupLog(text: string, senderName: string, isUser: boole
     }
 
     if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
-        console.log(`GUH.appendMessageToGroupLog: Passing to uiUpdater.appendToGroupChatLog. Text: "${text.substring(0,30)}...", Sender: ${senderName}, isUser: ${isUser}, speakerId: ${speakerId}`);
-        currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, {});
+        // FIX: Create an options object and pass the current timestamp.
+        const messageOptions: ChatMessageOptions = {
+            timestamp: Date.now(), // Pass the current time
+            speakerId: speakerId   // Pass the speakerId
+        };
+
+        console.log(`GUH.appendMessageToGroupLog: Passing to uiUpdater. Text: "${text.substring(0,30)}...", Sender: ${senderName}, speakerId: ${speakerId}`);
+        currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, messageOptions);
     } else {
         console.error("GUH.appendMessageToGroupLog: Functional uiUpdater or appendToGroupChatLog method not available at runtime.");
     }

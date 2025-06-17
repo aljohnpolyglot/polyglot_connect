@@ -32,7 +32,7 @@ function initializeActualActivityManager(): void {
     // Now, we verify if the uiUpdater that is currently on window is the FUNCTIONAL one.
     const helpersReady = !!(window.polyglotHelpers && typeof (window.polyglotHelpers as PolyglotHelpers).isConnectorCurrentlyActive === 'function');
     // CRITICAL: Check for functional uiUpdater here before proceeding
-    const functionalUiUpdaterReady = !!(window.uiUpdater && typeof (window.uiUpdater as UiUpdater).appendToEmbeddedChatLog === 'function' && typeof (window.uiUpdater as UiUpdater).setGroupTypingIndicatorText === 'function');
+    const functionalUiUpdaterReady = !!(window.uiUpdater && typeof (window.uiUpdater as UiUpdater).appendToEmbeddedChatLog === 'function');
     const connectorsReady = !!(window.polyglotConnectors && Array.isArray(window.polyglotConnectors));
 
     console.log(`ACTIVITY_MANAGER_DEBUG (inside initializeActual):`);
@@ -65,20 +65,19 @@ function initializeActualActivityManager(): void {
         const personaTypingTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
 
         // Helper to get a confirmed functional UiUpdater or null
-        const getFunctionalUiUpdater = (): UiUpdater | null => {
-            const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
-            if (currentUiUpdater &&
-                typeof currentUiUpdater.appendToEmbeddedChatLog === 'function' &&
-                typeof currentUiUpdater.appendToMessageLogModal === 'function' &&
-                typeof currentUiUpdater.setGroupTypingIndicatorText === 'function' &&
-                typeof currentUiUpdater.appendToVoiceChatLog === 'function'
-            ) {
-                return currentUiUpdater;
-            }
-            console.warn("ActivityManager: Functional UiUpdater not available at runtime.");
-            return null;
-        };
-
+     // REPLACE WITH THIS
+const getFunctionalUiUpdater = (): UiUpdater | null => {
+    const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+    if (currentUiUpdater &&
+        typeof currentUiUpdater.appendToEmbeddedChatLog === 'function' &&
+        typeof currentUiUpdater.appendToMessageLogModal === 'function' &&
+        typeof currentUiUpdater.appendToVoiceChatLog === 'function'
+    ) {
+        return currentUiUpdater;
+    }
+    console.warn("ActivityManager: Functional UiUpdater not available at runtime.");
+    return null;
+};
         function isConnectorActive(connector: Connector | null | undefined): boolean {
             if (!polyglotHelpers.isConnectorCurrentlyActive) {
                 console.warn("ActivityManager: polyglotHelpers.isConnectorCurrentlyActive function is missing.");
@@ -90,67 +89,74 @@ function initializeActualActivityManager(): void {
             return polyglotHelpers.isConnectorCurrentlyActive(connector);
         }
 
-        function simulateAiTyping(connectorId: string, chatType: string = 'embedded', aiMessageText: string = ""): void {
-            const currentUiUpdater = getFunctionalUiUpdater();
-            if (!currentUiUpdater) return; // Exit if functional UI updater isn't ready
-
-            const timeoutKey = `${connectorId}_${chatType}`;
-            if (personaTypingTimeouts[timeoutKey]) {
-                clearTimeout(personaTypingTimeouts[timeoutKey]);
-            }
-
-            const connector = polyglotConnectors.find(c => c.id === connectorId);
-            if (!connector) {
-                console.warn(`ActivityManager.simulateAiTyping: Connector '${connectorId}' not found.`);
-                return;
-            }
-
-            const displayName = connector.profileName?.split(' ')[0] || connector.name || "Partner";
-            const typingText = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
-            let thinkingMsgElement: HTMLElement | null | void = null;
-
-            if (chatType === 'embedded') {
-                thinkingMsgElement = currentUiUpdater.appendToEmbeddedChatLog(typingText, 'connector-thinking');
-            } else if (chatType === 'modal_message') {
-                thinkingMsgElement = currentUiUpdater.appendToMessageLogModal(typingText, 'connector-thinking');
-            } else if (chatType === 'group') {
-                currentUiUpdater.setGroupTypingIndicatorText(typingText);
-            } else if (chatType === 'voiceChat_modal') {
-                thinkingMsgElement = currentUiUpdater.appendToVoiceChatLog(typingText, 'connector-thinking');
-            } else {
-                return;
-            }
-
-            const baseDisplayDuration = getAiReplyDelay(connector, aiMessageText.length);
-            const personalityDelay = connector.chatPersonality?.typingDelayMs || 1500;
-            const displayDuration = Math.min(baseDisplayDuration * 0.8, TYPING_INDICATOR_BASE_TIMEOUT + personalityDelay * 0.5);
-            
-            personaTypingTimeouts[timeoutKey] = setTimeout(() => {
-                clearAiTypingIndicator(connectorId, chatType, thinkingMsgElement as HTMLElement | null);
-            }, Math.max(500, displayDuration));
+       // PASTE THIS ENTIRE CORRECTED FUNCTION
+       function simulateAiTyping(connectorId: string, chatType: string = 'embedded', aiMessageText: string = ""): HTMLElement | null | void {
+        const currentUiUpdater = getFunctionalUiUpdater();
+    
+        const timeoutKey = `${connectorId}_${chatType}`;
+        if (personaTypingTimeouts[timeoutKey]) {
+            clearTimeout(personaTypingTimeouts[timeoutKey]);
         }
-
-        function clearAiTypingIndicator(
-            connectorId: string,
-            chatType: string = 'embedded',
-            thinkingMsgElement: HTMLElement | null = null
-        ): void {
-            const currentUiUpdater = getFunctionalUiUpdater(); // Not strictly needed if only removing/clearing text
-
-            const timeoutKey = `${connectorId}_${chatType}`;
-            if (personaTypingTimeouts[timeoutKey]) {
-                clearTimeout(personaTypingTimeouts[timeoutKey]);
-                delete personaTypingTimeouts[timeoutKey];
+    
+        const connector = polyglotConnectors.find(c => c.id === connectorId);
+        if (!connector) return null;
+    
+        const displayName = connector.profileName?.split(' ')[0] || connector.name || "Partner";
+        const typingText = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
+        
+        let thinkingMsgElement: HTMLElement | null | void = null;
+    
+        // --- START OF THE FIX ---
+        if (chatType === 'group') {
+            const groupUiHandler = window.groupUiHandler;
+            if (groupUiHandler?.updateGroupTypingIndicator) {
+                // Assign the returned element to thinkingMsgElement
+                thinkingMsgElement = groupUiHandler.updateGroupTypingIndicator(typingText);
             }
-
-            if (thinkingMsgElement && typeof thinkingMsgElement.remove === 'function') {
-                if (thinkingMsgElement.parentNode) {
-                    thinkingMsgElement.remove();
-                }
-            } else if (chatType === 'group' && currentUiUpdater?.setGroupTypingIndicatorText) {
-                currentUiUpdater.setGroupTypingIndicatorText('');
+        // --- END OF THE FIX ---
+    
+        } else if (chatType === 'embedded') {
+            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToEmbeddedChatLog(typingText, 'connector-thinking');
+        } else if (chatType === 'modal_message') {
+            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToMessageLogModal(typingText, 'connector-thinking');
+        } else if (chatType === 'voiceChat_modal') {
+            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToVoiceChatLog(typingText, 'connector-thinking');
+        } else {
+            return null;
+        }
+    
+        const displayDuration = getAiReplyDelay(connector, aiMessageText.length);
+        
+        personaTypingTimeouts[timeoutKey] = setTimeout(() => {
+            if (thinkingMsgElement) clearAiTypingIndicator(connectorId, chatType, thinkingMsgElement);
+        }, Math.max(500, displayDuration));
+    
+        return thinkingMsgElement;
+    }
+     // PASTE THIS ENTIRE CORRECTED FUNCTION
+     function clearAiTypingIndicator(
+        connectorId: string,
+        chatType: string = 'embedded',
+        thinkingMsgElement: HTMLElement | null = null
+    ): void {
+        // 1. Clear any scheduled timeout to prevent double-clearing
+        const timeoutKey = `${connectorId}_${chatType}`;
+        if (personaTypingTimeouts[timeoutKey]) {
+            clearTimeout(personaTypingTimeouts[timeoutKey]);
+            delete personaTypingTimeouts[timeoutKey];
+        }
+    
+        // 2. Instantly remove the element from the DOM if it was provided
+        if (thinkingMsgElement?.parentNode) {
+            thinkingMsgElement.remove();
+        } else if (chatType === 'group') {
+            // Fallback for group chat: tell the handler to clear with an empty string
+            const groupUiHandler = window.groupUiHandler;
+            if (groupUiHandler?.updateGroupTypingIndicator) {
+                groupUiHandler.updateGroupTypingIndicator(''); 
             }
         }
+    }
 
         function getAiReplyDelay(connector: Connector | null | undefined, messageLength: number = 0): number {
             if (!connector?.chatPersonality || !polyglotHelpers?.simulateTypingDelay) {
