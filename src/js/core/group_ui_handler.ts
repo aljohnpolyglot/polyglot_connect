@@ -20,7 +20,7 @@ interface GroupUiHandlerModule {
     displayAvailableGroups: (languageFilter: string | null | undefined, categoryFilter: string | null | undefined, nameSearch: string | null | undefined, joinGroupCallback: (groupOrId: string | Group) => void) => void;
     showGroupChatView: (groupData: Group, groupMembers: Connector[], groupHistory: GroupChatHistoryItem[]) => void;
     hideGroupChatViewAndShowList: () => void;
-    updateGroupTypingIndicator: (text: string) => void;
+    updateGroupTypingIndicator: (text: string) => HTMLElement | null;
     clearGroupInput: () => void;
     appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string) => void;
     clearGroupChatLog: () => void;
@@ -78,7 +78,7 @@ function initializeActualGroupUiHandler(): void {
         showGroupChatView: () => console.error("GUH not init"),
         hideGroupChatViewAndShowList: () => console.error("GUH not init"),
         // This line is the only change. It now returns null.
-        updateGroupTypingIndicator: () => console.error("GUH not init"),
+        updateGroupTypingIndicator: () => { console.error("GUH not init"); return null; },
         clearGroupInput: () => console.error("GUH not init"),
         appendMessageToGroupLog: () => console.error("GUH not init"),
         clearGroupChatLog: () => console.error("GUH not init"),
@@ -425,14 +425,14 @@ const hideGroupChatViewAndShowList = (): void => {
 // =================== START: REPLACE WITH THIS BLOCK (in group_ui_handler.ts) ===================
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
-function updateGroupTypingIndicator(text: string): void {
+function updateGroupTypingIndicator(text: string): HTMLElement | null {
     const domElements = window.domElements;
     const uiUpdater = window.uiUpdater;
     const polyglotConnectors = window.polyglotConnectors;
 
     if (!domElements?.groupChatLogDiv || !uiUpdater || !polyglotConnectors) {
         console.error("GUH.updateTyping: Missing critical dependencies for bubble indicator.");
-        return;
+        return null; // Return null on failure
     }
 
     const logElement = domElements.groupChatLogDiv;
@@ -464,11 +464,14 @@ function updateGroupTypingIndicator(text: string): void {
             { isThinking: true }
         );
 
-        // Add a class so we can find it next time
+        // Add a class so we can find it next time and return it
         if (newIndicatorBubble) {
             newIndicatorBubble.classList.add('is-typing-indicator-bubble');
+            return newIndicatorBubble; // <<< RETURN THE ELEMENT
         }
     }
+    
+    return null; // Return null if no bubble was created
 }
 // ===================  END: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts)  ===================
 // ===================  END: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts)  ===================

@@ -172,14 +172,32 @@ function initializeActualChatOrchestrator(): void {
         // (initialize, getCombinedActiveChats, handleActiveChatItemClickInternal, etc.)
         // Update them to use 'deps.dependencyName' and add types.
 
-       function initialize(): void {
-            console.log("ChatOrchestrator: Initialized.");
-            // This function is now very simple. Its only job is to exist.
-            // The actual setup that might have gone here (like adding event listeners)
-            // can be added if needed. For now, we are letting other modules
-            // initialize themselves. The orchestrator's role is to provide
-            // the methods that other modules will call.
-        }
+     
+        let co_isInitialized = false; // <<< ADD THIS LINE just before the function
+
+        function initialize(): void {
+            if (co_isInitialized) { // <<< ADD THIS LINE
+                return;               // <<< ADD THIS LINE
+            }                         // <<< ADD THIS LINE
+            co_isInitialized = true;  // <<< ADD THIS LINE
+        
+            console.log("ChatOrchestrator: Initialized and event listener attached."); // <<< REPLACE the old console.log with this one
+            
+            // The listener function officially accepts a generic 'Event'.
+            document.addEventListener('polyglot-conversation-updated', (e: Event) => {
+        
+        // Inside the function, we assert that this specific event IS a CustomEvent.
+        // This is a safe and direct way to tell TypeScript the object's true type.
+        const customEvent = e as CustomEvent; 
+
+        // Now, we can safely access .detail from our asserted 'customEvent' variable.
+        console.log("ChatOrchestrator: Received 'polyglot-conversation-updated' event. Refreshing sidebar.", customEvent.detail);
+        
+        requestAnimationFrame(() => {
+            renderCombinedActiveChatsList();
+        });
+    });
+}
 
    function getCombinedActiveChats(): CombinedChatItem[] {
     console.log("CO_DEBUG: getCombinedActiveChats - START."); // <<< DEBUG LOG
@@ -258,7 +276,23 @@ function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
     } else {
         const oneOnOne = itemData as ActiveOneOnOneChatItem;
         if (oneOnOne.connector && oneOnOne.connector.id) {
+            
+            // --- THIS IS THE FIX ---
+            // Before opening a 1v1 chat, check if we are in a group.
+            // If so, silently leave it to stop background processing.
+            const groupManager = window.groupManager;
+            if (groupManager && groupManager.getCurrentGroupData?.()) {
+                console.log("ChatOrchestrator: Leaving active group to switch to 1-on-1 chat.");
+                // The (false, false) arguments prevent redundant UI changes.
+                groupManager.leaveCurrentGroup(false, false);
+            }
+            // --- END OF FIX ---
+    
             console.log("CO: Attempting to open 1-on-1 conversation for connector:", oneOnOne.connector.id);
+
+
+
+
             console.error(`CO_DEBUG_PRE_OPEN_EMBEDDED: About to call CSH.openConversationInEmbeddedView for ID: ${oneOnOne.connector.id}.`);
             console.error(`  Current CATM Embedded ID: ${chatActiveTargetManager?.getEmbeddedChatTargetId?.()}`);
             console.error(`  Current Tab: ${tabManager?.getCurrentActiveTab?.()}`);
@@ -385,6 +419,12 @@ function handleMessagesTabActive(): void {
 
     if (window.chatOrchestrator && typeof window.chatOrchestrator.initialize === 'function') {
         console.log("chat_orchestrator.ts: SUCCESSFULLY assigned to window.chatOrchestrator (and chatManager).");
+        
+        // --- THIS IS THE FIX ---
+        // Activate the chat orchestrator's internal event listeners.
+        window.chatOrchestrator.initialize();
+        // --- END OF FIX ---
+    
     } else {
         console.error("chat_orchestrator.ts: CRITICAL ERROR - assignment FAILED or method missing.");
     }

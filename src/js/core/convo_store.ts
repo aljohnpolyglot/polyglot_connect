@@ -48,13 +48,16 @@ function initializeActualConvoStore(): void {
             getConversationById: () => { console.error("ConvoStore dummy: getConversationById called."); return null; },
             getAllConversationsAsArray: () => { console.error("ConvoStore dummy: getAllConversationsAsArray called."); return []; },
             createNewConversationRecord: () => { console.error("ConvoStore dummy: createNew called."); return null; },
-            updateConversationProperty: () => { console.error("ConvoStore dummy: updateConversationProperty called."); return null;},
+            updateConversationProperty: () => { console.error("ConvoStore dummy: updateConversationProperty called."); return null; },
             addMessageToConversationStore: () => { console.error("ConvoStore dummy: addMessage called."); return false; },
             getGeminiHistoryFromStore: () => { console.error("ConvoStore dummy: getGeminiHistory called."); return []; },
             updateGeminiHistoryInStore: () => { console.error("ConvoStore dummy: updateGeminiHistory called."); return false; },
             // --- ADD THESE TWO DUMMY FUNCTIONS ---
             getGlobalUserProfile: () => { console.error("ConvoStore dummy: getGlobalUserProfile called."); return ""; },
-            updateGlobalUserProfile: () => { console.error("ConvoStore dummy: updateGlobalUserProfile called."); }
+            updateGlobalUserProfile: () => { console.error("ConvoStore dummy: updateGlobalUserProfile called."); },
+            updateUserProfileSummary: function (groupId: string, summary: string): void {
+                throw new Error('Function not implemented.');
+            }
         };
         Object.assign(window.convoStore!, dummyMethods);
         document.dispatchEvent(new CustomEvent('convoStoreReady'));
@@ -207,23 +210,39 @@ function saveAllConversationsToStorage(): void {
             return activeConversations[connectorId];
         }
 
-        function addMessageToConversationStore(connectorId: string, messageObject: MessageInStore): boolean {
-            if (!activeConversations[connectorId]) return false;
-            if (!activeConversations[connectorId].messages) activeConversations[connectorId].messages = [];
-            // VVVVV ADD THIS LOG VVVVV
-    console.log(`CONVO_STORE_ADD_MSG for ${connectorId}: ID='${messageObject.id}', Text='${messageObject.text?.substring(0,30)}', isVoiceMemo='${messageObject.isVoiceMemo}', audioBlobDataUrl PRESENT='${!!messageObject.audioBlobDataUrl}', Type='${messageObject.type}'`);
-    if (messageObject.isVoiceMemo) {
-        console.log(`CONVO_STORE_ADD_MSG_VOICE_URL for ${connectorId}: ${messageObject.audioBlobDataUrl?.substring(0,100)}...`);
-    }
-    // ^^^^^ ADD THIS LOG ^^^^^
-            // DEBUG LOG (as per your request)
-            console.log("CS_DEBUG addMessageToStore: messageObject being pushed:", JSON.parse(JSON.stringify(messageObject)));
+      // D:\polyglot_connect\src\js\core\convo_store.ts
 
-            activeConversations[connectorId].messages.push(messageObject);
-            activeConversations[connectorId].lastActivity = messageObject.timestamp || Date.now();
-            // Save handled by higher-level functions
-            return true;
-        }
+      function addMessageToConversationStore(connectorId: string, messageObject: MessageInStore): boolean {
+        if (!activeConversations[connectorId]) return false;
+        if (!activeConversations[connectorId].messages) activeConversations[connectorId].messages = [];
+        // VVVVV ADD THIS LOG VVVVV
+console.log(`CONVO_STORE_ADD_MSG for ${connectorId}: ID='${messageObject.id}', Text='${messageObject.text?.substring(0,30)}', isVoiceMemo='${messageObject.isVoiceMemo}', audioBlobDataUrl PRESENT='${!!messageObject.audioBlobDataUrl}', Type='${messageObject.type}'`);
+if (messageObject.isVoiceMemo) {
+    console.log(`CONVO_STORE_ADD_MSG_VOICE_URL for ${connectorId}: ${messageObject.audioBlobDataUrl?.substring(0,100)}...`);
+}
+// ^^^^^ ADD THIS LOG ^^^^^
+        // DEBUG LOG (as per your request)
+        console.log("CS_DEBUG addMessageToStore: messageObject being pushed:", JSON.parse(JSON.stringify(messageObject)));
+
+        activeConversations[connectorId].messages.push(messageObject);
+        activeConversations[connectorId].lastActivity = messageObject.timestamp || Date.now();
+        
+        // <<< START: THIS IS THE FIX >>>
+        // 1. Immediately save the entire state to localStorage. This prevents race conditions.
+        saveAllConversationsToStorage();
+
+        // 2. Dispatch a specific event to notify the UI to refresh the chat list.
+        document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
+            detail: {
+                type: 'one-on-one',
+                id: connectorId
+            }
+        }));
+        console.log(`ConvoStore: Dispatched 'polyglot-conversation-updated' for 1-on-1 chat: ${connectorId}`);
+        // <<< END: THIS IS THE FIX >>>
+        
+        return true;
+    }
 
         function getGeminiHistoryFromStore(connectorId: string): GeminiChatItem[] {
             const convo = activeConversations[connectorId];
@@ -253,9 +272,16 @@ function saveAllConversationsToStorage(): void {
                 console.error(`[CONVO_STORE] FAILED to save global user profile to localStorage.`, e);
             }
         }
-    
-
-
+        function updateUserProfileSummary(connectorId: string, summary: string): void {
+            if (activeConversations[connectorId]) {
+                activeConversations[connectorId].userProfileSummary = summary;
+                console.log(`[CONVO_STORE] Updated user profile summary for conversation: ${connectorId}`);
+                // Note: We don't save to storage here. The calling function is responsible
+                // for triggering a save after making all necessary updates.
+            } else {
+                console.warn(`[CONVO_STORE] updateUserProfileSummary: No conversation found for ID: ${connectorId}`);
+            }
+        }
         // Call initializeStore when the IIFE runs
         initializeStore();
 
@@ -270,7 +296,8 @@ function saveAllConversationsToStorage(): void {
             getGeminiHistoryFromStore,
             updateGeminiHistoryInStore,
             getGlobalUserProfile,
-            updateGlobalUserProfile
+            updateGlobalUserProfile,
+            updateUserProfileSummary
         };
     })();
 

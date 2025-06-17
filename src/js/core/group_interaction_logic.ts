@@ -128,10 +128,7 @@ async function generateOneOnOneWelcome(group: Group, tutor: Connector): Promise<
     }
 }
 
-    // --- SPECIALIZED RULE BUILDERS (Your New Idea) ---
-
-// =================== START: ADD THIS ENTIRE NEW FUNCTION ===================
-
+ 
 /**
  * Uses a dedicated AI call to analyze a user's message and extract key profile facts.
  * @param userMessage The text message from the user.
@@ -199,7 +196,6 @@ NO_CHANGE
 }
 
 
-
     function buildLanguageLearningRules(groupMembers: Connector[], group: Group): string {
         const targetLanguage = group.language || 'the target language';
         const getPersonaSpecificRules = (member: Connector): string => {
@@ -234,12 +230,15 @@ NO_CHANGE
         const hangoutTopic = group.tags?.join(', ') || 'your shared interests';
         const moderator = groupMembers.find(m => m.id === group.tutorId);
          const substanceMandate = `
-       SUBSTANCE MANDATE (NO "ALL BUN, NO MEAT"): Your dialogue MUST be grounded in plausible real-world knowledge. When discussing topics like culture, politics, or social issues, reference specific, real-world examples, names, events, companies, social issues, places, songs, celebrities, pop culture references, or policies from your training data. Avoid generic, empty statements.
-HAVE STRONG OPINIONS: Characters should have distinct viewpoints based on their persona and be willing to engage in friendly (or even heated) debate.
-CREATE REAL DEBATE: Challenge each other's points with counter-arguments, clarifying questions, and real-world examples.`;
+       ### Core Mandates for All Members:
+- **SUBSTANCE MANDATE (NO "ALL AGREE"):** Your dialogue MUST be grounded in plausible real-world knowledge. When discussing topics like culture, politics, or community projects, reference specific, real-world examples, names, events, companies, social issues, places, artworks, films, or policies from your training data. Avoid generic, empty statements.
+- **HAVE STRONG, DIVERSE OPINIONS:** Characters should have distinct, sometimes conflicting, viewpoints based on their persona. One can be an idealist, another a pragmatist, another a cynic. They should be willing to engage in friendly (or even heated) debate.
+- **CREATE REAL DEBATE:** Challenge each other's points with counter-arguments, clarifying questions ("How would we fund that?"), and real-world examples ("That sounds like the initiative in Lyon, but they had issues with...").
+- **LIMITED KNOWLEDGE & CURIOSITY:** If a topic is outside your persona's expertise, express that! Say "I'm not familiar with that, what is it?" or "Oh, you work at the university? What's your department?". This creates natural conversation threads.`;
+
 const moderatorRules = moderator ? `\n### Persona Directives for ${moderator.profileName} (Moderator):\n- **Core Role:** You are the hangout's moderator. Keep the conversation flowing and ensure everyone gets a chance to speak.\n- **Behavior:** If a debate gets too heated, gently steer it to a new angle. If the chat goes silent, bring up a new, thought-provoking question related to ${hangoutTopic}.` : '';
   
-const memberRules = groupMembers.filter(m => m.id !== group.tutorId).map(member => `\n### Persona Directives for ${member.profileName} (Member):\n- **Core Role:** Chat with friends about ${hangoutTopic}.\n- **Behavior:** Share opinions, ask questions, and use slang/emojis that fit your persona. Don't be afraid to disagree.`).join('');
+const memberRules = groupMembers.filter(m => m.id !== group.tutorId).map(member => `\n### Persona Directives for ${member.profileName} (Member):\n- **Core Role:** Chat with friends about ${hangoutTopic}.\n- **Behavior:** Share opinions, ask questions, and use slang/emojis that fit your persona. Don't just agree; if you have a different take, share it.`).join('');
 
 return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a lively, authentic, and substantive online discussion.\n${substanceMandate}\n${moderatorRules}${memberRules}`;
    
@@ -250,10 +249,13 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
         const sportsTopic = group.tags?.join(', ') || 'our team';
         return `# SECTION 2: SPECIALIZED RULES - SPORTS CLUB (Topic: ${sportsTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a passionate, knowledgeable, and lively chat for sports fans.
         
-        - **BE SPECIFIC:** Reference real-world events (players, matches, transfers, standings, famous seasons) from your training data.
-- **HAVE STRONG OPINIONS:** Characters must have biased, fan-like opinions and defend them. A Real Madrid fan should sound like one.
-- **CREATE REAL DEBATE:** Challenge each other's points with counter-examples and "what about..." questions.
-- **NO EMPTY PHRASES:** Do not use generic filler like "Passion is key" or randomly shout "GOOOL!". Every message should add to the debate.`;
+- **BE SPECIFIC & KNOWLEDGEABLE:** Reference real-world players, matches, transfers, tactics, managers, and famous seasons from your training data. Sound like you actually watch the games.
+- **HAVE STRONG, BIASED OPINIONS:** This is critical. Characters MUST have fan-like biases and allegiances. A Real Madrid fan should praise their own players and be skeptical of Barcelona's. An Atlético fan should value defense and grit.
+- **CREATE REAL DEBATE & BANTER:** Challenge each other's points with counter-examples, "what about..." questions, and friendly teasing (banter). It's a fan chat, not a press conference.
+- **ACKNOWLEDGE RIVALS:** If a user or another character mentions a rival team, react to it! Don't ignore it. A little trash talk is realistic.
+- **NO EMPTY PHRASES:** Do not use generic filler like "Passion is key." Every message should add a specific point to the debate.
+
+`;
         
         
         
@@ -290,13 +292,38 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
         **RULE 0.2: THE SPEAKER SELECTION LOGIC:**
             - **CRITICAL SUB-RULE (HIGHEST PRIORITY): Handle Direct Questions.** If the last message was a direct question to a specific persona by name (e.g., "Anja, what do you think?"), that persona **MUST** be the next speaker and **MUST** answer the question directly. Do not have another persona interrupt.
             - **General Flow:** If no specific persona was addressed, you may then apply your general logic to intelligently decide which persona should speak next.
-        **RULE 0.3: THE PERSONA INTEGRITY MANDATE:** You MUST perfectly embody the specified persona.
+       
+       
+       **RULE 0.3: HUMAN DIALOGUE STYLE:**
+- **Short Messages:** Keep messages concise, like real chat messages.
+- **Multiple Bubbles:** It's okay for the same person to send 2-3 short messages in a row to simulate thinking out loud (e.g., "[Matthieu]: I agree with that.\n[Matthieu]: But the cost is a real issue.").
+- **Lurkers are okay:** Not everyone needs to speak in every exchange. A natural conversation involves 2-4 active people while others stay silent.
+- **Use Emojis & Slang:** Use emojis, slang (lol, ikr), and typos where appropriate for the persona.
+
+
+
+
         **RULE 0.4: THE FINAL OUTPUT VALIDATION:** Before you output, validate it against RULE 0.1.
-        RULE 0.5: THE REALITY GROUNDING MANDATE: You MUST ground all specific statements in plausible reality based on your training data. DO NOT invent fictional people, places, statistics, social issues, or events. Your dialogue should feel like it's coming from people who live in the real world. Opinions are encouraged, but they must be about real things.
+
+
+        RULE 0.5: THE REALITY GROUNDING MANDATE: You MUST ground all specific statements in plausible reality based on your training data. DO NOT invent fictional people, places, statistics, social issues, artworks, films, books, or events. Your dialogue should feel like it's coming from people who live in the real world. Opinions are encouraged, but they must be about real things.
 --- BAD EXAMPLE (Fictional Invention): ---
 [Santi]: That reminds me of the fictional player, Ricardo "El Fantasma" Vargas, who played for the made-up team Real Cóndores CF.
 --- GOOD EXAMPLE (Grounded in Reality): ---
-[Santi]: That reminds me of how Guti used to play for Real Madrid. So much creativity, but sometimes inconsistent.`;
+[Santi]: That reminds me of how Guti used to play for Real Madrid. So much creativity, but sometimes inconsistent.
+
+**RULE 0.5: THE LIMITED KNOWLEDGE MANDATE (CRITICAL):**
+- **You are NOT an encyclopedia.** Each persona has specific interests and a defined knowledge base. They should NOT know everything about every topic.
+- **It is REQUIRED for a persona to show their knowledge limits.** This is how you create curiosity and natural questions.
+- **Examples of good behavior:**
+    - "I'm not really familiar with that author, what makes them so special?"
+    - "That's a bit out of my field, but it sounds interesting."
+    - "Oh, you work at the university? What's that like? I've always wondered."
+    - "I've never heard of that recycling method. How does it work?"
+
+
+
+`;
         
         
         
@@ -346,7 +373,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
     
     // <<< FIX: Get the history length ONCE before the loop begins.
     const historyLengthBeforeBatch = groupDataManager.getLoadedChatHistory().length;
-
+    groupDataManager.saveCurrentGroupChatHistory(false); // <<< ADD THIS LINE
     for (const [index, line] of lines.entries()) {
         if (cancellationToken.isCancelled) {
             break;
@@ -376,8 +403,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
 
         // First, add the message to the internal history for all cases.
         const historyItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
-        groupDataManager.addMessageToCurrentGroupHistory(historyItem);
-        lastMessageTimestamp = Date.now();
+        lastMessageTimestamp = historyItem.timestamp;
         
         const isFirstMessageEver = historyLengthBeforeBatch === 0 && index === 0;
         const isFirstMessageOfBatch = index === 0;
@@ -386,6 +412,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             // PATH 1: INSTANT
             // This runs ONLY for the very first message in an empty chat. No delay.
             groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
             console.log(`%c[ScenePlayer] First message ever appended instantly.`, 'color: #28a745');
         
         } else if (isFirstMessageOfBatch) {
@@ -393,7 +420,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             // This runs for the first message of any OTHER batch. Short "typing" delay only.
             const wordCount = responseText.split(' ').length;
             const typingDurationMs = Math.min(800 + (wordCount * 120), 2500);
-        
+            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
             console.log(`%c    ...first message of batch, fast delay of ${(typingDurationMs / 1000).toFixed(1)}s.`, 'color: #6c757d; font-style: italic;');
             
             if (typingDurationMs > 0) {
@@ -452,12 +479,15 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
 
             activityManager.clearAiTypingIndicator(speaker.id, 'group');
             groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
             console.log(`%c[ScenePlayer] ${index + 1}/${lines.length}: Message appended.`, 'color: #28a745');
         }
     }
-
     isRenderingScene = false;
     currentSceneCancellationToken = null;
+    
+   
+    
     const batchDuration = (Date.now() - batchStartTime) / 1000;
     console.log(`%c[ScenePlayer] BATCH FINISHED. Rendered ${lines.length} messages in ${batchDuration.toFixed(1)} seconds.`, 'color: #8a2be2; font-weight: bold;');
 }
@@ -487,6 +517,11 @@ async function generateAiTextResponse(
 
     let systemPrompt = '';
     let instructionText = '';
+
+
+
+
+
     const MAX_RECENT_HISTORY = 8; // <<< Let's set a much smaller limit
 
     const groupHistory = groupDataManager.getLoadedChatHistory();
@@ -560,25 +595,74 @@ if (isGrandOpening) {
         `;
     }
 } else if (isReEngagement) {
-    console.log("GIL: Building a natural CONTINUATION prompt for a RE-ENGAGEMENT scene.");
-    instructionText = `
-The user has just re-joined this chat. Do NOT welcome them back. Instead, create a natural continuation of the last message in the conversation history to make the world feel persistent.
---- SCENE REQUIREMENTS ---
-1.  **Originality is Key:** The new scene MUST introduce a new angle, question, or slightly different topic related to the last message. DO NOT simply have a character repeat a point they or someone else has already made in the recent history.
-2.  **New Speaker:** A new persona (different from the last speaker in the history) MUST be the first to speak.
-3.  **Interaction, Not Just Statements:** The scene should show interaction. Have a character ask a question, and have another character answer it or offer a different opinion. Avoid having one person just make a statement.
-4.  **No Consecutive Messages:** For this re-engagement scene, DO NOT have the same character speak two times in a row.
-5.  **Total Length:** Generate between 2 to 5 messages.
+    // --- NEW TIME-AWARE RE-ENGAGEMENT LOGIC ---
+    const history = groupDataManager.getLoadedChatHistory();
+    const lastMessage = history.length > 0 ? history[history.length - 1] : null;
+    let timeSinceLastMessageMs = Infinity;
 
---- GOOD EXAMPLE ---
-Last message in history was "[Lorenzo]: Passion is great, but it doesn't always win you the Scudetto."
-YOUR RESPONSE:
-[Fabio]: Maybe not, Lorenzo, but it's what makes the game beautiful to watch! I'd rather see a passionate loss than a boring 1-0 win.
+    if (lastMessage?.timestamp) {
+        timeSinceLastMessageMs = Date.now() - lastMessage.timestamp;
+    }
 
---- BAD EXAMPLE (Acknowledges the user's return) ---
-[Fabio]: Hey, welcome back! We were just talking about football.
-`;
-        }
+    const oneHour = 60 * 60 * 1000;
+    const twelveHours = 12 * oneHour;
+
+    console.log(`%c[Re-engagement] Time since last message: ${(timeSinceLastMessageMs / 1000 / 60).toFixed(1)} minutes.`, 'color: #17a2b8;');
+
+    if (timeSinceLastMessageMs < oneHour) {
+        // --- STRATEGY 1: IMMEDIATE CONTINUATION (Short Break) ---
+        console.log(`[Re-engagement] Verdict: Short break. Generating a natural continuation.`);
+        instructionText = `
+        The user has just returned to the chat after a short break. The last topic is still fresh.
+        Your task is to create a natural, seamless continuation of the conversation.
+        --- SCENE REQUIREMENTS ---
+        1.  **DO NOT Greet Them:** It would be weird. Just continue the flow.
+        2.  **New Speaker:** A persona who did NOT speak last must be the first to talk.
+        3.  **Introduce a New Angle:** The new scene MUST introduce a new question, a dissenting opinion, or a related example. DO NOT simply agree with or rephrase the last message. This is critical for moving the conversation forward.
+        4.  **Interaction:** The scene should involve 2-4 messages, showing a back-and-forth between members.
+        --- GOOD EXAMPLE ---
+        Last message was "[Lorenzo]: Passion is great, but it doesn't always win you the Scudetto."
+        YOUR RESPONSE:
+        [Fabio]: Maybe not, Lorenzo, but it's what makes the game beautiful to watch! I'd rather see a passionate loss than a boring 1-0 win.
+        [Chiara]: I'm with Fabio on this one. The emotion is everything!
+        `;
+
+    } else if (timeSinceLastMessageMs < twelveHours) {
+        // --- STRATEGY 2: RELATED NEW TOPIC (Medium Break) ---
+        console.log(`[Re-engagement] Verdict: Medium break. Starting a related new topic.`);
+        instructionText = `
+        The user has returned to the chat after several hours. The previous conversation has gone cold.
+        Your task is to start a NEW, but RELATED, conversation thread. It should feel like someone saw the old messages and it sparked a completely new thought.
+        --- SCENE REQUIREMENTS ---
+        1.  **Reference the Past (Subtly):** One persona should start a new topic that is clearly inspired by the previous one.
+        2.  **No Direct Continuation:** DO NOT just continue the last sentence. The old topic is finished.
+        3.  **Generate 2-5 messages** showing a new mini-conversation starting.
+        --- GOOD EXAMPLE ---
+        Last message in history was "[Marco]: The wine from that region of Tuscany is unbeatable."
+        YOUR RESPONSE:
+        [Olivia]: Hey everyone. Seeing all that talk about Tuscany earlier has me dreaming of a vacation. Has anyone ever been to Florence? I'm trying to plan a trip.
+        [Giorgio]: Oh, Florence is amazing, Olivia! You absolutely must visit the Uffizi Gallery, but book your tickets way in advance.
+        `;
+
+    } else {
+        // --- STRATEGY 3: FRESH START (Long Break) ---
+        console.log(`[Re-engagement] Verdict: Long break. Generating a completely fresh start.`);
+        instructionText = `
+        The chat has been silent for a long time (over 12 hours). The previous conversation is completely stale and irrelevant.
+        Your task is to start a brand new, fresh conversation, as if it's a new day.
+        --- SCENE REQUIREMENTS ---
+        1.  **Fresh Greeting:** One persona should start with a time-appropriate greeting (e.g., "Good morning!", "Hey everyone, what's new?").
+        2.  **New Topic:** The topic MUST be new, but still relevant to the group's overall theme (e.g., sports, French culture, community projects).
+        3.  **DO NOT mention the user's return or the old conversation.**
+        4.  **Generate 2-5 messages** to kick off the new chat.
+        --- GOOD EXAMPLE (For a La Liga Sports Fan Club) ---
+        YOUR RESPONSE:
+        [Santi]: ¡Buenos días, cracks! Anyone see the transfer rumors about Barça this morning?
+        [Isa]: Morning! I saw something, but I don't believe it. They have no money! 😂
+        [Javi M.]: Exactly. It's just media noise.
+        `;
+    }
+}
 
     
     } else {
@@ -612,12 +696,14 @@ Your task is to gently "prod" or "nudge" them for a response without being pushy
 The user has been silent. Generate a realistic "Conversation Block" (3-15 messages) to continue the chat based on the last topic.
 
 --- CRITICAL RULES ---
-**DO NOT repeat the last message from the history.**
-- MUST BE AN ORIGINAL CONTINUATION: Your response MUST NOT be a rephrasing or a repeat of any idea, question, or theme already present in the recent conversation history. The goal is to move the conversation forward with a new thought, question, or angle.
-- A **different persona** (NOT the one who spoke last) MUST be the first to speak in your new block.
-- It should feel like a real, messy group chat. Include agreements, disagreements, short reactions ("lol", "ikr?", "🤔"), and even consecutive messages from one person.
-- Involve at least 2-3 different speakers.
-- Do NOT mention the user's silence.
+- MUST BE AN ORIGINAL CONTINUATION:
+--- SCENE REQUIREMENTS ---
+1.  **CONTINUE THE THREAD:** The new block MUST be a natural continuation of the last topic in the history. Your response MUST NOT be a rephrasing or a repeat of any idea, question, or theme already present in the recent conversation history. The goal is to move the conversation forward with a new thought, question, or angle.
+2.  **NEW ANGLE:** Introduce a new question, a dissenting opinion, or a related real-world example.
+3.  **NEW SPEAKER:** A **different persona** (NOT the one who spoke last in the history) MUST be the first to speak.
+4.  **INTERACTION:** Involve at least 2 different speakers to create a back-and-forth. It should feel like a real, messy group chat.
+5.  **DO NOT MENTION THE USER'S SILENCE.**
+-ABSOLUTE CRITICAL: Do not use the EXACT PHRASES IN THE EXAMPLES BELOW. Use your own words.
 
 --- GOOD EXAMPLE ---
 Last message was "[Chiara]: I think Juventus will still be the team to beat."
@@ -646,6 +732,15 @@ YOUR RESPONSE:
 --- BAD EXAMPLE (Repeats the last message) ---
 [Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
 [Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
+
+--- GOOD EXAMPLE (History ends with "Community gardens are a good idea") ---
+[Matthieu]: A good idea, maybe, but where? I work for the city planning office, and finding available plots in Paris is a nightmare. The paperwork alone...
+[Camille]: That's the cynical view, Matthieu! What if we partner with a university? They often have land. Léa, didn't you say you were studying there?
+
+--- BAD EXAMPLE (Just agreeing) ---
+[Élodie]: Yes, community gardens are great for the environment.
+
+
 
 `;}
 } else { // Responding directly to the user
@@ -1070,20 +1165,36 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
 
         if (isGrandOpening) {
             console.log(`%c[Engine] Orchestrating Grand Opening... Member count: ${members.length}`, 'color: #fd7e14; font-weight: bold;');
+            
+            let combinedOpeningScene: string[] = [];
+        
             if (members.length <= 1) {
+                // --- 1-on-1 Grand Opening ---
                 console.log(`[Engine] Taking 1-on-1 chat path.`);
                 const oneOnOneWelcome = await generateOneOnOneWelcome(currentGroup, tutor);
-                if (oneOnOneWelcome) await playScene(oneOnOneWelcome, true);
+                if (oneOnOneWelcome) {
+                    combinedOpeningScene.push(...oneOnOneWelcome);
+                }
             } else {
+                // --- Multi-Member Grand Opening ---
                 console.log(`[Engine] Taking multi-member group path.`);
                 const tutorWelcomeLine = await generateTutorWelcome(currentGroup, tutor);
-                if (tutorWelcomeLine) await playScene(tutorWelcomeLine, true);
+                if (tutorWelcomeLine) {
+                    combinedOpeningScene.push(...tutorWelcomeLine);
+                }
                 
-                await new Promise(resolve => setTimeout(resolve, 1500)); 
-
+                // Generate the members' intros, but don't play them yet.
                 const otherMembersScene = await generateAiTextResponse(false, true, false);
-                if (otherMembersScene?.length > 0) await playScene(otherMembersScene, true);
+                if (otherMembersScene?.length > 0) {
+                    combinedOpeningScene.push(...otherMembersScene);
+                }
             }
+            
+            // --- Play the entire combined scene at once ---
+            if (combinedOpeningScene.length > 0) {
+                await playScene(combinedOpeningScene, true); // The 'true' flag ensures the special intro timing.
+            }
+        
         } else {
             console.log(`%c[Engine] Generating standard ongoing conversation block...`, 'color: #007bff;');
             if (!isFirstRunAfterJoin) hasProddedSinceUserSpoke = true;
@@ -1146,13 +1257,23 @@ const groupInteractionLogic = {
     stopConversationFlow: (): void => {
         console.log("GIL (Hybrid): Conversation flow STOPPED.");
         conversationFlowActive = false;
+        
+        // Clear any scheduled "engine loop" (the timer for the AI to speak on its own)
         if (conversationLoopId) {
             clearTimeout(conversationLoopId);
             conversationLoopId = null;
         }
+    
+        // --- THIS IS THE CRITICAL FIX ---
+        // If a scene is currently rendering (i.e., looping through messages with timeouts),
+        // set its cancellation flag to true. This will cause the loop in `playScene` to break.
         if (currentSceneCancellationToken) {
             currentSceneCancellationToken.isCancelled = true;
-            currentSceneCancellationToken = null;
+            currentSceneCancellationToken = null; // Clear the token
+            
+            // Also, immediately save any history that was rendered *before* the cancellation.
+            getDeps().groupDataManager.saveCurrentGroupChatHistory(true);
+            console.log("GIL (stopConversationFlow): Cancelled active scene and saved partial history.");
         }
     },
 
@@ -1187,24 +1308,40 @@ const groupInteractionLogic = {
             currentSceneCancellationToken.isCancelled = true;
             currentSceneCancellationToken = null;
         }
-
+        if (wasSceneCancelled) {
+            groupDataManager.saveCurrentGroupChatHistory(true);
+            console.log("GIL: Saved partial scene history due to user interruption.");
+        }
         if (conversationLoopId) {
             clearTimeout(conversationLoopId);
             conversationLoopId = null;
             console.log("GIL: Cleared scheduled conversation engine loop due to user activity.");
         }
 
-        if (wasSceneCancelled) {
-            groupDataManager.saveCurrentGroupChatHistory(true);
-            console.log("GIL: Saved partial scene history due to user interruption.");
-        }
+      
 
         lastMessageTimestamp = Date.now();
         hasProddedSinceUserSpoke = false;
         if (!conversationFlowActive) return;
 
         const userMessageText = text?.trim() || "";
+  // --- NEW: MEMORY EXTRACTION STEP ---
+  if (userMessageText) {
+    const convoStore = window.convoStore;
+    if (convoStore) {
+        const currentGroup = groupDataManager.getCurrentGroupData();
+        if (currentGroup) {
+            const groupConvoRecord = convoStore.getConversationById(currentGroup.id);
+            const currentSummary = groupConvoRecord?.userProfileSummary || "";
+            const updatedSummary = await extractAndUpdateUserSummary(userMessageText, currentSummary);
 
+            if (updatedSummary !== currentSummary) {
+                convoStore.updateUserProfileSummary(currentGroup.id, updatedSummary);
+                console.log("GIL: User profile summary was updated.");
+            }
+        }
+    }
+}
         // --- NEW: MEMORY EXTRACTION STEP ---
       const convoStore = window.convoStore;
     const userSummary = convoStore?.getGlobalUserProfile();

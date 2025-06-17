@@ -90,7 +90,7 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
         }
 
        // PASTE THIS ENTIRE CORRECTED FUNCTION
-       function simulateAiTyping(connectorId: string, chatType: string = 'embedded', aiMessageText: string = ""): HTMLElement | null | void {
+       function simulateAiTyping(connectorId: string, chatType: string = 'embedded', aiMessageText: string = ""): HTMLElement | null {
         const currentUiUpdater = getFunctionalUiUpdater();
     
         const timeoutKey = `${connectorId}_${chatType}`;
@@ -104,17 +104,15 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
         const displayName = connector.profileName?.split(' ')[0] || connector.name || "Partner";
         const typingText = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
         
-        let thinkingMsgElement: HTMLElement | null | void = null;
+        // This variable will hold the bubble element, regardless of chat type
+        let thinkingMsgElement: HTMLElement | null = null;
     
-        // --- START OF THE FIX ---
         if (chatType === 'group') {
             const groupUiHandler = window.groupUiHandler;
             if (groupUiHandler?.updateGroupTypingIndicator) {
-                // Assign the returned element to thinkingMsgElement
+                // Now we capture the returned element
                 thinkingMsgElement = groupUiHandler.updateGroupTypingIndicator(typingText);
             }
-        // --- END OF THE FIX ---
-    
         } else if (chatType === 'embedded') {
             if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToEmbeddedChatLog(typingText, 'connector-thinking');
         } else if (chatType === 'modal_message') {
@@ -128,7 +126,10 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
         const displayDuration = getAiReplyDelay(connector, aiMessageText.length);
         
         personaTypingTimeouts[timeoutKey] = setTimeout(() => {
-            if (thinkingMsgElement) clearAiTypingIndicator(connectorId, chatType, thinkingMsgElement);
+            // This clear on timeout now works for groups as well
+            if (thinkingMsgElement) {
+                 clearAiTypingIndicator(connectorId, chatType, thinkingMsgElement);
+            }
         }, Math.max(500, displayDuration));
     
         return thinkingMsgElement;
@@ -139,22 +140,15 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
         chatType: string = 'embedded',
         thinkingMsgElement: HTMLElement | null = null
     ): void {
-        // 1. Clear any scheduled timeout to prevent double-clearing
         const timeoutKey = `${connectorId}_${chatType}`;
         if (personaTypingTimeouts[timeoutKey]) {
             clearTimeout(personaTypingTimeouts[timeoutKey]);
             delete personaTypingTimeouts[timeoutKey];
         }
     
-        // 2. Instantly remove the element from the DOM if it was provided
+        // This now works universally for all chat types, including groups
         if (thinkingMsgElement?.parentNode) {
             thinkingMsgElement.remove();
-        } else if (chatType === 'group') {
-            // Fallback for group chat: tell the handler to clear with an empty string
-            const groupUiHandler = window.groupUiHandler;
-            if (groupUiHandler?.updateGroupTypingIndicator) {
-                groupUiHandler.updateGroupTypingIndicator(''); 
-            }
         }
     }
 

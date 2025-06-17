@@ -221,12 +221,26 @@ function getAllGroupDefinitions(
     
             groupChatHistoryInternal.push(message); // Add to the IIFE's scoped variable
             console.log(`GDM: Message added to internal history for group ${currentGroupIdInternal}. New length: ${groupChatHistoryInternal.length}`);
+            
+            // <<< START OF REFINEMENT 1: LIVE UPDATE >>>
+            // Dispatch our unified event to tell the sidebar to refresh itself immediately.
+            document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
+                detail: {
+                    type: 'group',
+                    id: getCurrentGroupId()
+                }
+            }));
+            console.log(`GDM: Dispatched 'polyglot-conversation-updated' for group: ${getCurrentGroupId()}`);
+            // <<< END OF REFINEMENT 1 >>>
         }
 
     // In group_data_manager.ts
 // REPLACE THE ENTIRE saveCurrentGroupChatHistory FUNCTION
 // In src/js/core/group_data_manager.ts
 // REPLACE THE ENTIRE saveCurrentGroupChatHistory FUNCTION
+
+// D:\polyglot_connect\src\js\core\group_data_manager.ts
+
 function saveCurrentGroupChatHistory(triggerListUpdate: boolean = true): void {
     if (!polyglotHelpers || !currentGroupIdInternal || !Array.isArray(groupChatHistoryInternal)) {
         console.warn("GDM.saveCurrentGroupChatHistory: Cannot save. Missing dependencies or context.");
@@ -278,11 +292,22 @@ const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.lengt
         // This error is now expected if the history is still too large even after pruning.
     }
 
-    if (triggerListUpdate && chatOrchestrator?.renderCombinedActiveChatsList) {
-        chatOrchestrator.renderCombinedActiveChatsList();
+    // <<< START OF REFINEMENT 2: FIX THE FAULTY REFRESH >>>
+    // Instead of directly calling the renderer (which caused the race condition),
+    // we now dispatch our unified event. The chat orchestrator will catch this
+    // and handle the refresh safely.
+    if (triggerListUpdate) {
+        document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
+            detail: {
+                type: 'group',
+                id: currentGroupIdInternal,
+                source: 'saveCurrentGroupChatHistory' // Add source for easier debugging
+            }
+        }));
+        console.log(`GDM (on save): Dispatched 'polyglot-conversation-updated' for group: ${currentGroupIdInternal}`);
     }
+    // <<< END OF REFINEMENT 2 >>>
 }
-
         function setCurrentGroupContext(groupId: string | null, groupData: Group | null): void {
             // --- GDM.DEBUG.CONTEXT.1 ---
             console.log(`GDM.setCurrentGroupContext: Trying to set currentGroupIdInternal to: '${groupId}', currentGroupDataInternal name: '${groupData?.name || 'null'}'. Previous currentGroupIdInternal: '${currentGroupIdInternal}'`);

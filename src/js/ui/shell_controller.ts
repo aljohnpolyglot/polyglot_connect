@@ -207,6 +207,7 @@ function initializeActualShellController(): void {
         // and add types.
 
         function switchView(targetTab: string): void {
+            const previousTab = currentActiveTab; // <<< ADD THIS LINE
             const { domElements, listRenderer, uiUpdater, chatManager, groupManager, sessionManager, polyglotHelpers } = getDeps();
             console.log(`ShellController: switchView - START. TargetTab: '${targetTab}', CurrentActiveTab (before change): '${currentActiveTab}'`);
         
@@ -364,6 +365,16 @@ if (domElements.rightSidebarPanels && domElements.appShell) { // Added appShell 
         console.log("ShellController: switchView (home tab) - Returned from populateHomepageTips().");
         console.log("ShellController: switchView (home tab) - FINISHED actions for 'home'.");
     }
+
+    if (previousTab === 'groups' && targetTab !== 'groups') {
+        const currentGroupData = groupManager?.getCurrentGroupData?.();
+        if (currentGroupData) {
+            console.log(`ShellController: Navigated away from groups tab. Silently leaving group: ${currentGroupData.id}`);
+            // The (false, false) arguments stop UI reloads, we just want to stop the background process.
+            groupManager?.leaveCurrentGroup?.(false, false);
+        }
+    }
+
     console.log("ShellController: switchView - Calling updateEmptyListMessages().");
     updateEmptyListMessages();
     console.log(`ShellController: switchView - END for targetTab: '${targetTab}'.`);

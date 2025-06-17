@@ -381,7 +381,7 @@ function userIsTypingInGroupSignal(): void {
 
         function leaveCurrentGroup(triggerReload: boolean = true, updateSidebar: boolean = true): void {
             const { groupInteractionLogic, groupUiHandler, groupDataManager, tabManager, chatOrchestrator } = getDeps(); 
-            
+            groupInteractionLogic.stopConversationFlow?.();
             // --- GM.DEBUG.LEAVE.1 ---
             const currentGroupIdBeforeLeaving = groupDataManager?.getCurrentGroupId?.(); 
             console.error(`GM.leaveCurrentGroup: CALLED. Current Group ID (from GDM before GDM.setCurrentContext(null) is called by this func): '${currentGroupIdBeforeLeaving}'. TriggerReload: ${triggerReload}, UpdateSidebar: ${updateSidebar}. Stack:`, new Error().stack);
@@ -471,8 +471,13 @@ async function handleUserMessageInGroup(
         groupDataManager,
         groupInteractionLogic,
         polyglotHelpers,
-        uiUpdater
+        uiUpdater,
+        groupUiHandler // <<< ADD this to getDeps() if not present
     } = getDeps();
+    
+    // --- THIS IS THE FIX ---
+    // Instantly remove any "is typing" bubble when the user sends a message.
+    groupUiHandler?.updateGroupTypingIndicator('');
 
     const currentGroup = groupDataManager.getCurrentGroupData();
     const { imageFile, captionText } = options || {};

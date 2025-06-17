@@ -262,7 +262,7 @@ export interface GroupDataManager {
   isGroupJoined: (groupId: string) => boolean;
   loadGroupChatHistory: (groupId: string) => GroupChatHistoryItem[];
   getLoadedChatHistory: () => GroupChatHistoryItem[];
-  addMessageToCurrentGroupHistory: (message: GroupChatHistoryItem) => void;
+  addMessageToCurrentGroupHistory: (message: GroupChatHistoryItem, notify?: boolean) => void;
   saveCurrentGroupChatHistory: (triggerListUpdate?: boolean) => void;
   setCurrentGroupContext: (groupId: string | null, groupData: Group | null) => void;
   getCurrentGroupId: () => string | null | undefined;
@@ -285,7 +285,7 @@ export interface GroupUiHandler {
     groupHistory: GroupChatHistoryItem[]
   ) => void;
   hideGroupChatViewAndShowList: () => void;
-  updateGroupTypingIndicator: (text: string) => void;
+  updateGroupTypingIndicator: (text: string) => HTMLElement | null;
   clearGroupInput: () => void;
   appendMessageToGroupLog: (
     message: string,
@@ -477,6 +477,8 @@ export interface ConvoStoreModule { // << MAKE SURE THIS IS EXPORTED
     updateGeminiHistoryInStore: (connectorId: string, newHistoryArray: GeminiChatItem[]) => boolean;
     getGlobalUserProfile: (userId?: string) => string; // <<< ADD THIS
     updateGlobalUserProfile: (newSummary: string, userId?: string) => void; // <<< ADD THIS
+    updateUserProfileSummary(groupId: string, summary: string): void;
+    
 }
 // --- INTERFACE for DomElements (based on dom_elements.js and index.html) ---
 export interface YourDomElements { // Ensure EXPORT
@@ -839,6 +841,10 @@ export interface ShellController {
   showGroupChatInterface: (groupName: string, members: Connector[]) => void;
   hideGroupChatInterface: () => void;
 }
+export interface TitleNotifierModule {
+  initialize: () => void;
+}
+
 export interface ChatMessageOptions {
   type?: 'call_event' | string; 
   eventType?: 'call_started' | 'call_ended' | 'call_failed_user_attempt' | 'call_missed_connector' | string;
@@ -1351,6 +1357,11 @@ export interface GeminiChatServiceModule {
   ) => Promise<string | null>;
   // Add any other methods your text chat service has
 }
+interface PolyglotConversationUpdatedEventDetail {
+  type: 'one-on-one' | 'group';
+  id: string;
+  source?: string;
+}
 // --- Google GenAI SDK ---
 // Based on your index.html script
 // This is a simplified version; a proper @types/google__genai would be better if available
@@ -1431,6 +1442,7 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
     geminiMultimodalService?: any;
     geminiRecapService?: any;
    openaiCompatibleApiCaller?: OpenaiCompatibleApiCallerFn;
+   polyglotConversationUpdated: CustomEvent<PolyglotConversationUpdatedEventDetail>;
     aiTextGenerationService?: any;
     convoDataStore?: any;
     convoTurnManager?: any;
@@ -1441,6 +1453,7 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
     liveApiAudioOutput?: any;
     liveApiTextCoordinator?: any;
     tabManager?: TabManagerModule;
+    titleNotifier: TitleNotifierModule; // <<< ADD THIS LINE
     sidebarPanelManager?: SidebarPanelManagerModule;
       viewActionCoordinator?: ViewActionCoordinatorModule; // <<< ADD THIS
       geminiService?: GeminiServiceModule;
@@ -1452,5 +1465,10 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
     groupChatMicBtn: HTMLButtonElement | null;
   }
 }
+
+
+
+
+
 
 export {}; // Crucial: This makes the .d.ts file a module, allowing exports.

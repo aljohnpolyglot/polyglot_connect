@@ -48,6 +48,7 @@ const CORE_MODULES_TO_WAIT_FOR: { eventName: string, windowObjectKey: keyof Wind
     { eventName: 'tabManagerReady', windowObjectKey: 'tabManager', keyFunction: 'initialize' },
     { eventName: 'sidebarPanelManagerReady', windowObjectKey: 'sidebarPanelManager', keyFunction: 'initialize' },
     { eventName: 'viewActionCoordinatorReady', windowObjectKey: 'viewActionCoordinator', keyFunction: 'initialize' },
+    { eventName: 'titleNotifierReady', windowObjectKey: 'titleNotifier', keyFunction: 'initialize' },
     { eventName: 'chatOrchestratorReady', windowObjectKey: 'chatOrchestrator', keyFunction: 'initialize' }, 
     { eventName: 'groupManagerReady', windowObjectKey: 'groupManager', keyFunction: 'initialize' },
     { eventName: 'sessionManagerReady', windowObjectKey: 'sessionManager', keyFunction: 'initialize' },
@@ -245,6 +246,15 @@ function initializeAppLogic(): void {
         // This could be a critical failure point depending on how `chatManager` is used later.
     }
     
+    const titleNotifier = window.titleNotifier as TitleNotifierModule | undefined;
+    if (titleNotifier) {
+        titleNotifier.initialize();
+        console.log("app.ts (initializeAppLogic): Title Notifier has been initialized.");
+    }
+
+
+
+
     (window.polyglotApp as PolyglotApp).initiateSession = (connector: Connector, sessionTypeWithContext: string): void => {
         console.log(`APP_TS_DEBUG: polyglotApp.initiateSession for connector ID: ${connector?.id}, type: ${sessionTypeWithContext}`);
         
