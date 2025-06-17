@@ -82,106 +82,122 @@ async function callWithRetry<T>(
     }
     throw lastError; // Throw the last captured error after all retries fail
 }
-  (window as any).openaiCompatibleApiCaller = async function callOpenAICompatibleAPI(
-        messages: OpenAIMessage[],
-        modelIdentifier: string,
-        provider: string,
-        apiKey: string,
-        options: OpenAICallOptions = {}
-    ): Promise<string | ReadableStream | null> { // Return type based on potential stream
-        
-        // --- Input Validation ---
-        if (!provider || (provider !== PROVIDERS.GROQ && provider !== PROVIDERS.TOGETHER)) { /* ... error ... */ throw new Error(`Invalid provider: ${provider}`); }
-      const isGroq = provider === PROVIDERS.GROQ;
-if (!isGroq && (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '' || apiKey.includes('YOUR_'))) {
-    throw new Error(`Invalid API key for ${provider}`);
+  // <<< REPLACE THE ENTIRE FUNCTION ASSIGNMENT BLOCK WITH THIS >>>
+(window as any).openaiCompatibleApiCaller = async function callOpenAICompatibleAPI(
+    messages: OpenAIMessage[],
+    modelIdentifier: string,
+    provider: string,
+    apiKey: string,
+    options: OpenAICallOptions = {}
+): Promise<string | ReadableStream | null> {
+    const functionName = "[OpenAI_Compatible_Caller]";
+    console.log(`${functionName}: Called for provider [${provider}] with model [${modelIdentifier}]`); // <<< ADD THIS LINE
+  // --- 1. Input Validation ---
+if (!provider || !PROVIDERS[provider.toUpperCase() as keyof typeof PROVIDERS]) {
+    throw new Error(`${functionName}: Invalid or unsupported provider specified: '${provider}'`);
 }
-        if (!modelIdentifier || typeof modelIdentifier !== 'string' || modelIdentifier.trim() === '') { /* ... error ... */ throw new Error(`Invalid modelIdentifier for ${provider}`); }
-        if (!Array.isArray(messages) || messages.length === 0) { /* ... error ... */ throw new Error(`Messages must be a non-empty array for ${provider}`); }
-        // Add more detailed message structure validation if needed
-        // --- End Validation ---
-   
 
-        // The URL is now different for Groq vs. other providers
-        const fetchUrl = isGroq
-            ? 'https://square-bush-5dbc.mogatas-princealjohn-05082003.workers.dev/' // This is your secure bodyguard's address
-            : `https://api.together.xyz/v1/chat/completions`; // This is the direct call for Together
+// --- NEW: Conditional API Key Validation ---
+// Only validate the API key if the provider is NOT Groq, since Groq is proxied.
+if (provider !== PROVIDERS.GROQ) {
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '' || apiKey.includes('YOUR_')) {
+        throw new Error(`${functionName}: Invalid API key for provider '${provider}'`);
+    }
+}
+// --- END NEW VALIDATION ---
 
-        const requestBody: any = { // Use 'any' for flexibility with optional params
-            model: modelIdentifier,
-            messages: messages,
-            temperature: options.temperature !== undefined ? parseFloat(String(options.temperature)) : 0.7,
-            max_tokens: options.max_tokens !== undefined ? parseInt(String(options.max_tokens), 10) : 2048,
+if (!modelIdentifier || typeof modelIdentifier !== 'string' || modelIdentifier.trim() === '') {
+    throw new Error(`${functionName}: Invalid modelIdentifier for provider '${provider}'`);
+}
+if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error(`${functionName}: Messages must be a non-empty array for provider '${provider}'`);
+}
+
+    // --- 2. Determine Fetch URL and Headers based on Provider ---
+    let fetchUrl: string;
+    const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+    };
+
+    if (provider === PROVIDERS.GROQ) {
+        fetchUrl = 'https://square-bush-5dbc.mogatas-princealjohn-05082003.workers.dev/'; // Your secure bodyguard worker
+        headers['X-Target-Endpoint'] = 'chat/completions'; // Header for the bodyguard
+    } else if (provider === PROVIDERS.OPENROUTER) {
+        fetchUrl = 'https://openrouter.ai/api/v1/chat/completions';
+        headers['Authorization'] = `Bearer ${apiKey}`;
+        // Optional but recommended for OpenRouter stats
+        headers['HTTP-Referer'] = `https://your-app-url.com`;
+        headers['X-Title'] = `Polyglot Connect`;
+    } else if (provider === PROVIDERS.TOGETHER) {
+        fetchUrl = 'https://api.together.xyz/v1/chat/completions';
+        headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+        throw new Error(`${functionName}: Provider '${provider}' is recognized but has no fetch configuration.`);
+    }
+
+    // --- 3. Construct Request Body ---
+    const requestBody: any = {
+        model: modelIdentifier,
+        messages: messages,
+        temperature: options.temperature !== undefined ? parseFloat(String(options.temperature)) : 0.7,
+        max_tokens: options.max_tokens !== undefined ? parseInt(String(options.max_tokens), 10) : 2048,
+    };
+    if (options.stream) requestBody.stream = true;
+    if (options.response_format) requestBody.response_format = options.response_format;
+    if (options.top_p !== undefined) requestBody.top_p = parseFloat(String(options.top_p));
+
+    // --- 4. Execute API Call with Retry Logic ---
+    try {
+        const apiFetchFn = async () => {
+            console.log(`${functionName}: Preparing to fetch from URL: ${fetchUrl}`); // <<< ADD THIS LINE
+          
+            const response = await fetch(fetchUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                let errorResponseMessage = `Request to ${provider} API (${modelIdentifier}) failed: ${response.status} ${response.statusText}.`;
+                try {
+                    const errorData = await response.json();
+                    errorResponseMessage = errorData.error?.message || JSON.stringify(errorData);
+                } catch (e) { /* ignore JSON parsing error */ }
+                
+                const apiError = new Error(`Error from ${provider} (${modelIdentifier}): ${response.status} - ${errorResponseMessage}`) as any;
+                apiError.status = response.status;
+                apiError.provider = provider;
+                throw apiError;
+            }
+            return response;
         };
 
-        if (options.stream) requestBody.stream = true;
-        if (options.response_format) requestBody.response_format = options.response_format;
-        if (options.top_p !== undefined) requestBody.top_p = parseFloat(String(options.top_p));
-        if (options.frequency_penalty !== undefined) requestBody.frequency_penalty = parseFloat(String(options.frequency_penalty));
-        if (options.presence_penalty !== undefined) requestBody.presence_penalty = parseFloat(String(options.presence_penalty));
-        
-        try {
-            // Define the specific fetch call as a function to pass to the retry helper
-             const apiFetchFn = async () => {
-                const response = await fetch(fetchUrl, { // Use our new fetchUrl
-                    method: 'POST',
-                    headers: {
-                        // The worker adds the key for Groq. We still need it for others.
-                        'Authorization': isGroq ? '' : `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-        
-                if (!response.ok) {
-                    let errorResponseMessage = `Request to ${provider} API (${modelIdentifier}) failed: ${response.status} ${response.statusText}.`;
-                    let errorDetailsObject: any = { message: errorResponseMessage, code: String(response.status) };
-                    try {
-                        const errorData = await response.json();
-                        errorDetailsObject = errorData.error || errorData;
-                        errorResponseMessage = errorDetailsObject.message || JSON.stringify(errorDetailsObject);
-                    } catch (e) { /* ignore */ }
-                    
-                    const apiError = new Error(`Error from ${provider} (${modelIdentifier}): ${response.status} - ${errorResponseMessage}`) as any;
-                    apiError.status = response.status;
-                    apiError.providerDetails = errorDetailsObject;
-                    apiError.provider = provider; // Add provider for the retry logic
-                    throw apiError;
-                }
-                return response; // Return the successful response
-            };
-        
-            // Execute the fetch using the retry wrapper
-            const successfulResponse = await callWithRetry(apiFetchFn);
-        
-            // Process the successful response
-            if (options.stream && successfulResponse.body) {
-                return successfulResponse.body;
-            }
-        
-            const responseData = await successfulResponse.json();
-            const choice = responseData.choices?.[0];
-        
-            if (choice?.message?.content !== undefined) {
-                return choice.message.content as string;
-            } else {
-                console.error(`OpenAI Compatible Caller (TS): Invalid response structure from ${provider}. No content.`, responseData);
-                throw new Error(`Invalid response from ${provider}.`);
-            }
-        
-        } catch (error: any) {
-            const keyPreview = apiKey?.slice(-4) || 'N/A';
-            let errorLogMessage = `OpenAI Compatible Caller (TS) Error (Provider: ${provider}, Model: ${modelIdentifier}, Key ...${keyPreview}): ${error.message}`;
-            console.error(errorLogMessage, error);
-        
-            const enrichedError = new Error(error.message || "Unknown error in OpenAI compatible caller") as any;
-            enrichedError.status = error.status || 500;
-            enrichedError.providerDetails = error.providerDetails || { message: "Details unavailable from caller" };
-            enrichedError.provider = provider;
-            enrichedError.model = modelIdentifier;
-            throw enrichedError;
+        const successfulResponse = await callWithRetry(apiFetchFn);
+
+        // --- 5. Process Successful Response ---
+        if (options.stream && successfulResponse.body) {
+            return successfulResponse.body;
         }
-    };
+
+        const responseData = await successfulResponse.json();
+        const choice = responseData.choices?.[0];
+
+        if (choice?.message?.content !== undefined) {
+            return choice.message.content as string;
+        } else {
+            console.error(`${functionName}: Invalid response structure from ${provider}. No content.`, responseData);
+            throw new Error(`Invalid response from ${provider}.`);
+        }
+
+    } catch (error: any) {
+        const keyPreview = apiKey?.slice(-4) || 'N/A';
+        console.error(`${functionName} Error (Provider: ${provider}, Model: ${modelIdentifier}, Key ...${keyPreview}): ${error.message}`, error);
+        
+        // Re-throw the error so the calling service (ai_text_generation_service) knows it failed
+        // and can proceed to the next provider in its sequence.
+        throw error;
+    }
+};
  console.log("openai_compatible_api_caller.ts: Loaded and openaiCompatibleApiCaller assigned to window.");
     document.dispatchEvent(new CustomEvent('openaiCompatibleApiCallerReady'));
     console.log("openai_compatible_api_caller.ts: 'openaiCompatibleApiCallerReady' event dispatched.");

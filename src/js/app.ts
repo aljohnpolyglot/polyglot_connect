@@ -300,7 +300,15 @@ function initializeAppLogic(): void {
         console.log("APP_DEBUG: setupGlobalModalButtonListeners - dom.closeRecapBtn:", dom.closeRecapBtn);
         dom.closeRecapBtn?.addEventListener('click', () => {
             console.log("APP_DEBUG: Close Recap Button CLICKED.");
-            mh.close(dom.sessionRecapScreen);
+            
+            // --- THIS IS THE FIX ---
+            const tabManager = window.tabManager as TabManagerModule | undefined;
+            if (dom.sessionRecapScreen) {
+                mh.close(dom.sessionRecapScreen);
+            }
+            // After closing the modal, force a switch to the messages tab.
+            // This will trigger the chat view to re-render with the latest history.
+            tabManager?.switchToTab('messages');
         });
 
         console.log("APP_DEBUG: setupGlobalModalButtonListeners - dom.downloadTranscriptBtn:", dom.downloadTranscriptBtn);

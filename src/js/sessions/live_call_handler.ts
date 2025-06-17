@@ -479,17 +479,11 @@ function endLiveCall(generateRecap: boolean = true): void {
             return;
         }
 
-        if (currentConnector?.greetingCall && deps.geminiLiveApiService?.sendClientText && deps.polyglotHelpers && deps.sessionStateManager) {
-            let greetingText = currentConnector.greetingCall;
-            greetingText = deps.polyglotHelpers.stripEmojis(greetingText);
-            const greetingTurn: TranscriptTurn = { sender: 'connector-greeting-intent', text: currentConnector.greetingCall, timestamp: Date.now(), type: 'system' };
-            deps.sessionStateManager.addTurnToTranscript(greetingTurn);
-            if (greetingText.trim()) {
-                deps.geminiLiveApiService.sendClientText(greetingText);
-            }
-        }
-        console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks.`);
-    }
+         // REMOVED: Proactive greeting logic. The AI should wait for the user to speak first.
+    // This prevents the AI's own greeting from polluting the chat history and causing confusion.
+
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks.`);
+}
 
     function handleAiInterrupted(): void {
         const functionName = "handleAiInterrupted (TS)";

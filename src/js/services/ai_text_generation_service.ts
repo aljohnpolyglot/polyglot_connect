@@ -17,7 +17,8 @@ export interface AiTextGenerationServiceModule {
         connector: Connector,
         existingGeminiHistory: GeminiChatItem[],
         preferredProvider?: string,
-        expectJson?: boolean // Added to align with potential facade usage
+        expectJson?: boolean, // Added to align with potential facade usage
+        context?: 'group-chat' | 'one-on-one' // <<< ADD IT HERE        
     ) => Promise<string | null | object>; // Allow object if expectJson
 
     generateTextFromImageAndTextOpenAI?: ( // This method seems specific to OpenAI/Together
@@ -150,138 +151,160 @@ function initializeActualAiTextGenerationService(): void {
             };
         }
 
-        async function generateTextMessage(
-            userText: string,
-            connector: Connector,
-            existingGeminiHistory: GeminiChatItem[],
-            preferredProvider: string = PROVIDERS.GROQ,
-            expectJson: boolean = false
-        ): Promise<string | null | object> {
-        
-            // --- Smart History Sanitization for Text-Only Models ---
-            const sanitizedHistoryForTextModels = (existingGeminiHistory || []).map(turn => {
-                // Filter out any non-text parts (like images/audio)
-                const textParts = turn.parts
-                    .filter(part => 'text' in part && typeof part.text === 'string' && part.text.trim() !== "")
-                    .map(part => ({ text: (part as { text: string }).text }));
-                
-                // If a turn only contained an image, it will now have no parts. Return null to filter it out.
-                if (textParts.length === 0) {
-                    return null;
-                }
-                // Return the turn with only its text parts
-                return { ...turn, parts: textParts };
-            }).filter(turn => turn !== null) as GeminiChatItem[];
-            // --- End Sanitization ---
-        
-            let systemPromptForOpenAI: string | null = null;
-            if (sanitizedHistoryForTextModels.length > 0 && sanitizedHistoryForTextModels[0].role === 'user') {
-                const firstPart = sanitizedHistoryForTextModels[0].parts[0];
-                if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
-                    systemPromptForOpenAI = firstPart.text;
-                }
-            }
-            if (sanitizedHistoryForTextModels.length > 0 && sanitizedHistoryForTextModels[0].role === 'user') {
-                const firstPart = sanitizedHistoryForTextModels[0].parts[0];
-                if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
-                    systemPromptForOpenAI = firstPart.text;
-                }
-            }
-            
+      // <<< REPLACE WITH THIS ENTIRE FUNCTION >>>
+      async function generateTextMessage(
+        userText: string,
+        connector: Connector,
+        existingGeminiHistory: GeminiChatItem[],
+        preferredProvider: string = PROVIDERS.GROQ,
+        expectJson: boolean = false,
+        context: 'group-chat' | 'one-on-one' = 'one-on-one' // <<< ADD IT HERE
+    ): Promise<string | null | object> {
+    const Function = "[AI_TextGenSvc][generateTextMessage]";
+    console.log(`${Function}: START. Orchestrating API call carousel for group chat.`);
 
+    // --- NEW: JUST-IN-TIME CONSTANTS FETCH ---
+    // Fetch the LATEST version of aiConstants from the global scope right when we need it.
+    const currentAiConstants = window.aiApiConstants;
 
-                      // Check if the latest user input (which is 'userText' and its associated image parts if any) involves an image.
-            // The 'existingGeminiHistory' already contains previous turns.
-            // 'userText' is the text accompanying the LATEST user action (which could be sending an image).
-            // 'imagePartsForGemini' would be passed if the current 'userText' is associated with an image.
-            // However, generateTextMessage in its current signature in AiTextGenerationServiceModule
-            // doesn't directly receive imagePartsForGemini for the *current* userText.
-            // It relies on 'existingGeminiHistory' having the image info if the image was a *previous* turn.
-            //
-            // Let's refine: The 'userText' passed to this function, if it's related to an image
-            // the user just sent, should already be contextualized by ConversationManager
-            // (e.g., "User sent an image [Image Description: ...]" or the caption).
-            // The image data itself for that user's turn is also in existingGeminiHistory if CM added it.
+    if (!currentAiConstants || !currentAiConstants.PROVIDERS) {
+        console.error(`${Function}: CRITICAL ERROR - The latest aiConstants or its PROVIDERS object is not available. Aborting.`);
+        return getRandomHumanError();
+    }
+    
+    
+    const sanitizedHistoryForTextModels = (existingGeminiHistory || []).map(turn => {
+        const textParts = turn.parts
+            .filter(part => 'text' in part && typeof part.text === 'string' && part.text.trim() !== "")
+            .map(part => ({ text: (part as { text: string }).text }));
+        if (textParts.length === 0) return null;
+        return { ...turn, parts: textParts };
+    }).filter(turn => turn !== null) as GeminiChatItem[];
 
-            let finalUserContentForAI = userText;
-            const lastHistoryTurn = existingGeminiHistory[existingGeminiHistory.length - 1];
-            const userJustSentImageInLastTurn = lastHistoryTurn?.role === 'user' && 
-                                                lastHistoryTurn.parts.some(p => 'inlineData' in p);
-
-            if (userJustSentImageInLastTurn) {
-                // The history already contains the image and its textual context (caption/description).
-                // We can add a more explicit instruction for the AI for its *next* turn.
-                // This instruction becomes part of the prompt for the AI's *response*.
-                // For Gemini, we might append this to the userText. For OpenAI, it could be a system hint.
-                const imageInstruction = ` (You should comment on the image that was just shared. The description/caption was: "${lastHistoryTurn.parts.find(p => 'text' in p)?.text || 'No text with image.'}")`;
-                // We don't modify userText directly if it's going into openAIMessages or geminiPayload as a distinct turn.
-                // Instead, the overall prompt/system message should guide the AI.
-
-                // For direct Gemini calls, the system prompt is part of the history.
-                // For OpenAI, it's a separate system message.
-
-                // Let's assume the systemPromptForOpenAI or the initial part of Gemini history
-                // already contains general instructions. We can make the AI's task more specific
-                // if an image was just sent.
-
-                // The 'userText' here is the AI's prompt essentially, not the user's raw input.
-                // If this function is called to generate a response TO a user's image,
-                // userText should already be something like "The user sent an image with caption '...'. Describe it or comment."
-                // This is handled by the caller (e.g., TextMessageHandler).
-
-                // The existing logic for converting history and preparing payloads should be sufficient
-                // if the history correctly contains image parts and textual context.
-                // The main prompt given to the AI by the calling service (like TextMessageHandler)
-                // when an image is involved should instruct it to describe/comment on the image.
-            }
-
-
-            // This conversion is for OpenAI-compatible models
-            const openAIMessages = convertGeminiHistoryToOpenAIMessages(
-                systemPromptForOpenAI ? sanitizedHistoryForTextModels.slice(1) : sanitizedHistoryForTextModels,
-                systemPromptForOpenAI
-            );
-            // Add the current user's text
-            openAIMessages.push({ role: "user", content: userText });
-            
-            
-            // This payload preparation is for Gemini. Gemini can handle mixed history,
-            // so we can pass the original history to it.
-            const geminiPayload = prepareGeminiPayload(existingGeminiHistory, userText);
-           
-           
-            const providerSequence = [preferredProvider, PROVIDERS.GROQ, PROVIDERS.TOGETHER, PROVIDERS.GEMINI]
-                .filter((value, index, self) => value && self.indexOf(value) === index);
-
-            for (let i = 0; i < providerSequence.length; i++) {
-                const provider = providerSequence[i];
-                let apiKey: string | undefined;
-                let model: string | undefined;
-                try {
-                    if (provider === PROVIDERS.GROQ) {
-                        apiKey = window.GROQ_API_KEY; model = GROQ_MODELS?.TEXT_CHAT;
-                        if (!apiKey || !model) throw new Error(`Groq API key or model not configured for TEXT_CHAT.`);
-                        return await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? {type: "json_object"} : undefined });
-                    } else if (provider === PROVIDERS.TOGETHER) {
-                        apiKey = window.TOGETHER_API_KEY; model = TOGETHER_MODELS?.TEXT_CHAT;
-                        if (!apiKey || !model) throw new Error(`TogetherAI API key or model not configured for TEXT_CHAT.`);
-                        return await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? {type: "json_object"} : undefined });
-                    } else if (provider === PROVIDERS.GEMINI) {
-                        model = GEMINI_MODELS?.TEXT;
-                        if (!model) throw new Error(`Gemini model not configured for TEXT.`);
-                        const geminiResponse = await _geminiInternalApiCaller(geminiPayload, model, "generateContent");
-                        if (expectJson) {
-                            try { return JSON.parse(geminiResponse); } catch (e) { throw new Error("Gemini response was not valid JSON despite expectJson=true");}
-                        }
-                        return geminiResponse;
-                    }
-                } catch (error: any) {
-                    console.warn(`AI Text Gen Service (TS): Provider ${provider} failed for generateTextMessage. Error: ${error.message}`);
-                    if (i === providerSequence.length - 1) { throw error; }
-                }
-            }
-            return getRandomHumanError();
+    let systemPromptForOpenAI: string | null = null;
+    if (sanitizedHistoryForTextModels.length > 0 && sanitizedHistoryForTextModels[0].role === 'user') {
+        const firstPart = sanitizedHistoryForTextModels[0].parts[0];
+        if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
+            systemPromptForOpenAI = firstPart.text;
         }
+    }
+    
+    // Prepare the messages payload for OpenAI-compatible providers
+    const openAIMessages = convertGeminiHistoryToOpenAIMessages(
+        systemPromptForOpenAI ? sanitizedHistoryForTextModels.slice(1) : sanitizedHistoryForTextModels,
+        systemPromptForOpenAI
+    );
+    openAIMessages.push({ role: "user", content: userText });
+    console.log("[DEBUG] Checking providers from constants:", currentAiConstants.PROVIDERS);
+    // --- NEW: Hardcoded provider sequence for maximum resilience ---
+  // <<< REPLACE WITH THIS FULL 6-LAYER SEQUENCE >>>
+const providerSequence = [
+    currentAiConstants.PROVIDERS.GROQ,
+    currentAiConstants.PROVIDERS.OPENROUTER,
+    currentAiConstants.PROVIDERS.TOGETHER,
+    // --- NEW: Adding Gemini Layers ---
+    'gemini_main', // We'll use special strings to identify the keys
+    'gemini_alt_1',
+    'gemini_alt_2'
+].filter(p => !!p);
+    console.log(`${Function}: Determined provider sequence for group chat:`, providerSequence);
+
+   // <<< REPLACE THE ENTIRE for...of LOOP WITH THIS >>>
+
+   for (const provider of providerSequence) {
+    let apiKey: string | undefined;
+    let model: string | undefined; // This will now be set dynamically
+
+    console.log(`%c${Function}: --> ATTEMPTING with provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+
+    try {
+        let apiKey: string | undefined;
+        let model: string | undefined;
+    
+        if (provider === currentAiConstants.PROVIDERS.GROQ) {
+            apiKey = import.meta.env.VITE_GROQ_API_KEY;
+            // DYNAMIC MODEL CHOICE
+            model = context === 'group-chat' 
+                ? currentAiConstants.GROQ_MODELS?.TEXT_CHAT 
+                : currentAiConstants.GROQ_MODELS?.ONE_ON_ONE_CHAT;
+        } else if (provider === currentAiConstants.PROVIDERS.OPENROUTER) {
+            apiKey = import.meta.env.VITE_OPEN_ROUTER_API_KEY;
+            // For now, OpenRouter uses the same powerful model for both
+            model = currentAiConstants.OPENROUTER_MODELS?.TEXT_CHAT;
+        } else if (provider === currentAiConstants.PROVIDERS.TOGETHER) {
+            apiKey = import.meta.env.VITE_TOGETHER_API_KEY;
+            // Together also uses the same model for both
+            model = currentAiConstants.TOGETHER_MODELS?.TEXT_CHAT;
+        } else if (provider.startsWith('gemini')) {
+            // This block will handle all three gemini keys.
+            // It uses a different API caller, so we handle it completely and return.
+            console.log(`%c${Function}: --> ATTEMPTING with provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+            
+            const geminiPayload = prepareGeminiPayload(existingGeminiHistory, userText);
+            const geminiModel = currentAiConstants.GEMINI_MODELS?.TEXT || "gemini-1.5-flash-latest";
+    
+            // Select the correct key identifier for the Gemini caller
+            let geminiKeyId = 'main';
+            if (provider === 'gemini_alt_1') geminiKeyId = 'alt';
+            if (provider === 'gemini_alt_2') geminiKeyId = 'alt2';
+    
+            // Call the dedicated Gemini function and return immediately on success
+            const response = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent", geminiKeyId);
+            
+            console.log(`%c${Function}: <-- SUCCESS from [${provider}]. Returning response and stopping carousel.`, 'color: #28a745; font-weight: bold;');
+            return response;
+        }
+
+        if (provider.startsWith('gemini')) {
+            // This case should not be reached if the Gemini call succeeds and returns,
+            // but it prevents the code below from executing for a failed Gemini attempt.
+            continue; 
+        }
+
+
+        // --- NEW VALIDATION LOGIC ---
+        if (!model) {
+            throw new Error(`Model for provider [${provider}] is not defined in ai_constants.ts.`);
+        }
+    
+        // This check now ONLY applies to non-Groq providers.
+        if (provider !== currentAiConstants.PROVIDERS.GROQ) {
+            if (!apiKey || apiKey.includes('YOUR_') || apiKey.length < 20) {
+                const keyState = !apiKey ? "is missing" : "is a placeholder or too short";
+                throw new Error(`API key for provider [${provider}] ${keyState}.`);
+            }
+        }
+        // --- END NEW VALIDATION ---
+        
+        // The apiKey variable will be 'proxied-by-cloudflare' for Groq, and the real key for others.
+        const response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined });
+        console.log(`%c${Function}: <-- SUCCESS from [${provider}]. Returning response and stopping carousel.`, 'color: #28a745; font-weight: bold;');
+        return response;
+
+    } catch (error: any) {
+        console.warn(`%c${Function}: <-- FAILED. Provider [${provider}] threw an error.`, 'color: #dc3545;');
+        let reason = `Status: [${error.status || 'N/A'}], Message: "${error.message}"`;
+        if (error.status === 413) {
+            reason = `413 - PAYLOAD TOO LARGE. The prompt + history was too big for this model's limit. Full error: "${error.message}"`;
+        } else if (error.status === 429) {
+            reason = `429 - RATE LIMIT. Too many requests or tokens per minute. Full error: "${error.message}"`;
+        }
+        console.error(`[PROVIDER_ERROR] Provider: [${provider}], Reason: ${reason}`);
+        if (provider === currentAiConstants.PROVIDERS.GROQ && error.status === 429) {
+            // Specifically for Groq rate limits
+            const retryMessage = error.providerDetails?.message || error.message || "No details.";
+            console.warn(`[GROQ_RATE_LIMIT] Reason: 429 - Too Many Requests. Full error: "${retryMessage}"`);
+        } else {
+            // For all other errors
+            console.error(`[PROVIDER_ERROR] Provider: [${provider}], Status: [${error.status || 'N/A'}], Message: "${error.message}"`);
+        }
+    }
+}
+    
+    // This part is only reached if the entire loop completes without a successful return.
+    console.error(`${Function}: FINAL ERROR. All providers in the sequence [Groq, OpenRouter, Together] failed. Returning a random human error.`);
+    return getRandomHumanError();
+}
 
         async function generateTextFromImageAndTextOpenAI(
             base64ImageString: string, mimeType: string, connector: Connector,
@@ -316,8 +339,40 @@ function initializeActualAiTextGenerationService(): void {
                 console.log(`AI TextGen Service (generateTextFromImageAndTextOpenAI - TOGETHER): Provider: ${provider}, Model: ${modelForVision}, ...`);
             }
             try {
-                return await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 });
-            } catch (error: any) { console.error(`AI TextGen (TS) Error - ${provider} Vision: ${error.message}`); return getRandomHumanError(); }
+                if (provider === PROVIDERS.TOGETHER) {
+                    apiKeyToUse = window.TOGETHER_API_KEY;
+                    modelForVision = TOGETHER_MODELS?.VISION;
+                } else {
+                    throw new Error(`Provider [${provider}] is not supported for vision in this function.`);
+                }
+        
+                if (!apiKeyToUse || apiKeyToUse.includes("YOUR_")) throw new Error("API key is missing or is a placeholder.");
+                if (!modelForVision) throw new Error("Vision model ID is not configured in aiConstants.");
+                if (!connector) throw new Error("Connector object is missing.");
+                if (!base64ImageString) throw new Error("base64ImageString is missing.");
+                
+                console.log(`${Function}: Config check PASSED. Using model [${modelForVision}].`);
+                
+                // --- Payload preparation (as before) ---
+                let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
+                const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
+                const userContent: OpenAIMessageContentPart[] = [{ type: "text", text: userTextQuery }];
+                userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64ImageString}` } });
+                openAIMessages.push({ role: "user", content: userContent });
+        
+                // Optional: Log the full payload if debugging is difficult
+                // console.log(`${functionName}: Payload being sent:`, JSON.stringify(openAIMessages, null, 2));
+        
+                // --- API Call with Clear Logging ---
+                console.log(`${Function}: --> ATTEMPTING call to [${provider}] vision service.`);
+                const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 });
+                console.log(`${Function}: <-- SUCCESS from [${provider}].`);
+                return response;
+        
+            } catch (error: any) {
+                console.error(`${Function}: <-- FAILED. Error: ${error.message}`);
+                return getRandomHumanError();
+            }
         }
         
         async function generateTextForGeminiCallModal(

@@ -284,6 +284,8 @@ function initializeActualGroupUiHandler(): void {
       
         }
 // Inside the IIFE in group_ui_handler.ts
+// =================== START: REPLACE THE ENTIRE FUNCTION ===================
+
 function showGroupChatView(
     groupData: Group,
     groupMembers: Connector[],
@@ -296,115 +298,121 @@ function showGroupChatView(
         console.error("GroupUiHandler: Missing groupData.name or groupMembers for showGroupChatView.");
         return;
     }
-    
-    const currentChatUiManager = window.chatUiManager as ChatUiManager | undefined; // Fetch fresh
+
+    // --- FIX 1: Fetch dependencies just-in-time to avoid stale data ---
+    const currentChatUiManager = window.chatUiManager as ChatUiManager | undefined;
+    const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+    const domElements = window.domElements; // Also fetch domElements fresh
+
     if (!currentChatUiManager || typeof currentChatUiManager.showGroupChatView !== 'function') {
         console.error("GUH.showGroupChatView: Functional chatUiManager or its showGroupChatView method not available at runtime!");
         return;
     }
-    currentChatUiManager.showGroupChatView(groupData.name, groupMembers); // Call on the fetched & verified manager
+
+    // --- AGGRESSIVE UI RESET ---
+    // Update the header FIRST to set the new context before clearing the log.
+    currentChatUiManager.showGroupChatView(groupData.name, groupMembers);
+    
     console.log(`GUH.showGroupChatView: Clearing and re-rendering chat log for group ${groupData.id}. History length: ${groupHistory?.length || 0}`);
     
-    // Use uiUpdater to clear the log, which also handles timestamp state
-    const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+    // Clear the log completely.
     if (currentUiUpdater && typeof currentUiUpdater.clearGroupChatLog === 'function') {
         currentUiUpdater.clearGroupChatLog();
-    } else if (domElements.groupChatLogDiv) { // Fallback if uiUpdater method isn't ready/found
+    } else if (domElements?.groupChatLogDiv) {
         (domElements.groupChatLogDiv as HTMLElement).innerHTML = '';
         console.warn("GUH.showGroupChatView: uiUpdater.clearGroupChatLog not available, used direct innerHTML clear.");
     }
-// ... inside showGroupChatView function...
+    // --- END OF RESET ---
 
-if (groupHistory?.length > 0) {
-    let lastUserVoiceMemoText: string | null = null;
-    let lastUserVoiceMemoTimestamp: number | null = null;
+    if (groupHistory?.length > 0) {
+        const MAX_MESSAGES_IN_UI = 100;
+        const historyToRender = groupHistory.slice(-MAX_MESSAGES_IN_UI);
 
-    groupHistory.forEach((msg: GroupChatHistoryItem) => {
-        const speakerConnector = groupMembers.find(m => m.id === msg.speakerId);
-        const isCurrentUserMessage = msg.speakerId === "user_player" || msg.speakerId === "user_self_001";
+        let lastUserVoiceMemoText: string | null = null;
+        let lastUserVoiceMemoTimestamp: number | null = null;
 
-        if (
-            isCurrentUserMessage &&
-            !msg.isVoiceMemo &&
-            !msg.isImageMessage &&
-            lastUserVoiceMemoText &&
-            msg.text === lastUserVoiceMemoText &&
-            lastUserVoiceMemoTimestamp &&
-            Math.abs(msg.timestamp - lastUserVoiceMemoTimestamp) < 2000
-        ) {
-            console.log(`GUH.showGroupChatView (History): Skipping duplicate plain text message for user matching recent voice memo. Text: "${msg.text?.substring(0,20)}"`);
-            lastUserVoiceMemoText = null;
-            lastUserVoiceMemoTimestamp = null;
-            return; 
-        }
-
-        const senderName = isCurrentUserMessage
-            ? "You"
-            : (speakerConnector?.profileName || msg.speakerName || "Bot");
-
-        if (uiUpdater && typeof uiUpdater.appendToGroupChatLog === 'function') {
+        historyToRender.forEach((msg: GroupChatHistoryItem) => {
+            // --- FIX 2: Determine the speaker based ONLY on the data from this specific message ---
+            const isCurrentUserMessage = msg.speakerId === "user_player" || msg.speakerId === "user_self_001";
             
-            // --------- START OF CORRECTED LOGIC ---------
+            // This ensures we don't accidentally use a stale speaker from a previous session.
+            const speakerConnector = groupMembers.find(m => m.id === msg.speakerId);
+            const senderName = isCurrentUserMessage
+                ? "You"
+                : (speakerConnector?.profileName || msg.speakerName || "Bot");
 
-            let textForDisplay = msg.text || "";
-            const messageOptions: ChatMessageOptions = {
-                timestamp: msg.timestamp,
-                messageId: msg.messageId,
-            };
-
-            // Check for voice memo first
-            if (msg.isVoiceMemo && msg.audioBlobDataUrl) {
-                messageOptions.isVoiceMemo = true;
-                messageOptions.audioSrc = msg.audioBlobDataUrl;
-                lastUserVoiceMemoText = (msg.speakerId === "user_self_001") ? msg.text : null;
-                lastUserVoiceMemoTimestamp = (msg.speakerId === "user_self_001") ? msg.timestamp : null;
+            // --- Your existing logic for skipping duplicate voice memos ---
+            if (
+                isCurrentUserMessage &&
+                !msg.isVoiceMemo &&
+                !msg.isImageMessage &&
+                lastUserVoiceMemoText &&
+                msg.text === lastUserVoiceMemoText &&
+                lastUserVoiceMemoTimestamp &&
+                Math.abs(msg.timestamp - lastUserVoiceMemoTimestamp) < 2000
+            ) {
+                console.log(`GUH.showGroupChatView (History): Skipping duplicate plain text message...`);
+                lastUserVoiceMemoText = null;
+                lastUserVoiceMemoTimestamp = null;
+                return; 
             }
-            // Independently, check for an image URL. This is the key fix.
-            else if (msg.isImageMessage) { // Broader check: is it an image message at all?
-                if (msg.imageUrl) {
-                    // Case 1: The image URL exists (it's a recent image)
-                    messageOptions.imageUrl = msg.imageUrl;
+
+            // --- Your existing logic for preparing message options ---
+            if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
+                let textForDisplay = msg.text || "";
+                const messageOptions: ChatMessageOptions = {
+                    timestamp: msg.timestamp,
+                    messageId: msg.messageId,
+                };
+                if (msg.isVoiceMemo && msg.audioBlobDataUrl) {
+                    messageOptions.isVoiceMemo = true;
+                    messageOptions.audioSrc = msg.audioBlobDataUrl;
+                    lastUserVoiceMemoText = (msg.speakerId === "user_self_001") ? msg.text : null;
+                    lastUserVoiceMemoTimestamp = (msg.speakerId === "user_self_001") ? msg.timestamp : null;
+                } else if (msg.isImageMessage) {
+                    if (msg.imageUrl) {
+                        messageOptions.imageUrl = msg.imageUrl;
+                    } else {
+                        textForDisplay += "\n[Image was not reloaded to save space]";
+                    }
+                    lastUserVoiceMemoText = null;
+                    lastUserVoiceMemoTimestamp = null;
                 } else {
-                    // Case 2: No imageUrl, but it's an image message. It was pruned.
-                    // We will add a placeholder to the text to be displayed.
-                    textForDisplay += "\n[Image was not reloaded to save space]";
+                    lastUserVoiceMemoText = null;
+                    lastUserVoiceMemoTimestamp = null;
                 }
-                lastUserVoiceMemoText = null;
-                lastUserVoiceMemoTimestamp = null;
+                
+                // --- FIX 3: Pass the explicit speakerId from the message to the renderer ---
+                // This is the most critical part. We are telling the UI updater exactly who
+                // spoke this specific message, preventing it from using any stale state.
+                currentUiUpdater.appendToGroupChatLog(
+                    textForDisplay,
+                    senderName,
+                    isCurrentUserMessage,
+                    msg.speakerId, // <<< The ground truth for this message
+                    messageOptions
+                );
+            } else {
+                console.warn("GUH.showGroupChatView: Functional uiUpdater.appendToGroupChatLog not available for historical message.");
             }
-            // Plain text message
-            else {
-                lastUserVoiceMemoText = null;
-                lastUserVoiceMemoTimestamp = null;
-            }
-            
-            // --------- END OF CORRECTED LOGIC ---------
+        });
+    }
+    
+    if (domElements?.groupChatInput) (domElements.groupChatInput as HTMLInputElement).focus();
+}
 
-            uiUpdater.appendToGroupChatLog(
-                textForDisplay,
-                senderName,
-                isCurrentUserMessage,
-                msg.speakerId,
-                messageOptions
-            );
-        } else {
-            console.warn("GUH.showGroupChatView: Functional uiUpdater.appendToGroupChatLog not available for historical message.");
-        }
-    });
-}
-// ...
-// ...
-    if (domElements.groupChatInput) (domElements.groupChatInput as HTMLInputElement).focus();
-}
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 
       // Inside the IIFE in group_ui_handler.ts
+// <<< REPLACE THE ENTIRE hideGroupChatViewAndShowList FUNCTION >>>
 const hideGroupChatViewAndShowList = (): void => {
-    const currentChatUiManager = window.chatUiManager as ChatUiManager | undefined; // Fetch fresh
+    // --- NEW: JUST-IN-TIME DEPENDENCY FETCH ---
+    const currentChatUiManager = window.chatUiManager as ChatUiManager | undefined;
     if (!currentChatUiManager || typeof currentChatUiManager.hideGroupChatView !== 'function') {
         console.error("GUH.hideGroupChatViewAndShowList: Functional chatUiManager or its hideGroupChatView method not available at runtime!");
         return;
     }
-    currentChatUiManager.hideGroupChatView(); // Call on the fetched & verified manager
+    currentChatUiManager.hideGroupChatView();
 };
 
         function updateGroupTypingIndicator(text: string): void {

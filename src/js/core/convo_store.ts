@@ -51,7 +51,10 @@ function initializeActualConvoStore(): void {
             updateConversationProperty: () => { console.error("ConvoStore dummy: updateConversationProperty called."); return null;},
             addMessageToConversationStore: () => { console.error("ConvoStore dummy: addMessage called."); return false; },
             getGeminiHistoryFromStore: () => { console.error("ConvoStore dummy: getGeminiHistory called."); return []; },
-            updateGeminiHistoryInStore: () => { console.error("ConvoStore dummy: updateGeminiHistory called."); return false; }
+            updateGeminiHistoryInStore: () => { console.error("ConvoStore dummy: updateGeminiHistory called."); return false; },
+            // --- ADD THESE TWO DUMMY FUNCTIONS ---
+            getGlobalUserProfile: () => { console.error("ConvoStore dummy: getGlobalUserProfile called."); return ""; },
+            updateGlobalUserProfile: () => { console.error("ConvoStore dummy: updateGlobalUserProfile called."); }
         };
         Object.assign(window.convoStore!, dummyMethods);
         document.dispatchEvent(new CustomEvent('convoStoreReady'));
@@ -67,8 +70,9 @@ function initializeActualConvoStore(): void {
         // 'activeConversations' is now declared in the outer scope of the IIFE,
         // but its type 'ActiveConversationsStore' needs to be visible here.
         let activeConversations: ActiveConversationsStore = {}; // << This should now find the type
+        let globalUserProfile: { [userId: string]: string } = {}; // <<< ADD THIS LINE
         const STORAGE_KEY = 'polyglotActiveConversations';
-
+        const USER_PROFILE_STORAGE_KEY = 'polyglotUserProfile'; // <<< ADD THIS LINE
         function initializeStore(): void {
             const saved = polyglotHelpers.loadFromLocalStorage(STORAGE_KEY);
             if (saved && typeof saved === 'object') {
@@ -84,6 +88,16 @@ function initializeActualConvoStore(): void {
                 activeConversations = {};
                 console.log("ConvoStore: Initialized. No valid saved data. Starting fresh.");
             }
+                    // --- ADD THIS NEW BLOCK ---
+                    const savedProfile = polyglotHelpers.loadFromLocalStorage(USER_PROFILE_STORAGE_KEY);
+                    if (savedProfile && typeof savedProfile === 'object') {
+                        globalUserProfile = savedProfile;
+                        console.log(`ConvoStore: Initialized. Loaded user profile data.`);
+                    } else {
+                globalUserProfile = {};
+                console.log("ConvoStore: Initialized. No saved user profile found.");
+            }
+    // --- END NEW BLOCK ---
         }
 
       // Inside the storeInstance IIFE in convo_store.ts
@@ -170,7 +184,8 @@ function saveAllConversationsToStorage(): void {
                 connector: { ...connectorData }, // Store a copy
                 messages: [],
                 lastActivity: Date.now(),
-                geminiHistory: [] // To be initialized by prompt builder via facade
+                geminiHistory: [], // To be initialized by prompt builder via facade
+                userProfileSummary: "" // <<< ADD THIS NEW LINE
             };
             activeConversations[connectorId] = newRecord;
             saveAllConversationsToStorage();
@@ -222,6 +237,25 @@ function saveAllConversationsToStorage(): void {
             return true;
         }
         
+        function getGlobalUserProfile(userId: string = 'default_user'): string {
+            const profile = globalUserProfile[userId] || "";
+            console.log(`[CONVO_STORE] getGlobalUserProfile called for user '${userId}'. Returning summary:\n---`, profile || "[Empty]", "\n---");
+            return profile;
+        }
+    
+        function updateGlobalUserProfile(newSummary: string, userId: string = 'default_user'): void {
+            console.log(`[CONVO_STORE] updateGlobalUserProfile called for user '${userId}'. Saving new summary:\n---`, newSummary, "\n---");
+            globalUserProfile[userId] = newSummary;
+            try {
+                polyglotHelpers.saveToLocalStorage(USER_PROFILE_STORAGE_KEY, globalUserProfile);
+                console.log(`[CONVO_STORE] Successfully saved global user profile to localStorage.`);
+            } catch (e: any) {
+                console.error(`[CONVO_STORE] FAILED to save global user profile to localStorage.`, e);
+            }
+        }
+    
+
+
         // Call initializeStore when the IIFE runs
         initializeStore();
 
@@ -234,7 +268,9 @@ function saveAllConversationsToStorage(): void {
             updateConversationProperty,
             addMessageToConversationStore,
             getGeminiHistoryFromStore,
-            updateGeminiHistoryInStore
+            updateGeminiHistoryInStore,
+            getGlobalUserProfile,
+            updateGlobalUserProfile
         };
     })();
 

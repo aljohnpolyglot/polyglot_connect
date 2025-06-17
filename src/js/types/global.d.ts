@@ -3,7 +3,7 @@ import type { AiRecapServiceModule as AiRecapService } from './services/ai_recap
 export type AiRecapService = AiRecapServiceModule; // <<< ADD EXPORT HERE (or export the import directly)
 import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_service'; 
 import type { IdentityServiceModule } from '../services/identity_service';
-// --- SUB-INTERFACES for Persona/Connector ---
+import { GroupInteractionLogicModule } from '../core/group_interaction_logic';// --- SUB-INTERFACES for Persona/Connector ---
 
 export interface Connector {
     id: string;
@@ -26,6 +26,7 @@ export interface PersonaIdentity {
   bioModern?: string;
   education?: string;
   interests?: string[];
+  dislikes?: string[]; // <<< ADD THIS LINE
   personalityTraits?: string[];
   communicationStyle?: string;
   quirksOrHabits?: string[];
@@ -99,7 +100,7 @@ export interface SleepSchedule {
   wake: string;
   sleep: string;
 }
-
+// Find this interface
 export interface ChatPersonality {
   style: string;
   typingDelayMs: number;
@@ -140,6 +141,7 @@ export interface PersonaDataSourceItem {
   nativeLanguages: LanguageEntry[]; // Ensure LanguageEntry is simple (lang, levelTag, flagCode)
   practiceLanguages: LanguageEntry[]; // Ensure LanguageEntry is simple
   interests: string[];
+  dislikes?: string[]; // <<< ADD THIS LINE
   personalityTraits?: string[];
   communicationStyle?: string;
   conversationTopics?: string[];
@@ -173,7 +175,10 @@ export interface PersonaDataSourceItem {
   // --- THIS IS THE CORRECTED PART ---
   languageSpecificCodes?: {
         [languageNameKey: string]: LanguageSpecificCodeEntry; // The value for "Swedish", "English" etc. is a LanguageSpecificCodeEntry object
-  };
+        role?: 'tutor' | 'learner' | 'moderator' | 'captain' | 'analyst' | 'rival_fan' | 'fan' | string; // ADD THIS
+        proficiency?: 'Beginner' | 'Intermediate' | 'Advanced' | string; // ADD THIS
+ 
+      };
   // --- END OF CORRECTED PART ---
 }
 export interface Connector extends PersonaDataSourceItem { // EXPORTED
@@ -205,6 +210,8 @@ export interface Group { // EXPORTED
     communityTags?: string[]; // For multiple non-language tags
   creationTime?: number; // <<< ADD THIS LINE (make it optional number)
   memberSelectionCriteria?: GroupMemberCriteria; // This will guide member selection
+  type?: 'Language Learning' | 'Community Hangout' | 'Sports Fan Club' | string; // ADD THIS
+  topic?: string; // ADD THIS (e.g., "La Liga", "French Culture")
 }
 export interface GroupMemberCriteria {
   // Language-based (can still be a primary filter)
@@ -468,6 +475,8 @@ export interface ConvoStoreModule { // << MAKE SURE THIS IS EXPORTED
     addMessageToConversationStore: (connectorId: string, messageObject: MessageInStore) => boolean;
     getGeminiHistoryFromStore: (connectorId: string) => GeminiChatItem[];
     updateGeminiHistoryInStore: (connectorId: string, newHistoryArray: GeminiChatItem[]) => boolean;
+    getGlobalUserProfile: (userId?: string) => string; // <<< ADD THIS
+    updateGlobalUserProfile: (newSummary: string, userId?: string) => void; // <<< ADD THIS
 }
 // --- INTERFACE for DomElements (based on dom_elements.js and index.html) ---
 export interface YourDomElements { // Ensure EXPORT
@@ -1248,6 +1257,7 @@ export interface ConversationRecordInStore { // << MAKE SURE THIS IS EXPORTED
     messages: MessageInStore[];
     lastActivity: number;
     geminiHistory: GeminiChatItem[];
+    userProfileSummary?: string; // <<< ADD THIS LINE
 }
 export interface SessionStateManager {
   initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string) => any; // Be more specific if possible
@@ -1332,7 +1342,15 @@ export interface GeminiServiceModule {
 }
 
 export interface ChatEventListeners { initializeEventListeners: (...args: any[]) => any; /* ... more methods */ }
-
+// ADD THIS NEW INTERFACE
+export interface GeminiChatServiceModule {
+  initialize: () => void;
+  generateResponse: (
+    history: GeminiChatItem[],
+    generationConfig?: { temperature?: number; maxOutputTokens?: number }
+  ) => Promise<string | null>;
+  // Add any other methods your text chat service has
+}
 // --- Google GenAI SDK ---
 // Based on your index.html script
 // This is a simplified version; a proper @types/google__genai would be better if available
@@ -1418,7 +1436,7 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
     convoTurnManager?: any;
    groupDataManager?: GroupDataManager;
     groupUiHandler?: GroupUiHandler;
-    groupInteractionLogic?: GroupInteractionLogic;
+    groupInteractionLogic?: GroupInteractionLogicModule; 
     liveApiMicInput?: any;
     liveApiAudioOutput?: any;
     liveApiTextCoordinator?: any;

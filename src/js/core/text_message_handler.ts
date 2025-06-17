@@ -345,10 +345,28 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 } else { // User sent TEXT-ONLY
                     promptForAI = textForDisplayAndStore; // This is the user's text message
                     console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply.`);
+    
+                    // --- START: CONTEXT INJECTION FOR CALLS ---
+                    let historyForAiCall = getHistoryForAiCall(convo.geminiHistory || [], false); // Get a copy
+
+                // Check if the PREVIOUS message in the store was a call event.
+                // The user's current message is at index (length - 1), so we check (length - 2).
+                if (convo.messages.length >= 2) {
+                    const secondToLastMessage = convo.messages[convo.messages.length - 2];
+                    if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
+                        console.log("TMH: Call event detected as the PREVIOUS message. Injecting context into AI history.");
+                        historyForAiCall.push({
+                            role: 'user',
+                            parts: [{ text: "[A voice call took place between you and the user.]" }]
+                        });
+                    }
+                }
+                    // --- END: CONTEXT INJECTION FOR CALLS ---
+    
                     aiResponseObject = await (aiService.generateTextMessage as any)(
                         promptForAI,
                         currentConnector,
-                        getHistoryForAiCall(convo.geminiHistory || [], false), // FULL CONVO HISTORY for text reply
+                        historyForAiCall, // Use the (potentially modified) history
                         aiApiConstants.PROVIDERS.GROQ,
                         false
                     );
@@ -826,10 +844,28 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 } else { // User sent TEXT-ONLY
                     promptForAI_modal = textForDisplayAndStore; // This is the user's text message
                     console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply (modal).`);
+    
+                    // --- START: CONTEXT INJECTION FOR CALLS ---
+                    let historyForAiCall = getHistoryForAiCall(convo.geminiHistory || [], false); // Get a copy
+
+                    // Check if the PREVIOUS message in the store was a call event.
+                    // The user's current message is at index (length - 1), so we check (length - 2).
+                    if (convo.messages.length >= 2) {
+                        const secondToLastMessage = convo.messages[convo.messages.length - 2];
+                        if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
+                            console.log("TMH (Modal): Call event detected as the PREVIOUS message. Injecting context into AI history.");
+                            historyForAiCall.push({
+                                role: 'user', 
+                                parts: [{ text: "[A voice call took place between you and the user.]" }]
+                            });
+                        }
+                    }
+                    // --- END: CONTEXT INJECTION FOR CALLS ---
+    
                     aiResponse = await (aiService.generateTextMessage as any)(
                         promptForAI_modal,
                         currentConnector,
-                        getHistoryForAiCall(convo.geminiHistory || [], false), // FULL CONVO HISTORY for text reply
+                        historyForAiCall, // Use the (potentially modified) history
                         aiApiConstants.PROVIDERS.GROQ,
                         false
                     );

@@ -103,7 +103,9 @@ function initializeActualSessionHistoryManager(): void {
             completedSessions[sessionData.sessionId] = sessionData;
             saveToStorage();
             console.log(`SHM: Session '${sessionData.sessionId}' added. Total sessions now: ${Object.keys(completedSessions).length}`);
-            // No longer call updateSummaryListUI here directly.
+            
+            // Trigger the UI update for the summary list.
+            updateSummaryListUI();
         }
 
         function getCompletedSessions(): SessionData[] {

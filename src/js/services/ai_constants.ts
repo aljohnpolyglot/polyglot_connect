@@ -10,6 +10,7 @@ export const LIVE_API_SETUP_TIMEOUT_MS = 15000;
         PROVIDERS: {
             GEMINI: 'gemini',
             GROQ: 'groq',
+            OPENROUTER: 'openrouter', // <<< ENSURE THIS LINE EXISTS AND IS SPELLED CORRECTLY
             TOGETHER: 'together'
         },
         GEMINI_MODELS: {
@@ -20,9 +21,19 @@ export const LIVE_API_SETUP_TIMEOUT_MS = 15000;
             // MODEL_TTS_SYNTHESIZE: "text-to-speech", // This was in your gemini_core_api.js, keep if needed
         },
         GROQ_MODELS: {
-            TEXT_CHAT: "llama3-8b-8192",
+            TEXT_CHAT: "llama3-8b-8192", //group chat
+            ONE_ON_ONE_CHAT: "llama-3.1-8b-instant", // <<< NEW: For detailed 1-on-1 chats
             RECAP: "llama3-70b-8192", 
             STT: "whisper-large-v3" 
+        },
+           // <<< NEW OPENROUTER MODEL CONFIGURATION >>>
+        OPENROUTER_MODELS: {
+            // Powerful and intelligent, a great second attempt after Groq
+            TEXT_CHAT: "nousresearch/nous-hermes-2-mixtral-8x7b-dpo", // <<< THE NEW, CHEAPER, SMARTER MODEL
+            // Top-tier model for high-quality summaries
+            RECAP: "google/gemini-1.5-pro",
+            // Excellent and reliable vision model
+            VISION: "openai/gpt-4o"
         },
         TOGETHER_MODELS: {
             TEXT_CHAT: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", // <<< CORRECTED (Capital 'M')

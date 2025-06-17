@@ -86,14 +86,32 @@ function initializeActualTabManager(): void {
         function switchToTab(targetTab: string, isInitialLoad: boolean = false): void {
             console.log(`TabManager: Switching to tab '${targetTab}'. Initial load: ${isInitialLoad}`);
             const previousTab = currentActiveTab;
+            
+            if (previousTab === targetTab && !isInitialLoad) {
+                console.log("TabManager: Already on the target tab. No switch needed.");
+                return;
+            }
+    
             currentActiveTab = targetTab;
             polyglotHelpers.saveToLocalStorage(LAST_ACTIVE_TAB_KEY, currentActiveTab);
-
-            domElements.mainNavItems.forEach(i => i.classList.toggle('active', i.dataset.tab === targetTab));
-            domElements.mainViews.forEach(view => {
-                view.classList.toggle('active-view', view.id === `${targetTab}-view`);
-            });
-
+    
+            // --- THIS IS THE FIX ---
+            // Let ShellController handle all view and panel switching logic.
+            // It's the central authority for what is visible.
+            const shellController = window.shellController as import('../types/global').ShellController | undefined;
+            if (shellController && typeof shellController.switchView === 'function') {
+                shellController.switchView(targetTab);
+            } else {
+                // Fallback to old method if shellController isn't ready
+                // This maintains basic functionality during startup race conditions.
+                console.warn("TabManager: shellController not ready, falling back to direct UI update.");
+                domElements.mainNavItems.forEach(i => i.classList.toggle('active', i.dataset.tab === targetTab));
+                domElements.mainViews.forEach(view => {
+                    view.classList.toggle('active-view', view.id === `${targetTab}-view`);
+                });
+            }
+    
+            // The event dispatch is still useful for any other modules that might care about tab changes.
             document.dispatchEvent(new CustomEvent('tabSwitched', { 
                 detail: { 
                     newTab: targetTab, 

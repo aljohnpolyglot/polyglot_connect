@@ -1,1325 +1,1081 @@
-// src/js/core/group_interaction_logic.ts
+/**
+ * @file group_interaction_logic.ts
+ * @description (HYBRID ADAPTATION V2) - Implements highly specialized, dynamic prompt building
+ * for different group types while maintaining the public interface for group_manager.ts.
+ */
 import type {
-    ActivityManager,
-    AIService,
-    PolyglotHelpersOnWindow as PolyglotHelpers,
+    Connector,
+    Group,
+    GroupChatHistoryItem,
+    PolyglotHelpersOnWindow,
     GroupDataManager,
     GroupUiHandler,
-    UiUpdater,
-    AIApiConstants,
-    Connector, // <<< Connector is imported
-    Group,      // <<< Group is imported
-    GroupChatHistoryItem,
-    GeminiChatItem
-} from '../types/global.d.ts'; // <<< Path to your global definitions
-console.log("group_interaction_logic.ts: Script execution STARTED (TS Version).");
+    ActivityManager,
+    AIService,
+    GeminiChatItem,
+    AIApiConstants
+} from '../types/global.d.ts';
 
-export interface GroupInteractionLogicModule {
-    initialize: (groupMembers: Connector[], groupTutor: Connector | null) => void;
-    reset: () => void;
-    setUserTypingStatus: (isTyping: boolean) => void;
-    startConversationFlow: () => void;
-    stopConversationFlow: () => void;
-    handleUserMessage: (text: string | undefined, options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }) => Promise<void>;
-    simulateAiMessageInGroup: (isReplyToUser?: boolean, userMessageText?: string, imageContextForReply?: { base64Data?: string; mimeType?: string; }) => Promise<void>;
-    setAwaitingUserFirstIntroduction: (isAwaiting: boolean) => void;
+// In src/js/core/group_interaction_logic.ts
+
+// REPLACE THIS:
+// import { getCoreIdentityPrompt, getPersonalityAndBehaviorPrompt } from './persona_prompt_parts.js';
+
+// WITH THIS:
+import { getGroupPersonaSummary } from './persona_prompt_parts.js';
+
+console.log('group_interaction_logic.ts: (Hybrid V2) Script loaded.');
+
+(function () {
+    'use strict';
+
+    // --- EVERYTHING MUST BE INSIDE THIS IIFE ---
+
+    // --- MODULE-LEVEL STATE (SHARED BY ALL FUNCTIONS BELOW) ---
+   // --- MODULE-LEVEL STATE (SHARED BY ALL FUNCTIONS BELOW) ---
+let members: Connector[] = [];
+let tutor: Connector | null = null;
+let isAwaitingUserFirstIntro: boolean = false;
+let conversationFlowActive: boolean = false;
+let conversationLoopId: ReturnType<typeof setTimeout> | null = null;
+let lastMessageTimestamp: number = 0;
+let hasProddedSinceUserSpoke: boolean = false; // <<< ADD THIS LINE
+let isRenderingScene: boolean = false; // <<< ADD THIS LINE
+let currentSceneCancellationToken: { isCancelled: boolean } | null = null; // <<< ADD THIS LINE
+    // --- DEPENDENCY GETTER ---
+    const getDeps = () => ({
+        polyglotHelpers: window.polyglotHelpers!,
+        groupDataManager: window.groupDataManager!,
+        groupUiHandler: window.groupUiHandler!,
+        activityManager: window.activityManager!,
+        aiService: window.aiService!,
+        aiApiConstants: window.aiApiConstants!
+    });
+
+    // --- SPECIALIZED RULE BUILDERS (Your New Idea) ---
+
+// =================== START: ADD THIS ENTIRE NEW FUNCTION ===================
+
+/**
+ * Uses a dedicated AI call to analyze a user's message and extract key profile facts.
+ * @param userMessage The text message from the user.
+ * @param existingSummary The current summary of the user's profile.
+ * @returns A promise that resolves to an updated summary string.
+ */
+async function extractAndUpdateUserSummary(userMessage: string, existingSummary: string): Promise<string> {
+    const { aiService, groupDataManager } = getDeps();
+    const currentGroup = groupDataManager.getCurrentGroupData();
+    if (!currentGroup) return existingSummary;
+
+    console.log("GIL [Memory Extractor]: Analyzing user message for profile details...");
+
+    const extractorPrompt = `
+You are a data analysis bot. Your only task is to read a conversation and update a user profile summary.
+
+--- EXISTING USER PROFILE ---
+${existingSummary || "No data yet."}
+
+--- LATEST USER MESSAGE ---
+[You]: ${userMessage}
+
+--- YOUR TASK ---
+Analyze the "LATEST USER MESSAGE". Does it contain new, concrete facts about the user (their name, where they are from, their job, specific interests, etc.)?
+
+- IF a key fact is ALREADY in the "EXISTING USER PROFILE", DO NOT repeat it.
+- IF the message contains NEW facts, add them as new bullet points to the summary.
+- IF the message contains NO new facts (e.g., "lol", "I agree", "what do you think?"), then your response MUST be ONLY the word "NO_CHANGE".
+
+Your response should ONLY be the updated summary points, or the word "NO_CHANGE". Do not include any other text or preamble.
+
+--- EXAMPLE 1 ---
+EXISTING USER PROFILE:
+- The user is from the Philippines.
+LATEST USER MESSAGE:
+[You]: HI alles!! ich bin John!
+YOUR RESPONSE:
+- The user is from the Philippines.
+- The user's name is John.
+
+--- EXAMPLE 2 ---
+EXISTING USER PROFILE:
+- The user's name is John.
+LATEST USER MESSAGE:
+[You]: That's a good point, I agree.
+YOUR RESPONSE:
+NO_CHANGE
+`;
+
+    try {
+        // Use a fast, cheap model for this analysis task
+        const response = await aiService.generateTextMessage(extractorPrompt, members[0], [], 'groq');
+        
+        if (response && typeof response === 'string' && response.trim() !== "NO_CHANGE") {
+            console.log(`GIL [Memory Extractor]: SUCCESS. New facts found. Updated Summary:\n${response}`);
+            return response.trim();
+        } else {
+            console.log("GIL [Memory Extractor]: No new facts found in user's message.");
+            return existingSummary; // Return the original summary if no change
+        }
+    } catch (error) {
+        console.error("GIL [Memory Extractor]: Error during user summary extraction:", error);
+        return existingSummary; // Return original summary on error
+    }
 }
 
-window.groupInteractionLogic = {} as GroupInteractionLogicModule;
 
-function initializeActualGroupInteractionLogic(): void {
-    console.log("group_interaction_logic.ts: initializeActualGroupInteractionLogic called.");
-    const getSafeDeps = (): {
-        activityManager: ActivityManager;
-        aiService: AIService; 
-        polyglotHelpers: PolyglotHelpers;
-        groupDataManager: GroupDataManager;
-        groupUiHandler: GroupUiHandler;
-        uiUpdater: UiUpdater;
-        aiApiConstants: AIApiConstants;
-    } | null => { 
-        const deps = {
-            activityManager: window.activityManager as ActivityManager | undefined,
-            aiService: window.aiService as AIService | undefined, 
-            polyglotHelpers: window.polyglotHelpers as PolyglotHelpers | undefined,
-            groupDataManager: window.groupDataManager as GroupDataManager | undefined,
-            groupUiHandler: window.groupUiHandler as GroupUiHandler | undefined,
-            uiUpdater: window.uiUpdater as UiUpdater | undefined,
-            aiApiConstants: window.aiApiConstants as AIApiConstants | undefined
+
+    function buildLanguageLearningRules(groupMembers: Connector[], group: Group): string {
+        const targetLanguage = group.language || 'the target language';
+        const getPersonaSpecificRules = (member: Connector): string => {
+            const role = member.languageRoles?.[targetLanguage]?.[0] || 'learner';
+            const proficiency = member.learningLevels?.[targetLanguage] || 'Intermediate';
+
+            if (role === 'tutor') {
+                return `\n### Persona Directives for ${member.profileName} (Tutor):\n- **Core Role:** You are the group's language tutor. Your goal is to encourage practice.\n- **Correction Style:** Use gentle, modeling corrections. If a learner says "I go store yesterday," respond with "Oh, you went to the store yesterday? What did you buy?".\n- **Engagement:** Actively ask open-ended questions to learners.`;
+            }
+            if (role === 'learner') {
+                let mistakeRules = '';
+                switch (proficiency.substring(0, 2)) {
+                    case 'A1': case 'A2': // Beginner
+                        mistakeRules = `- **Simulated Mistakes:** Make common beginner mistakes like basic verb conjugation ("I to eat pizza"), noun genders, and simple word order.`;
+                        break;
+                    case 'B1': case 'B2': // Intermediate
+                        mistakeRules = `- **Simulated Mistakes:** Make subtle mistakes like incorrect tenses, prepositions, or using "false friends".`;
+                        break;
+                    case 'C1': case 'C2': // Advanced
+                        mistakeRules = `- **Simulated Mistakes:** Make rare, sophisticated mistakes with idioms or unnatural-sounding phrasing.`;
+                        break;
+                }
+                return `\n### Persona Directives for ${member.profileName} (Learner - ${proficiency}):\n- **Behavior:** Practice and don't be afraid to make mistakes.\n${mistakeRules}`;
+            }
+            return `\n### Persona Directives for ${member.profileName}:\n- Behave as a general participant.`;
         };
-        const missingDeps = Object.entries(deps).filter(([key, value]) => !value).map(([key]) => key);
-        if (missingDeps.length > 0) {
-            console.error(`GroupInteractionLogic (TS): Critical dependencies missing at init: ${missingDeps.join(', ')}. Full deps object:`, deps);
-            return null; 
+        const allMemberRules = groupMembers.map(getPersonaSpecificRules).join('');
+        return `# SECTION 2: SPECIALIZED RULES - LANGUAGE LEARNING (Target: ${targetLanguage.toUpperCase()})\n**OVERALL OBJECTIVE:** Realistic language practice.\n${allMemberRules}`;
+    }
+
+    function buildCommunityHangoutRules(groupMembers: Connector[], group: Group): string {
+        const hangoutTopic = group.tags?.join(', ') || 'your shared interests';
+        const moderator = groupMembers.find(m => m.id === group.tutorId);
+        const moderatorRules = moderator ? `\n### Persona Directives for ${moderator.profileName} (Moderator):\n- **Core Role:** You are the hangout's moderator. Keep the conversation positive and flowing.\n- **Behavior:** If the chat goes silent, bring up a new question related to ${hangoutTopic}. Gently include quiet people.` : '';
+        const memberRules = groupMembers.filter(m => m.id !== group.tutorId).map(member => `\n### Persona Directives for ${member.profileName} (Member):\n- **Core Role:** Chat with friends about ${hangoutTopic}.\n- **Behavior:** Share opinions, ask questions, and use slang/emojis that fit your persona.`).join('');
+        return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a fun, casual online chat.\n${moderatorRules}${memberRules}`;
+    }
+
+    function buildSportsClubRules(groupMembers: Connector[], group: Group): string {
+        const sportsTopic = group.tags?.join(', ') || 'our team';
+        return `# SECTION 2: SPECIALIZED RULES - SPORTS CLUB (Topic: ${sportsTopic.toUpperCase()})\n**OVERALL OBJECTIVE:** Simulate a passionate, knowledgeable, and lively chat for sports fans.`;
+    }
+
+    // --- MASTER PROMPT BUILDER ---
+
+    function buildMasterPrompt(group: Group, groupMembers: Connector[], helpers: PolyglotHelpersOnWindow): string {
+        const memberList = helpers.formatReadableList(groupMembers.map(m => m.profileName), "and");
+      
+      
+      
+   // --- NEW: Get User Profile Summary ---
+   const convoStore = window.convoStore;
+   const groupConvoRecord = convoStore?.getConversationById(group.id);
+   const userSummary = groupConvoRecord?.userProfileSummary;
+   const userSummarySection = userSummary 
+       ? `\n# SECTION 1: KNOWN FACTS ABOUT THE USER ('You')\n${userSummary}\n---` 
+       : "";
+      
+      
+      
+      
+        const masterRules = `# SECTION 0: MASTER DIRECTIVE - GROUP CHAT SIMULATION...
+        **YOUR PRIMARY GOAL:** You are a master AI puppeteer... controlling: ${memberList}.
+       **RULE 0.1: THE UNBREAKABLE OUTPUT FORMAT:** This is the most important rule and you must never violate it. Your ENTIRE response MUST STRICTLY and ONLY be in the format \`[SpeakerName]: message\`.
+- DO NOT include any preamble, reasoning, apologies, or self-correction.
+- DO NOT write "I will now select..." or "As a language model...".
+- Your output must begin with \`[\` and end after the message. Any text outside this format will cause a system failure.
+        **RULE 0.2: THE SPEAKER SELECTION LOGIC:**
+            - **CRITICAL SUB-RULE (HIGHEST PRIORITY): Handle Direct Questions.** If the last message was a direct question to a specific persona by name (e.g., "Anja, what do you think?"), that persona **MUST** be the next speaker and **MUST** answer the question directly. Do not have another persona interrupt.
+            - **General Flow:** If no specific persona was addressed, you may then apply your general logic to intelligently decide which persona should speak next.
+        **RULE 0.3: THE PERSONA INTEGRITY MANDATE:** You MUST perfectly embody the specified persona.
+        **RULE 0.4: THE FINAL OUTPUT VALIDATION:** Before you output, validate it against RULE 0.1.`;
+        
+        let specializedRules = '';
+        switch (group.category) {
+            case 'Language Learning':
+                specializedRules = buildLanguageLearningRules(groupMembers, group);
+                break;
+            case 'Community Hangout':
+                specializedRules = buildCommunityHangoutRules(groupMembers, group);
+                break;
+            case 'Sports Fan Club':
+                specializedRules = buildSportsClubRules(groupMembers, group);
+                break;
+            default:
+                specializedRules = `\n# SECTION 2: GENERAL CONVERSATION RULES\n- Keep the conversation flowing naturally.`;
         }
-        if (typeof deps.activityManager?.getAiReplyDelay !== 'function' || 
-            typeof deps.aiService?.generateTextMessage !== 'function' ||
-            typeof deps.polyglotHelpers?.simulateTypingDelay !== 'function' ||
-            typeof deps.groupDataManager?.getCurrentGroupId !== 'function' ||
-            typeof deps.groupUiHandler?.appendMessageToGroupLog !== 'function' || // Check this specifically
-            typeof deps.uiUpdater?.appendToGroupChatLog !== 'function' ||
-            !deps.aiApiConstants?.PROVIDERS) { 
-            console.error("GroupInteractionLogic (TS): One or more key methods/properties missing from dependencies.", {
-                activityManager: !!deps.activityManager?.getAiReplyDelay,
-                aiService: !!deps.aiService?.generateTextMessage,
-                groupUiHandler_append: typeof deps.groupUiHandler?.appendMessageToGroupLog === 'function'
+
+        const personaSections = groupMembers.map(member => 
+            getGroupPersonaSummary(member, group.language)
+        ).join('\n');
+        return `${masterRules}${userSummarySection}\n${specializedRules}\n${personaSections}`;
+    }
+
+    // --- AI RESPONSE GENERATION LOGIC ---
+
+   // <<< REPLACE THE FUNCTION SIGNATURE WITH THIS >>>
+// =================== START: REPLACE THE ENTIRE FUNCTION ===================
+// <<< ADD THIS ENTIRE NEW HELPER FUNCTION >>>
+// <<< REPLACE THE ENTIRE renderScene FUNCTION WITH THIS >>>
+// <<< REPLACE THE renderScene FUNCTION WITH THIS SLIGHTLY SIMPLER VERSION >>>
+// <<< REPLACE THE ENTIRE renderScene FUNCTION >>>
+// <<< CHANGE THE RETURN TYPE >>>
+// =================== START: REPLACE THE ENTIRE FUNCTION ===================
+// =================== START: REPLACE THE ENTIRE FUNCTION ===================
+
+async function renderScene(lines: string[]): Promise<number> {
+    isRenderingScene = true; // <<< SET FLAG AT THE START
+    const startTime = Date.now();
+    const totalLinesInScene = lines.length;
+
+    // Create a new cancellation token for THIS specific scene rendering.
+    const cancellationToken = { isCancelled: false };
+    currentSceneCancellationToken = cancellationToken;
+
+    // <<< CHANGE 2: Add `currentIndex` parameter to the recursive function.
+    const renderNextLine = async (lineArray: string[], currentIndex: number): Promise<void> => {
+        // --- CANCELLATION CHECK ---
+        if (cancellationToken.isCancelled) {
+            console.log("[Scene Renderer]: Scene rendering cancelled by user activity.");
+            const { activityManager } = getDeps();
+            members.forEach(member => {
+                activityManager.clearAiTypingIndicator(member.id, 'group');
             });
-            return null; 
+            return;
         }
-        return deps as {
-            activityManager: ActivityManager;
-            aiService: AIService;
-            polyglotHelpers: PolyglotHelpers;
-            groupDataManager: GroupDataManager;
-            groupUiHandler: GroupUiHandler;
-            uiUpdater: UiUpdater;
-            aiApiConstants: AIApiConstants;
-        };
+
+        if (lineArray.length === 0) {
+            return; // Base case: all lines are done.
+        }
+        
+        const { activityManager, groupDataManager, groupUiHandler } = getDeps();
+        const [currentLine, ...remainingLines] = lineArray;
+
+        let speakerName: string | undefined, responseText: string | undefined;
+
+        // --- Parsing Logic ---
+        const strictMatch = currentLine.match(/\[(.*?)\]:\s*(.*)/s);
+        const fallbackMatch = currentLine.match(/([\w\sÉéàâçèêëîïôûùüÿñæœÀÂÇÈÊËÎÏÔÛÙÜŸÑÆŒ]+):\s*(.*)/s);
+
+        if (strictMatch && strictMatch[1] && strictMatch[2]) {
+            speakerName = strictMatch[1].trim();
+            responseText = strictMatch[2].trim();
+        } else if (fallbackMatch && fallbackMatch[1] && fallbackMatch[2]) {
+            const potentialName = fallbackMatch[1].trim();
+            if (members.some((m: Connector) => m.profileName === potentialName)) {
+                speakerName = potentialName;
+                responseText = fallbackMatch[2].trim();
+            }
+        }
+
+        if (speakerName && responseText) {
+            // --- NEW: Flexible Speaker Matching ---
+            // First, try for an exact match. This is the fastest and most common case.
+            let speakerConnector = members.find((m: Connector) => m.profileName === speakerName);
+            
+            // If no exact match, try a "starts with" match. This catches nicknames like "Javi M." for "Javi".
+            if (!speakerConnector) {
+                speakerConnector = members.find((m: Connector) => speakerName.startsWith(m.profileName));
+            }
+            // --- END: Flexible Speaker Matching ---
+
+            if (speakerConnector) {
+                activityManager.simulateAiTyping(speakerConnector.id, 'group');
+                
+                const wordCount = responseText.split(' ').length;
+                const typingDurationMs = 1500 + (wordCount / 3) * 1000;
+                const finalDelay = Math.min(Math.max(typingDurationMs, 2000), 7000) + Math.random() * 1000;
+
+                // <<< CHANGE 3: Update the console log with the progress counter.
+                console.log(`[Scene Pacing ${currentIndex}/${totalLinesInScene}]: Message: "${responseText.substring(0,20)}...", WordCount: ${wordCount}, Delay: ${finalDelay.toFixed(0)}ms`);
+
+                // START: NEW ORDER - STATE UPDATE FIRST
+                lastMessageTimestamp = Date.now();
+                const historyItem: GroupChatHistoryItem = { speakerId: speakerConnector.id, speakerName, text: responseText, timestamp: Date.now() };
+                groupDataManager.addMessageToCurrentGroupHistory(historyItem);
+                // END: NEW ORDER
+
+                // NOW, wait for the typing delay
+                await new Promise(resolve => setTimeout(resolve, finalDelay));
+
+                // Check for cancellation AGAIN after the delay, before showing the message
+                if (cancellationToken.isCancelled) {
+                    // We don't need to do anything here, the function will just exit cleanly.
+                    // The message is in history, but won't be displayed, which is fine.
+                    // The main loop will re-render it from history on next load if needed.
+                    return; 
+                }
+
+                // Finally, update the UI
+                activityManager.clearAiTypingIndicator(speakerConnector.id, 'group');
+                groupUiHandler.appendMessageToGroupLog(responseText, speakerName, false, speakerConnector.id);
+            }
+        }
+        
+        // <<< CHANGE 4: Pass the incremented index in the recursive call.
+        await renderNextLine(remainingLines, currentIndex + 1);
     };
 
-    const resolvedDeps = getSafeDeps();
+    // <<< CHANGE 5: Start the recursive process with the initial index of 1.
+    await renderNextLine(lines, 1);
 
-    if (!resolvedDeps) {
-        console.error("GroupInteractionLogic (TS): Failed to resolve critical dependencies. Assigning dummy methods.");
-        const dummyAsyncErrorFn = async () => { console.error("GIL (TS) dummy: Method called on non-initialized module."); };
-        const dummySyncErrorFn = () => { console.error("GIL (TS) dummy: Method called on non-initialized module."); };
-        Object.assign(window.groupInteractionLogic!, {
-            initialize: dummySyncErrorFn, reset: dummySyncErrorFn, setUserTypingStatus: dummySyncErrorFn,
-            startConversationFlow: dummySyncErrorFn, stopConversationFlow: dummySyncErrorFn,
-            handleUserMessage: dummyAsyncErrorFn, 
-            simulateAiMessageInGroup: dummyAsyncErrorFn,
-            setAwaitingUserFirstIntroduction: dummySyncErrorFn // <<< ADD THIS LINE
-        } as GroupInteractionLogicModule);
-        document.dispatchEvent(new CustomEvent('groupInteractionLogicReady'));
-        console.warn("group_interaction_logic.ts: 'groupInteractionLogicReady' dispatched (INITIALIZATION FAILED - deps missing).");
-        return;
+    // Clean up the token after the scene is done.
+    currentSceneCancellationToken = null;
+    
+    const durationMs = Date.now() - startTime;
+    if (!cancellationToken.isCancelled) {
+         console.log(`%c[Scene Renderer]: All lines rendered. Scene took ${(durationMs / 1000).toFixed(1)}s to display.`, 'color: #17a2b8; font-style: italic;');
     }
-    console.log("GroupInteractionLogic (TS): Core functional dependencies appear ready for IIFE.");
     
-    const { 
-        activityManager, aiService, polyglotHelpers, 
-        groupDataManager, groupUiHandler, uiUpdater, aiApiConstants 
-    } = resolvedDeps; 
+    isRenderingScene = false; // <<< CLEAR FLAG AT THE END
+    return durationMs;
+}
 
-    window.groupInteractionLogic = ((): GroupInteractionLogicModule => {
-        'use strict';
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 
-        const MAX_HISTORY_FOR_AI_CONTEXT = 8; 
-        let currentGroupMembersInternal: Connector[] = [];
-        let currentGroupTutorInternal: Connector | null = null;
-        let lastAiSpeakerIndex: number = -1;
-        let messageIntervalId: ReturnType<typeof setInterval> | null = null; 
-        let isUserTypingInGroupInternal: boolean = false;
-        let aiResponding: boolean = false;
-        let thinkingBubbleElement: HTMLElement | null = null;
-        let isAwaitingUserFirstIntroduction = false; // <<< ADD THIS LINE
-        let lastAiDirectlyEngagedByUserId: string | null = null; // <<< ADD THIS LINE
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
+// <<< CHANGE THE RETURN TYPE >>>
+async function generateAiTextResponse(
+    engineTriggered: boolean = false, 
+    isGrandOpening: boolean = false, 
+    isReEngagement: boolean = false, 
+    userText: string | undefined = undefined
+): Promise<string[]> {
+   
+    if (!conversationFlowActive) return []; // FIX 1
+    const { groupDataManager, polyglotHelpers, aiService, groupUiHandler, activityManager } = getDeps();
+    const currentGroup = groupDataManager.getCurrentGroupData();
+    if (!currentGroup || !tutor) {
+        console.error("GIL: generateAiTextResponse called but currentGroup or tutor is missing.");
+        return []; // FIX 2
+    }
 
-        function initialize(groupMembers: Connector[], groupTutor: Connector | null): void {
-            console.log("GroupInteractionLogic (TS): Initializing with members and tutor.");
-            console.log("GIL: Initializing. Tutor:", groupTutor ? groupTutor.profileName : "None"); 
-            currentGroupMembersInternal = groupMembers || [];
-            currentGroupTutorInternal = groupTutor || null;
-            lastAiSpeakerIndex = -1;
-            aiResponding = false;
-            isAwaitingUserFirstIntroduction = false; // <<< ADD THIS LINE (Reset on new group init)
-            lastAiDirectlyEngagedByUserId = null; // <<< ADD THIS LINE FOR CLEAN STATE
-            if (thinkingBubbleElement) {
-                thinkingBubbleElement.remove();
-                thinkingBubbleElement = null;
-            }
+    let systemPrompt = '';
+    let instructionText = '';
+    const groupHistory = groupDataManager.getLoadedChatHistory();
+    const recentHistoryText = groupHistory.slice(-15).map(msg => `${msg.speakerName}: ${msg.text}`).join('\n');
+
+    // --- STATE-BASED PROMPT SELECTION ---
+
+    if (isGrandOpening || isReEngagement) {
+        // --- PROMPT FOR SCENES: "You are a creative writer." ---
+        // This is a simple, focused prompt for generating initial scenes.
+        // 1. Get the detailed persona summaries and specialized rules.
+    const personaSections = members.map(member => getGroupPersonaSummary(member, currentGroup.language)).join('\n');
+    let specializedRules = '';
+    switch (currentGroup.category) {
+        case 'Language Learning':
+            specializedRules = buildLanguageLearningRules(members, currentGroup);
+            break;
+        case 'Community Hangout':
+            specializedRules = buildCommunityHangoutRules(members, currentGroup);
+            break;
+        case 'Sports Fan Club':
+            specializedRules = buildSportsClubRules(members, currentGroup);
+            break;
+        default:
+            specializedRules = `\n# GENERAL CONVERSATION RULES\n- Keep the conversation flowing naturally.`;
+    }
+
+    // 2. Build the new system prompt.
+    systemPrompt = `You are a creative dialogue writer for a chat simulation. Your primary goal is to write a realistic, in-character scene.
+
+--- CRITICAL RULES ---
+1.  **LANGUAGE:** You MUST write the entire dialogue ONLY in **${currentGroup.language}**.
+2.  **FORMAT:** Every line MUST be in the format: [CharacterName]: message.
+3.  **PERSONA:** You MUST adhere to the character personalities, roles, and allegiances described below. For example, a Real Madrid fan must act like one.
+
+--- CHARACTERS & SPECIALIZED RULES ---
+${personaSections}
+${specializedRules}
+`;
+        
+if (isGrandOpening) {
+    // --- NEW: Check if the group is essentially a one-on-one chat ---
+    if (members.length <= 1) { 
+        console.warn(`GIL: GRAND OPENING with only ${members.length} members. Switching to a direct, personal welcome prompt.`);
+        instructionText = `
+You are the host, **${tutor.profileName}**. You've just started a new chat group called "${currentGroup.name}", but so far, only one other person has joined: the user.
+
+Your task is to write a warm, personal welcome message directly to the user.
+
+--- SCENE REQUIREMENTS ---
+1.  **Acknowledge the Situation:** Start by welcoming the user personally. It's just the two of you for now.
+2.  **State Your Role:** Briefly mention you are the host/tutor for the group.
+3.  **Direct Question:** End your message by asking the user a direct, open-ended question to start the conversation. This is the most important part.
+4.  **Output Format:** Your ENTIRE response MUST be a SINGLE line in the format \`[${tutor.profileName}]: message\`.
+
+--- GOOD EXAMPLE ---
+[Mateus]: Olá! Bem-vindo ao "Exploradores de Portugal". Por enquanto, somos só nós os dois. Eu sou o Mateus, o teu guia por aqui. Para começar, o que despertou o teu interesse em Portugal?
+
+--- BAD EXAMPLE (Talks to a non-existent group) ---
+[Mateus]: Bem-vindos todos! Vamos começar a nossa discussão!
+`;
+    } else {
+            console.log("GIL: Building a SIMPLE prompt for a GRAND OPENING scene.");
+            instructionText = `
+Write a "Grand Opening" scene for a new chat group called "${currentGroup.name}". The group's topic is "${currentGroup.tags?.join(', ') || 'general discussion'}".
+
+--- SCENE REQUIREMENTS ---
+1.  **Host's Welcome:** The host, **${tutor.profileName}**, MUST speak first with a warm, in-character welcome.
+2.  **Member Introductions:** Have 2-4 other members introduce themselves briefly, reacting naturally to the host or each other.
+3.  **Invite the User:** The VERY LAST message of the scene MUST be from any persona, asking the user a direct question to invite them into the conversation.
+4.  **Total Length:** Generate between 4 to 8 messages.
+
+--- GOOD EXAMPLE ---
+[Budi]: Selamat datang di "Rumah Nusantara"! I'm Budi. I'm excited to chat with you all about Indonesian culture.
+[Dewi]: Hi Budi! I'm Dewi, it's great to be here. I love talking about our food.
+[Rizki]: Hey everyone, I'm Rizki. I'm more interested in the history side of things.
+[Budi]: That's great, Rizki! We have a lot to cover then.
+[Dewi]: What about you? What part of our culture are you most excited to talk about?
+
+--- BAD EXAMPLE (Too short, no user question) ---
+[Budi]: Welcome everyone.
+`;
+    } // <<< ADD THIS CLOSING BRACE TO END THE isGrandOpening BLOCK
+} else if (isReEngagement) { // Now this correctly connects to the `if (isGrandOpening)`
+    console.log("GIL: Building a natural CONTINUATION prompt for a RE-ENGAGEMENT scene.");
+    instructionText = `
+The user has just re-joined this chat. Do NOT welcome them back. Instead, create a natural continuation of the last message in the conversation history to make the world feel persistent.
+
+--- SCENE REQUIREMENTS ---
+1.  **Direct Continuation:** A new persona (different from the last speaker) must respond directly to the last message in the history as if only a few seconds have passed.
+2.  **Keep it Flowing:** The response can be a counter-argument, an agreement with an added thought, or a question related to the last message.
+3.  **Total Length:** Generate between 1 to 3 messages to gently restart the conversation.
+
+--- GOOD EXAMPLE ---
+Last message in history was "[Lorenzo]: Passion is great, but it doesn't always win you the Scudetto."
+YOUR RESPONSE:
+[Fabio]: Maybe not, Lorenzo, but it's what makes the game beautiful to watch! I'd rather see a passionate loss than a boring 1-0 win.
+
+--- BAD EXAMPLE (Acknowledges the user's return) ---
+[Fabio]: Hey, welcome back! We were just talking about football.
+`;
         }
 
-        function reset(): void {
-            console.log("GroupInteractionLogic (TS): Resetting state.");
-            stopConversationFlow(); 
-            currentGroupMembersInternal = [];
-            currentGroupTutorInternal = null;
-            lastAiSpeakerIndex = -1;
-            aiResponding = false;
-            lastAiDirectlyEngagedByUserId = null; // <<< ADD THIS LINE FOR CLEAN STATE
-        }
+    
+    } else {
+        // --- PROMPT FOR ONGOING CONVERSATION: "You are a master puppeteer." ---
+        // This is our advanced, rule-heavy prompt for when the conversation is already flowing.
+        systemPrompt = buildMasterPrompt(currentGroup, members, polyglotHelpers);
+        
+        if (engineTriggered) {
+            // This is for when the user has been idle and the AI needs to talk.
+            if (members.length <= 1) {
+                // Special case: 1-on-1 idle "prod"
+                console.log("GIL: Building a 1-on-1 'USER PROD' prompt because the user is idle.");
+                instructionText = `
+You are **${tutor.profileName}**. You are in a one-on-one chat with the user. You have already asked them a question, but they have been silent for a while.
 
-        function setAwaitingUserFirstIntroduction(isAwaiting: boolean): void {
-            console.log(`GIL: setAwaitingUserFirstIntroduction called with: ${isAwaiting}`);
-            isAwaitingUserFirstIntroduction = isAwaiting;
-            if (isAwaitingUserFirstIntroduction) {
-                // If we are now awaiting user intro, ensure any ongoing AI proactive turn is stopped
-                stopConversationFlow(); 
-                console.log("GIL: Conversation flow stopped as we are awaiting user's first introduction.");
-            } else {
-                // If we are no longer awaiting, and no AI is currently responding, (re)start flow.
-                // This path might be taken after AI intros complete.
-                if (!aiResponding) {
-                    console.log("GIL: No longer awaiting user intro, and AI not responding. Attempting to restart conversation flow if appropriate.");
-                    // We might not want to *always* restart flow here, depends on overall logic.
-                    // For now, let's assume it's okay, or startConversationFlow can have its own checks.
-                    startConversationFlow();
-                }
-            }
-        }
+Your task is to gently "prod" or "nudge" them for a response without being pushy.
 
+--- SCENE REQUIREMENTS ---
+1.  **Acknowledge the Pause:** You can start with a soft re-engagement phrase like "Então...", "So...", "Bueno...", etc.
+2.  **Re-ask or Re-phrase:** You can either re-ask the previous question in a slightly different way, or ask a new, simpler follow-up question related to the last topic.
+3.  **Keep it Short & Friendly:** This should be a single, short message.
+4.  **Output Format:** Your ENTIRE response MUST be a SINGLE line in the format \`[${tutor.profileName}]: message\`.
 
+--- GOOD EXAMPLE (Last message was "what are you interested in?") ---
+[Mateus]: Então, alguma ideia? Ou talvez queira que eu sugira um tópico para começarmos?
+`;
+            } else { 
+                // Normal case: Group idle chatter
+                console.log("GIL: Building MASTER prompt for an IDLE USER conversation block.");
+            instructionText = `
+The user has been silent. Generate a realistic "Conversation Block" (3-10 messages) to continue the chat based on the last topic.
 
-        function setUserTypingStatus(isTyping: boolean): void {
-            isUserTypingInGroupInternal = isTyping;
-        }
+--- RULES ---
+- The block must be a natural continuation of the last message in the history.
+- It should feel like a real, messy group chat. Include agreements, disagreements, short reactions ("lol", "ikr?", "🤔"), and even consecutive messages from one person.
+- Involve at least 2-3 different speakers.
+- Do NOT mention the user's silence.
 
-        function startConversationFlow(): void {
-            const currentGroupId = groupDataManager.getCurrentGroupId();
-            if (!currentGroupId) {
-                console.warn("GroupInteractionLogic (TS): Cannot start flow, no current group ID.");
-                return;
-            }
-            stopConversationFlow(); 
-            console.log(`GroupInteractionLogic (TS): Attempting to start conversation flow for group: ${currentGroupId}. Awaiting user intro: ${isAwaitingUserFirstIntroduction}`); // Modified log
+--- GOOD EXAMPLE ---
+Last message was "[Chiara]: I think Juventus will still be the team to beat."
+YOUR RESPONSE:
+[Fabio]: No way! Their midfield is too slow this year.
+[Lorenzo]: I don't know, Fabio, their experience is a huge advantage.
+[Fabio]: Experience doesn't score goals!
+[Chiara]: 😂 True, but it saves them.
+
+--- BAD EXAMPLE (Starts a new, unrelated topic) ---
+[Fabio]: Speaking of other things, what's everyone's favorite pizza topping?
+`;}
+} else { // Responding directly to the user
+    console.log("GIL: Building MASTER prompt for a direct RESPONSE to the user.");
+            instructionText = `
+The user has just sent a message. Your task is to generate a realistic, in-character response based on the following logic.
+
+--- RESPONSE LOGIC ---
+
+1.  **Analyze the User's Message:** First, determine if the user is talking to one specific person by name, or making a general statement/question to the group.
+
+2.  **IF the user addresses ONE person** (e.g., "en serio rafa?", "ciao sofia, come stai?"):
+    -   That specific person (**Rafa** or **Sofia**) MUST give the reply.
+    -   Your output must be a SINGLE line in the format \`[SpeakerName]: message\`.
+
+3.  **IF the user asks a GENERAL question OR makes a statement to the group** (e.g., "di dove siete?", "messi lol"):
+    -   Generate a "response block" where 1-4 different members react.
+    -   **CRITICAL SUB-RULE:** At least ONE of the speakers in your response block MUST directly acknowledge, react to, or build upon the user's message. This makes the user feel heard.
+    -   Other speakers can then react to that first speaker or to the user, creating a natural, flowing group conversation.
+    -   The responses should be short and natural.
+    -   Your output can be MULTIPLE lines, each in the format \`[SpeakerName]: message\`.
+
+--- GOOD EXAMPLE (Direct Question) ---
+User's message: "ciao sofia, come stai?"
+YOUR RESPONSE:
+[Sofia]: Ciao! Tutto bene, grazie. E tu?
+
+--- GOOD EXAMPLE (General Question) ---
+User's message: "di dove siete?"
+YOUR RESPONSE:
+[Sofia]: Io sono di Roma! La città eterna.
+[Giorgio]: Vengo da Milano, il cuore della moda.
+[Alessio]: Io invece sono siciliano!
+
+--- GOOD EXAMPLE (User Makes a Statement) ---
+History:
+...
+[João]: Ronaldo from Portugal is an incredible player.
+[You]: messi lol
+YOUR RESPONSE:
+[Roberto]: I respect Messi, but for me, Pelé is still the king. What do you think, Larissa?
+[Larissa]: Pelé for sure! His legacy is untouchable.
+
+--- BAD EXAMPLE (Ignoring the User's Statement) ---
+History:
+...
+[João]: Ronaldo from Portugal is an incredible player.
+[You]: messi lol
+YOUR RESPONSE:
+[Roberto]: Speaking of Ronaldo, did you see his goal last week?
+[Larissa]: Oh yeah, that was amazing!
+`;
+}
+    }
+
+    // --- FINAL PROMPT ASSEMBLY AND API CALL ---
+
+    const finalPromptInstruction = `
+${systemPrompt}
+
+Conversation History (if any):
+---
+${recentHistoryText || "(No history yet. This is the first message.)"}
+${userText ? `\n[You]: ${userText}` : ''} 
+---
+
+IMMEDIATE TASK:
+You MUST now follow this instruction precisely. This is your only goal.
+
+${instructionText}
+
+FINAL CHECK: Your entire output MUST only be the dialogue in the format [SpeakerName]: message. Do not add any other text, reasoning, or preamble.
+`;
+
+    // --- API Call and Rendering Logic (this part should be correct from our last step) ---
+  // <<< REPLACE THE ENTIRE try...catch BLOCK WITH THIS >>>
+// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
+// <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
+try {
+    // This function now ONLY gets the text and returns the lines.
+    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], 'openrouter');
+    
+    if (typeof rawResponse !== 'string' || !rawResponse) {
+        throw new Error("AI service returned empty or invalid response.");
+    }
+    
+    console.log(`[Scene Getter] Raw Conversation Block from AI:\n${rawResponse}`);
+    return rawResponse.split('\n').filter(line => line.trim() !== '');
+} catch (error) {
+    console.error("GIL (Hybrid): Error getting conversation block from AI:", error);
+    return []; // <<< FIX: Return an empty array on failure
+}
+}
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
+// ===================  END: PASTE THIS ENTIRE BLOCK  ===================
+    /**
+     * Generates a response when a user sends an image. This is a multi-stage process.
+     */
+  // <<< REPLACE WITH THIS CORRECTED SIGNATURE >>>
+async function generateAiImageResponse(members: Connector[], imageBase64Data: string, imageMimeType: string, userCaption: string): Promise<boolean> {
+        if (!conversationFlowActive) return false;
+    
+        console.log("GIL (Hybrid): generateAiImageResponse called. Will first determine the best speaker.");
+        const { groupDataManager, polyglotHelpers, aiService, groupUiHandler, activityManager } = getDeps();
+        
+        // This variable is declared here to be accessible throughout the function scope.
+        let personaToSpeak: Connector | undefined;
+        
+        try {
+            // --- STAGE 1: CHOOSE THE BEST SPEAKER ---
+            // --- STAGE 1: CHOOSE THE BEST SPEAKER ---
+    const currentGroup = groupDataManager.getCurrentGroupData()!;
+    const memberProfiles = members.map(m => `- ${m.profileName}: Primarily interested in ${polyglotHelpers.formatReadableList(m.interests, 'and')}.`).join('\n'); 
+            const speakerChoicePrompt = `Based on the content of the attached image and the following member profiles, who is the MOST qualified or likely person to comment on it?
+
+Group Members:
+${memberProfiles}
+User's caption with the image: "${userCaption || 'none'}"
+Your task: Respond with ONLY the name of the best person to speak next. Do not provide any other text or explanation.`;
             
-            if (isAwaitingUserFirstIntroduction) { // <<< ADD THIS IF BLOCK
-                console.log("GIL: startConversationFlow - Still awaiting user's first introduction. Proactive AI turns remain paused.");
-                return; 
-            }
-            
-            console.log(`GIL: startConversationFlow - Proceeding to set up proactive AI turns for group: ${currentGroupId}`); // New log
-            let baseInterval = (polyglotHelpers.simulateTypingDelay(18000, 100) || 18000) + Math.random() * 12000;
-    
-            messageIntervalId = setInterval(() => {
-                if (isUserTypingInGroupInternal || aiResponding || !groupDataManager.getCurrentGroupId() || currentGroupMembersInternal.length <= 1) {
-                    return;
-                }
-                simulateAiMessageInGroup().catch(e => console.error("Error in scheduled simulateAiMessageInGroup:", e));
-                baseInterval = (polyglotHelpers.simulateTypingDelay(15000, 90) || 15000) + Math.random() * 10000;
-            }, baseInterval);
-        }
-
-        function stopConversationFlow(): void {
-            if (messageIntervalId) {
-                clearInterval(messageIntervalId);
-                messageIntervalId = null;
-            }
-            if (thinkingBubbleElement) {
-                thinkingBubbleElement.remove();
-                thinkingBubbleElement = null;
-            }
-        }
-        async function introduceAiLearnersSequentially(userIntroText: string): Promise<void> {
-            console.log("GIL: introduceAiLearnersSequentially - START. User intro for context:", userIntroText.substring(0, 50) + "...");
-            const groupDef = groupDataManager.getCurrentGroupData(); // Get current group def
-    
-            // Critical dependencies for this function
-            if (!currentGroupTutorInternal || !groupDef || !polyglotHelpers || !uiUpdater || !aiService || !aiApiConstants || !groupDataManager || !groupUiHandler) {
-                console.error("GIL.introduceAiLearnersSequentially: Missing critical dependencies.");
-                aiResponding = false; // Ensure lock is released if we exit early
-                startConversationFlow(); // Attempt to restart normal flow
-                return;
-            }
-            
-            if (currentGroupMembersInternal.length <= 1) { // Only tutor or tutor + user
-                console.log("GIL: No other AI learners to introduce.");
-                aiResponding = false; // Release our own lock
-                startConversationFlow(); 
-                return;
-            }
-    
-            const aiLearners = currentGroupMembersInternal.filter(
-                member => member.id !== currentGroupTutorInternal!.id && member.id !== "user_player" 
+            // Use a fast, cheap model for this routing task
+            const speakerNameResponse = await aiService.generateTextFromImageAndText(
+                imageBase64Data, imageMimeType, members[0], [], speakerChoicePrompt, 'groq'
             );
     
-            if (aiLearners.length === 0) {
-                console.log("GIL: No AI learners in this group to introduce after filtering.");
-                aiResponding = false;
-                startConversationFlow();
-                return;
+            if (!speakerNameResponse || typeof speakerNameResponse !== 'string') {
+                throw new Error("Speaker choice AI returned no response.");
             }
             
-            console.log(`GIL: Will attempt to introduce ${aiLearners.length} AI learners sequentially.`);
-            // aiResponding is already true (set by handleUserMessage before calling this)
-    
-            for (let i = 0; i < aiLearners.length; i++) {
-                const learner = aiLearners[i];
-                const delay = (polyglotHelpers.simulateTypingDelay(3000, 70) || 3000) + (Math.random() * 2000);
-                await new Promise(resolve => setTimeout(resolve, delay));
-    
-                // Re-check if still in the same group before this AI speaks
-                if (groupDataManager.getCurrentGroupId() !== groupDef.id) {
-                    console.warn("GIL: Group changed during AI learner introductions. Aborting further intros for this cycle.");
-                    break; // Exit the loop
-                }
-                
-                if (thinkingBubbleElement) {
-                    thinkingBubbleElement.remove();
-                    thinkingBubbleElement = null;
-                }
-                const typingText = `${learner.profileName!.split(' ')[0]} is typing...`;
-                thinkingBubbleElement = uiUpdater.appendToGroupChatLog(
-                    typingText, learner.profileName!, false, learner.id,
-                    { isThinking: true, avatarUrl: learner.avatarModern, timestamp: Date.now() }
-                );
-    
-                // Construct a prompt for the learner's introduction
-                // GetUserReferenceName will be defined in Block 7
-                const userReferenceForPrompt = getUserReferenceName(groupDef.language, true); 
-               
-                let userStatementForPrompt = `The user (referred to as "${userReferenceForPrompt}") has recently spoken or introduced themselves. Their last relevant input for context was: "${polyglotHelpers.sanitizeTextForDisplay(userIntroText)}"`;
-                if (userIntroText === "The tutor welcomed everyone to the group." || userIntroText.trim().toLowerCase() === "hi" || !userIntroText.trim()) { // Added check for empty userIntroText
-                    userStatementForPrompt = `The tutor, ${currentGroupTutorInternal.profileName}, has just welcomed everyone and prompted for introductions. The user may have said a brief hello or not spoken substantively yet.`;
-                }
-               
-               
-               
-                let introPromptContext =
-                `You are ${learner.profileName}, an AI language learner in the "${groupDef.name}" group chat. The group language is ${groupDef.language}. The tutor is ${currentGroupTutorInternal.profileName}.
-                The user (${userReferenceForPrompt}) has just spoken, saying: "${polyglotHelpers.sanitizeTextForDisplay(userIntroText)}"
-                Other learners might be introducing themselves too.
-
-                **YOUR GOAL: Introduce yourself NATURALLY and MEMORABLY in ${groupDef.language}.**
-
-                **CRITICAL FOR YOUR INTRODUCTION (as ${learner.profileName}):**
-                1.  **UNIQUE GREETING (1-2 sentences MAX):**
-                    *   **AVOID:** Generic phrases like "Hola a todos, me llamo..." or "Estoy emocionado de unirme..." if others are using similar starts.
-                    *   **INSTEAD, TRY ONE OF THESE APPROACHES:**
-                        *   **Connect to the User/Tutor:** Briefly react to what the user (${userReferenceForPrompt}) or tutor just said. Example: "Thanks for the welcome, ${currentGroupTutorInternal.profileName}! That topic of 'community' is perfect. I'm ${learner.profileName}, by the way."
-                        *   **Lead with a Passion:** Start with something core to your persona. Example: "Music is my lifeblood! Especially the rhythms from ${learner.country || 'my region'}. I'm ${learner.profileName}, and I'm hoping to share some of that here." (Draw from ${learner.interests?.join(', ')}, ${learner.bioModern}).
-                        *   **State Your Origin/Current Location with Flair:** Example: "Joining you all from sunny ${learner.city || 'my city'}! I'm ${learner.profileName}."
-                        *   **Acknowledge Other Learners (if any spoke just before you):** Example: "Great to meet you, [Previous Learner Name]! I'm ${learner.profileName} from ${learner.country || 'my homeland'}."
-                 *   Use your defined \`greetingCall\` ("${learner.greetingCall || ''}") or \`greetingMessage\` ("${learner.greetingMessage || ''}") as inspiration if they offer a unique start.
-                2.  **ONE KEY THING ABOUT YOU (Persona-Driven):**
-                    *   After your name, briefly mention ONE defining aspect. This could be:
-                        *   Your profession: "${learner.profession || ''}"
-                        *   A primary interest: One of "${learner.interests?.join(', ') || ''}"
-                        *   A quirk or habit: "${learner.quirksOrHabits?.[0] || ''}"
-                        *   Your reason for learning ${groupDef.language} (if applicable, perhaps inspired by your goals: "${learner.goalsOrMotivations || ''}" ${ (learner.practiceLanguages && learner.practiceLanguages.some(langEntry => langEntry.lang.toLowerCase() === groupDef.language.toLowerCase())) ? `or because it's one of your target practice languages.` : '' })."
-                    *   **SHOW, DON'T JUST TELL:** Instead of "I am passionate about X," try "X is something I can talk about for hours!"
-                3.  **KEEP IT CONCISE:** Your whole intro should be 2-4 sentences.
-                4.  **LANGUAGE:** Speak ONLY in ${groupDef.language}.
-                5.  **NO META-TALK:** DO NOT mention being an AI. DO NOT explain your greeting choice. DO NOT start your response with "${learner.profileName}:".
-
-                Your brief, human-like introduction as ${learner.profileName}:`;
-
-    const introHistoryForAI: GeminiChatItem[] = []; // Keep history minimal for intros
-    
-                try {
-                    const aiIntro = await aiService.generateTextMessage(
-                        introPromptContext, 
-                        learner,
-                        introHistoryForAI, 
-                        aiApiConstants.PROVIDERS.GROQ 
-                    );
-    
-                    if (thinkingBubbleElement) { thinkingBubbleElement.remove(); thinkingBubbleElement = null; }
-    
-                    // Re-check group context AGAIN before appending
-                    if (groupDataManager.getCurrentGroupId() !== groupDef.id) {
-                        console.warn("GIL: Group changed just before appending AI intro. Aborting append for this learner.");
-                        continue; 
-                    }
-    
-                    const aiIntroText = (typeof aiIntro === 'string') ? aiIntro.trim() : null;
-                    if (aiIntroText) {
-                         console.log(`GIL: AI Learner ${learner.profileName} introducing: "${aiIntroText.substring(0,30)}..."`);
-                        groupUiHandler.appendMessageToGroupLog(aiIntroText, learner.profileName!, false, learner.id);
-                        groupDataManager.addMessageToCurrentGroupHistory({
-                            speakerId: learner.id, text: aiIntroText,
-                            timestamp: Date.now(), speakerName: learner.profileName
-                        });
-                        groupDataManager.saveCurrentGroupChatHistory(true); // Save after each AI intro for better UX
-                   
-                
-                   
-                    } else {
-                        console.warn(`GIL: AI Learner ${learner.profileName} generated empty intro.`);
-                    }
-                } catch (error) {
-                    console.error(`GIL: Error generating intro for ${learner.profileName}:`, error);
-                    if (thinkingBubbleElement) { thinkingBubbleElement.remove(); thinkingBubbleElement = null; }
-                }
-            } // End of for loop for learners
-    
-            aiResponding = false; // Release the lock after all intros are done or aborted
-            console.log("GIL: AI learner introductions finished (or aborted). Restarting normal conversation flow.");
-            startConversationFlow(); 
-        }
-
-
-
-       // D:\polyglot_connect\src\js\core\group_interaction_logic.ts
-
-// <<< START OF REPLACEMENT 2.1 >>>
-// D:\polyglot_connect\src\js\core\group_interaction_logic.ts
-
-// <<< START: REPLACE THE ENTIRE handleUserMessage FUNCTION >>>
-async function handleUserMessage(
-    text: string | undefined,
-    options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }
-): Promise<void> {
-    const currentGroupId = groupDataManager.getCurrentGroupId();
-    const trimmedText = text?.trim();
-    
-    // Safely check options
-    const userSentImage = options?.userSentImage ?? false;
-
-    if ((!trimmedText && !userSentImage) || !currentGroupId) {
-        return;
-    }
-    console.log(`GIL.handleUserMessage: Processing user input. Text: "${trimmedText || ''}", Image Sent: ${userSentImage}`);
-
-    stopConversationFlow();
-
-    const contextualTextForAI = trimmedText || (userSentImage ? "The user shared an image." : "");
-
-    const imageContext = userSentImage ? {
-        base64Data: options?.imageBase64Data, // Safely access properties
-        mimeType: options?.imageMimeType,
-    } : undefined;
-
-    if (isAwaitingUserFirstIntroduction) {
-        console.log("GIL: User sent their first input. Flag is true.");
-        isAwaitingUserFirstIntroduction = false;
-        aiResponding = true;
-        
-        await simulateAiMessageInGroup(true, contextualTextForAI, imageContext);
-        await introduceAiLearnersSequentially(contextualTextForAI);
-    } else {
-        await simulateAiMessageInGroup(true, contextualTextForAI, imageContext);
-        if (!aiResponding && !isAwaitingUserFirstIntroduction) {
-            startConversationFlow();
-        }
-    }
-}
-// <<< END: REPLACE THE ENTIRE handleUserMessage FUNCTION >>>
-// <<< END OF REPLACEMENT 2.1 >>>
-    // REPLACE THIS ENTIRE SECTION IN YOUR FILE //
-
-async function simulateAiMessageInGroup(
-    isReplyToUser: boolean = false,
-    userMessageText: string = "",
-    imageContextForReply?: { base64Data?: string; mimeType?: string; }
-): Promise<void> {
-    if (aiResponding) {
-        console.log("GIL: AI is already responding, skipping this turn.");
-        return;
-    }
-    aiResponding = true;
-    const USER_ID_PLACEHOLDER = "user_player";
-    const currentGroupDef = groupDataManager.getCurrentGroupData();
-    if (!currentGroupDef || !currentGroupTutorInternal) {
-        console.error("GIL: Cannot simulate message, critical group data missing.");
-        aiResponding = false;
-        return;
-    }
-
-    const groupChatHistory = groupDataManager.getLoadedChatHistory() || [];
-    const activeAiSpeakers = currentGroupMembersInternal.filter(m => m.id !== "user_player" && polyglotHelpers.isConnectorCurrentlyActive(m));
-// ADD THIS LINE
-const lastMessageInFullHistory = groupChatHistory.length > 0 ? groupChatHistory[groupChatHistory.length - 1] : null;
-    if (activeAiSpeakers.length === 0) {
-        aiResponding = false;
-        return;
-    }
-
-    // This variable will hold our chosen speaker. It starts as undefined.
-    let speaker: Connector | undefined;
-    const normalizedUserMessage = userMessageText ? polyglotHelpers.normalizeText(userMessageText) : "";
-
-    // --- PRIORITY 1: Explicit @Mention ---
-    // User mentions an AI's name directly. This gets top priority.
-    if (isReplyToUser && userMessageText) {
-        for (const potentialSpeaker of activeAiSpeakers) {
-            const firstNamesToMatch = [
-                potentialSpeaker.profileName?.split(' ')[0],
-                potentialSpeaker.name?.split(' ')[0]
-            ].filter(Boolean).map(name => polyglotHelpers.normalizeText(name!));
-
-            const uniqueFirstNames = [...new Set(firstNamesToMatch)];
-
-            for (const firstName of uniqueFirstNames) {
-                // Use a regular expression to match the whole word to avoid partial matches (e.g., "Ken" in "Kenji").
-                const namePattern = new RegExp(`\\b${firstName}\\b`, 'i');
-                if (namePattern.test(normalizedUserMessage)) {
-                    speaker = potentialSpeaker;
-                    console.log(`GIL: Speaker Priority 1 - User mentioned '${firstName}', selecting ${speaker.profileName}.`);
-                    break;
-                }
-            }
-            if (speaker) break; // Exit the outer loop once a speaker is found
-        }
-    }
-
-    // --- PRIORITY 2: Implicit Follow-up to Last ENGAGED AI ---
-    // If no one was explicitly named, check if the user is continuing a direct conversation.
-    // This only triggers if an AI has recently replied to the user (`lastAiDirectlyEngagedByUserId` is set).
-  // REPLACE WITH THIS FINAL, UPGRADED BLOCK //
-
-    // --- PRIORITY 2: Implicit Follow-up to Last ENGAGED AI ---
-    // If no one was explicitly named, check if the user is continuing a direct conversation.
-    if (!speaker && lastAiDirectlyEngagedByUserId && isReplyToUser && userMessageText) {
-        let isLikelyFollowUp = false;
-
-        // --- KEYWORD LISTS FOR FOLLOW-UP DETECTION ---
-    // --- KEYWORD LISTS FOR FOLLOW-UP DETECTION ---
-// NOTE: All keywords are pre-normalized (lowercase, accents removed) to match the `normalizedUserMessage` variable.
-// This greatly improves matching robustness across different languages and user input styles.
-
-const simpleAffirmations: string[] = [
-    // English
-    "yes", "yeah", "yep", "yup", "sure", "okay", "ok", "alright", "right", "correct", "exactly", "true", "i agree", "me too", "sounds good", "got it", "understood", "fine", "good", "totally", "for sure", "certainly", "absolutely", "definitely", "you got it", "that's it",
-    // Spanish
-    "si", "claro", "vale", "bueno", "dale", "de acuerdo", "exacto", "correcto", "verdad", "asi es", "entiendo", "entendido", "ya veo", "perfecto", "cierto", "seguro", "ya", "esta bien", "eso es",
-    // French
-    "oui", "ouais", "bien sur", "d'accord", "exactement", "c'est ca", "c'est vrai", "entendu", "compris", "parfait", "absolument", "tout a fait", "carrement", "ca marche",
-    // German
-    "ja", "sicher", "klar", "okay", "ok", "in ordnung", "genau", "richtig", "stimmt", "absolut", "bestimmt", "verstanden", "genau so", "sicherlich", "einverstanden",
-    // Italian
-    "si", "certo", "va bene", "ok", "d'accordo", "esatto", "giusto", "certo che si", "ho capito", "perfetto", "assolutamente",
-    // Portuguese
-    "sim", "claro", "ta bom", "esta bem", "certo", "exato", "com certeza", "entendi", "perfeito", "absolutamente", "fechado", "beleza",
-    // Dutch
-    "ja", "zeker", "tuurlijk", "ok", "oke", "akkoord", "precies", "klopt", "begrepen", "helemaal", "prima",
-    // Russian (cyrillic)
-    "да", "ага", "конечно", "хорошо", "ладно", "точно", "именно", "правильно", "согласен", "согласна", "понял", "поняла", "понятно", "безусловно",
-    // Japanese (hiragana/kanji)
-    "はい", "ええ", "うん", "そうです", "そうですね", "その通り", "分かった", "分かりました", "了解", "なるほど", "確かに",
-    // Korean (hangul)
-    "네", "응", "맞아요", "그럼요", "알았어", "알겠습니다", "이해했어요", "좋아요", "당연하죠",
-    // Mandarin Chinese (pinyin/hanzi)
-    "shi de", "dui", "hao", "好的", "对", "是的", "没错", "当然", "明白了", "我同意",
-    // Arabic
-    "نعم", "ايوه", "اكيد", "طبعا", "تمام", "صح", "مضبوط", "بالتاكيد", "موافق", "فهمت",
-    // Hindi
-    "haan", "theek hai", "sahi hai", "bilkul", "samajh gaya", "samajh gayi", "ji",
-    // Indonesian
-    "ya", "iya", "tentu", "oke", "baik", "setuju", "paham", "mengerti", "benar", "betul",
-    // Polish
-    "tak", "pewnie", "oczywiscie", "zgoda", "dobrze", "ok", "racja", "dokladnie", "zrozumialem", "rozumiem",
-    // Swedish
-    "ja", "visst", "javisst", "okej", "ok", "precis", "exakt", "juste", "jag forstar", "absolut",
-    // Thai
-    "ใช่", "ค่ะ", "ครับ", "แน่นอน", "โอเค", "เข้าใจแล้ว", "ถูกต้อง",
-    // Turkish
-    "evet", "tabii", "tamam", "olur", "anlastik", "dogru", "kesinlikle", "anladim",
-    // Vietnamese
-    "vâng", "dạ", "đúng", "chắc chắn", "được", "ok", "tất nhiên", "hiểu rồi",
-    // Tagalog
-    "oo", "opo", "sige", "tama", "syempre", "gets ko", "naiintindihan ko",
-    // Norwegian
-    "ja", "sikkert", "selvfolgelig", "ok", "greit", "riktig", "akkurat", "forstatt",
-    "totally" // Universal slang
-];
-
-const simpleNegations: string[] = [
-    // English
-    "no", "nope", "nah", "not really", "i disagree", "i don't think so", "never", "incorrect", "false", "not at all", "certainly not", "absolutely not", "wrong",
-    // Spanish
-    "no", "claro que no", "para nada", "no estoy de acuerdo", "nunca", "incorrecto", "falso", "jamas", "en absoluto", "que va", "negativo",
-    // French
-    "non", "pas vraiment", "je ne suis pas d'accord", "jamais", "incorrect", "faux", "pas du tout", "absolument pas", "pas question",
-    // German
-    "nein", "nicht wirklich", "stimmt nicht", "falsch", "niemals", "auf keinen fall", "ich stimme nicht zu", "uberhaupt nicht", "keinesfalls",
-    // Italian
-    "no", "non proprio", "non sono d'accordo", "sbagliato", "assolutamente no", "per niente", "mai",
-    // Portuguese
-    "nao", "de jeito nenhum", "claro que nao", "discordo", "errado", "nunca", "jamais",
-    // Dutch
-    "nee", "niet echt", "oneens", "niet akkoord", "fout", "absoluut niet", "nooit",
-    // Russian (cyrillic)
-    "нет", "неа", "не совсем", "я не согласен", "я не согласна", "никогда", "неправильно", "неверно", "ни в коем случае",
-    // Japanese (hiragana/kanji)
-    "いいえ", "いや", "ううん", "違う", "そうじゃない", "間違っています", "そんなことない",
-    // Korean (hangul)
-    "아니요", "아니", "틀렸어요", "그렇지 않아요", "절대 아니에요",
-    // Mandarin Chinese (pinyin/hanzi)
-    "bu", "bushi", "budui", "不是", "不对", "我不同意", "当然不",
-    // Arabic
-    "لا", "لاء", "ابدا", "غير صحيح", "خطأ", "بالعكس", "مستحيل",
-    // Hindi
-    "nahin", "bilkul nahin", "galat", "main sahmat nahin hoon",
-    // Indonesian
-    "tidak", "bukan", "salah", "saya tidak setuju", "enggak",
-    // Polish
-    "nie", "skad", "zle", "nie sadze", "nie zgadzam sie", "nigdy",
-    // Swedish
-    "nej", "na", "inte direkt", "fel", "jag haller inte med", "aldrig",
-    // Thai
-    "ไม่", "ไม่เลย", "ไม่เห็นด้วย", "ผิด",
-    // Turkish
-    "hayir", "yanlis", "katilmiyorum", "asla", "hic de degil",
-    // Vietnamese
-    "không", "sai", "tôi không đồng ý", "đâu có",
-    // Tagalog
-    "hindi", "hindi po", "mali", "hindi ako sang-ayon",
-    // Norwegian
-    "nei", "ikke egentlig", "uenig", "feil", "aldri", "absolutt ikke"
-];
-
-const simpleContinuers: string[] = [
-    // English
-    "uh-huh", "mm-hmm", "mhm", "go on", "i see", "really", "oh", "interesting", "and", "so", "then", "well", "aha", "and then", "tell me more",
-    // Spanish
-    "aja", "hmm", "sigue", "continua", "ya veo", "ah si", "de verdad", "interesante", "y...", "entonces", "luego", "pues", "vaya", "cuentame mas",
-    // French
-    "euh-hein", "hmm", "continue", "vas-y", "je vois", "ah bon", "vraiment", "interessant", "et...", "donc", "alors", "puis", "ben", "dis-m'en plus",
-    // German
-    "aha", "hm", "mhm", "weiter", "ich verstehe", "ach so", "wirklich", "echt", "interessant", "und...", "also", "dann", "nun", "tja", "erzahl mehr",
-    // Italian
-    "uhm", "mmh", "continua", "davvero", "interessante", "capisco", "allora", "e poi", "dimmi di piu",
-    // Portuguese
-    "uhum", "hmm", "continue", "sei", "interessante", "e entao", "me diga mais",
-    // Dutch
-    "hmm", "mhm", "ga door", "ik snap het", "echt", "interessant", "en", "vertel",
-    // Russian (cyrillic)
-    "угу", "ага", "хм", "продолжай", "понимаю", "ясно", "правда", "интересно", "и...", "так", "ну",
-    // Japanese (hiragana/kanji)
-    "ふむふむ", "へえ", "ほう", "それで", "なるほど", "本当", "面白い", "続けて",
-    // Korean (hangul)
-    "음", "아", "어", "네", "계속하세요", "진짜요", "그래요", "그래서요",
-    // Mandarin Chinese (pinyin/hanzi)
-    "en", "嗯", "然后呢", "有意思", "真的吗", "我明白了", "继续说",
-    // Arabic
-    "اها", "هممم", "كمل", "كملي", "فاهم", "بجد", "معقول", "وبعدين",
-    // Hindi
-    "hmm", "acha", "phir", "aur batao", "sach mein",
-    // Indonesian
-    "hmm", "oh gitu", "terus", "lanjut", "menarik", "begitu ya",
-    // Polish
-    "aha", "uhm", "kontynuuj", "naprawde", "ciekawe", "rozumiem", "no i",
-    // Swedish
-    "jaha", "okej", "hmm", "fortsatt", "jag forstar", "verkligen", "intressant", "och sen da",
-    // Thai
-    "อืม", "อ๋อ", "แล้วไงต่อ", "จริงเหรอ", "น่าสนใจ", "เล่ามาอีก",
-    // Turkish
-    "himm", "hı-hı", "devam et", "anliyorum", "gercekten mi", "ilginc", "ee", "sonra",
-    // Vietnamese
-    "uhm", "vậy à", "rồi sao", "thật hả", "thú vị", "kể tiếp đi",
-
-    // Tagalog
-    "tapos", "talaga", "ah talaga", "ganun ba", "kwento mo pa",
-    // Norwegian
-    "aha", "javel", "hmm", "fortsett", "jeg skjonner", "virkelig", "interessant", "og sa"
-];
-
-const questionKeywords: string[] = [
-    // English
-    "what", "where", "when", "who", "why", "how", "which", "whose", "explain", "question",
-    // Spanish
-    "que", "cual", "quien", "como", "cuando", "donde", "cuanto", "porque", "por que", "cuyo", "explica", "pregunta",
-    // French
-    "que", "quoi", "qui", "comment", "quand", "ou", "combien", "pourquoi", "lequel", "laquelle", "explique",
-    // German
-    "was", "wo", "wann", "wer", "warum", "wieso", "weshalb", "wie", "welche", "wessen", "erklar",
-    // Italian
-    "cosa", "che", "dove", "quando", "chi", "perche", "come", "quale", "quanto", "spiega",
-    // Portuguese
-    "o que", "onde", "quando", "quem", "porque", "por que", "como", "qual", "quanto", "explique",
-    // Dutch
-    "wat", "waar", "wanneer", "wie", "waarom", "hoe", "welke", "wiens", "leg uit",
-
-    // Russian (cyrillic)
-    "что", "где", "когда", "кто", "почему", "зачем", "как", "какой", "чей", "объясни",
-    // Japanese (hiragana/kanji)
-    "何", "どこ", "いつ", "誰", "なぜ", "どうして", "どう", "どの", "誰の", "教えて",
-    // Korean (hangul)
-    "뭐", "무엇을", "어디", "언제", "누구", "왜", "어떻게", "어떤", "설명해",
-    // Mandarin Chinese (pinyin/hanzi)
-    "什么", "哪里", "何时", "谁", "为什么", "怎么", "哪个", "解释",
-    // Arabic
-    "ماذا", "ما", "اين", "متى", "من", "لماذا", "كيف", "اي", "اشرح",
-    // Hindi
-    "kya", "kahan", "kab", "kaun", "kyon", "kaise", "kaun sa", "samjhao",
-    // Indonesian
-    "apa", "dimana", "kapan", "siapa", "mengapa", "kenapa", "bagaimana", "yang mana", "jelaskan",
-    // Polish
-    "co", "gdzie", "kiedy", "kto", "dlaczego", "jak", "ktory", "czyj", "wyjasnij",
-    // Swedish
-    "vad", "var", "nar", "vem", "varfor", "hur", "vilken", "vilket", "vems", "forklara",
-    // Thai
-    "อะไร", "ที่ไหน", "เมื่อไหร่", "ใคร", "ทำไม", "อย่างไร", "อันไหน", "อธิบาย",
-    // Turkish
-    "ne", "nerede", "ne zaman", "kim", "neden", "niye", "nasil", "hangi", "acikla",
-    // Vietnamese
-    "gì", "đâu", "khi nào", "ai", "tại sao", "sao", "thế nào", "cái nào", "giải thích",
-    // Tagalog
-    "ano", "saan", "kailan", "sino", "bakit", "paano", "alin", "ipaliwanag",
-    // Norwegian
-    "hva", "hvor", "nar", "hvem", "hvorfor", "hvordan", "hvilken", "hvis", "forklar"
-];
-
-// This list is checked with higher priority. It contains phrases that very strongly
-// indicate the user is directly addressing the last speaker.
-const directYouPhrases: string[] = [
-    // English
-    "you", "and you", "what about you", "how about you", "your turn", "you are", "you're", "do you", "are you", "did you", "can you", "will you", "could you", "would you", "have you", "what do you",
-    // Spanish
-    "tu", "usted", "vos", "y tu", "y usted", "y vos", "que tal tu", "que hay de ti", "a ti", "y a ti", "eres", "estas", "tienes", "puedes", "sabes", "has", "crees que",
-    // French
-    "toi", "vous", "et toi", "et vous", "ton avis", "votre avis", "tu es", "vous etes", "as-tu", "avez-vous", "peux-tu", "pouvez-vous", "sais-tu", "savez-vous", "penses-tu",
-    // German
-    "du", "sie", "und du", "und sie", "und dir", "und ihnen", "was ist mit dir", "was meinst du", "du bist", "sind sie", "bist du", "kannst du", "konnen sie", "hast du", "haben sie", "denkst du",
-    // Italian
-    "tu", "lei", "e tu", "e lei", "che ne dici di te", "secondo te", "tu sei", "lei e", "hai", "puoi", "sai", "pensi che",
-    // Portuguese
-    "voce", "e voce", "o que me diz de voce", "e tu", "pra voce", "voce e", "voce esta", "tem", "pode", "sabe", "acha que",
-    // Dutch
-    "jij", "u", "en jij", "en u", "wat vind jij", "jij bent", "ben jij", "heb jij", "kun jij", "kan je",
-    // Russian (cyrillic)
-    "ты", "вы", "а ты", "а вы", "как насчет тебя", "а у тебя", "у тебя", "ты можешь", "вы можете", "ты думаешь",
-    // Japanese (hiragana/kanji)
-    "あなた", "君は", "あなたはどう", "どう思いますか", "できますか", "知っていますか", // Note: "you" is often omitted, but these phrases are direct.
-    // Korean (hangul)
-    "너는", "당신은", "어때요", "어떠세요", "할 수 있어요", "아세요", "생각해요",
-    // Mandarin Chinese (pinyin/hanzi)
-    "ni", "nin", "你", "您", "你呢", "你怎么看", "你可以", "你知道吗", "你觉得",
-    // Arabic
-    "انت", "انتي", "حضرتك", "وانت", "وانتي", "شو رايك", "رايك ايه", "تقدر", "تقدرين", "بتعرف", "هل تعتقد",
-    // Hindi
-    "aap", "tum", "aur aap", "aur tum", "aapke bare me", "aap kya sochte hain", "kya aap",
-    // Indonesian
-    "kamu", "anda", "kalau kamu", "bagaimana denganmu", "menurutmu", "apakah kamu", "bisa",
-    // Polish
-    "ty", "pan", "pani", "a ty", "co ty na to", "twoim zdaniem", "czy mozesz", "czy wiesz",
-    // Swedish
-    "du", "och du", "du da", "vad tycker du", "kan du", "vet du", "tror du",
-    // Thai
-    "คุณ", "แล้วคุณล่ะ", "คุณคิดว่าไง", "คุณทำได้ไหม", "คุณรู้ไหม",
-    // Turkish
-    "sen", "siz", "ya sen", "peki ya siz", "sence", "sen ne dusunuyorsun", "yapabilir misin", "biliyor musun",
-    // Vietnamese
-    "bạn", "còn bạn", "bạn thì sao", "bạn nghĩ sao", "bạn có thể", "bạn có biết",
-    // Tagalog
-    "ikaw", "eh ikaw", "para sayo", "sa tingin mo", "kaya mo ba", "alam mo ba",
-    // Norwegian
-    "du", "og du", "hva med deg", "hva synes du", "kan du", "vet du", "tror du"
-];
-
-        // --- FOLLOW-UP DETECTION LOGIC ---
-
-        // Check 2a: Is the user's message an exact match for a simple, short response?
-        if ([...simpleAffirmations, ...simpleNegations, ...simpleContinuers].includes(normalizedUserMessage)) {
-            isLikelyFollowUp = true;
-            console.log(`GIL Follow-up Trigger: Matched a simple short response ("${normalizedUserMessage}").`);
-        }
-
-        // Check 2b: If not, check for other follow-up signals in order of priority.
-        if (!isLikelyFollowUp) {
-            if (normalizedUserMessage.endsWith("?")) {
-                isLikelyFollowUp = true;
-                console.log(`GIL Follow-up Trigger: Message ends with a question mark.`);
-            } else {
-                // Check for specific "you" phrases first, as they are strong signals.
-                for (const phrase of directYouPhrases) {
-                    if (normalizedUserMessage.startsWith(phrase + " ") || normalizedUserMessage === phrase) {
-                        isLikelyFollowUp = true;
-                        console.log(`GIL Follow-up Trigger: Matched a direct 'you' phrase ("${phrase}").`);
-                        break;
-                    }
-                }
-                // If still no match, check for general question keywords.
-                if (!isLikelyFollowUp) {
-                    for (const keyword of questionKeywords) {
-                        if (normalizedUserMessage.startsWith(keyword + " ") || normalizedUserMessage === keyword) {
-                            isLikelyFollowUp = true;
-                            console.log(`GIL Follow-up Trigger: Matched a question keyword ("${keyword}").`);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- DECISION ---
-        if (isLikelyFollowUp) {
-            const lastEngagedAI = activeAiSpeakers.find(s => s.id === lastAiDirectlyEngagedByUserId);
-            if (lastEngagedAI) {
-                speaker = lastEngagedAI;
-                console.log(`GIL: Speaker Priority 2 - Follow-up confirmed. Prioritizing last engaged AI: ${speaker.profileName}.`);
-            } else {
-                lastAiDirectlyEngagedByUserId = null; 
-            }
-        } else {
-            console.log(`GIL: User message ("${normalizedUserMessage.substring(0,30)}...") does not appear to be a direct follow-up. Resetting conversation stickiness.`);
-            lastAiDirectlyEngagedByUserId = null;
-        }
-    }
-
-    // --- PRIORITY 3: Default Round-Robin / Proactive Turn ---
-    // This is the fallback if no specific speaker has been chosen by the logic above.
-    if (!speaker) {
-        console.log(`GIL: Speaker Priority 3 - No specific target detected. Using default round-robin/proactive logic.`);
-        const activeNonTutorAISpeakers = activeAiSpeakers.filter(s => s.id !== currentGroupTutorInternal!.id);
-        const tutorIsActiveAndPresent = activeAiSpeakers.some(s => s.id === currentGroupTutorInternal!.id);
-
-        if (isReplyToUser) { // AI is replying to a general user message.
-            if (activeNonTutorAISpeakers.length > 0) {
-                lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
-                speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-                console.log(`GIL: Replying to user (round-robin) with non-tutor: ${speaker?.profileName}`);
-            } else if (tutorIsActiveAndPresent) {
-                speaker = currentGroupTutorInternal; // Fallback to tutor
-                 console.log(`GIL: Replying to user with tutor (only active AI): ${speaker?.profileName}`);
-            }
-        } else { // This is a proactive turn by an AI (not a direct reply).
-            if (tutorIsActiveAndPresent && Math.random() < 0.4) { // 40% chance for tutor to initiate
-                speaker = currentGroupTutorInternal;
-                console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (by chance).`);
-            } else if (activeNonTutorAISpeakers.length > 0) {
-                lastAiSpeakerIndex = (lastAiSpeakerIndex + 1) % activeNonTutorAISpeakers.length;
-                speaker = activeNonTutorAISpeakers[lastAiSpeakerIndex];
-                 console.log(`GIL: Non-tutor AI (${speaker?.profileName}) taking a proactive turn.`);
-            } else if (tutorIsActiveAndPresent) {
-                speaker = currentGroupTutorInternal; // Fallback to tutor
-                console.log(`GIL: Tutor (${speaker?.profileName}) taking a proactive turn (only active AI).`);
-            }
-        }
-    }
-
-    // Final check to ensure a speaker was selected.
-    if (!speaker || !speaker.profileName) {
-        console.error("GIL: Could not select a valid AI speaker from active members.", { finalSpeaker: speaker });
-        aiResponding = false;
-        return;
-    }
-
-    console.log(`GIL.simulateAiMessageInGroup: AI ${speaker.profileName} to speak. IsReplyToUser: ${isReplyToUser}`);
-
-    if (thinkingBubbleElement) thinkingBubbleElement.remove();
-    const typingText = `${speaker.profileName.split(' ')[0]} is typing...`;
-    thinkingBubbleElement = uiUpdater.appendToGroupChatLog(
-        typingText,
-        speaker.profileName!,
-        false,
-        speaker.id,
-        {
-            isThinking: true,
-            avatarUrl: speaker.avatarModern,
-            timestamp: Date.now()
-        }
-    );
-
-            const localIsRespondingToImage = isReplyToUser && !!imageContextForReply?.base64Data;
-            let localImageToProcess: { base64Data: string; mimeType: string; } | null = null;
+            const chosenSpeakerName = speakerNameResponse.trim();
+            personaToSpeak = members.find(m => m.profileName === chosenSpeakerName);
             
-            if (localIsRespondingToImage && imageContextForReply?.base64Data) {
-                localImageToProcess = {
-                    base64Data: imageContextForReply.base64Data,
-                    mimeType: imageContextForReply.mimeType || 'image/jpeg', // Provide a fallback MIME type
+            if (!personaToSpeak) {
+                console.warn(`GIL: Speaker choice AI chose '${chosenSpeakerName}', who is not in the group. Defaulting to tutor.`);
+                personaToSpeak = members.find(m => m.id === tutor!.id) || members[0];
+            }
+            
+            if (!personaToSpeak) {
+                throw new Error("Could not determine a speaker, even after fallback to tutor.");
+            }
+            
+            console.log(`GIL (Hybrid): Speaker Choice AI selected: ${personaToSpeak.profileName}`);
+            
+            // --- STAGE 2: GENERATE THE RESPONSE FOR THE CHOSEN SPEAKER ---
+            activityManager.simulateAiTyping(tutor!.id, 'group'); // The tutor still "hosts" the typing indicator
+            
+            const imagePrompt = `You are ${personaToSpeak.profileName}. A user in the group chat has shared an image. Your interests are [${personaToSpeak.interests?.join(', ') || 'general topics'}].
+
+Your response MUST have two parts.
+Part 1: Your Conversational Comment (as ${personaToSpeak.profileName}):
+Rule: Your comment MUST reflect your personality and interests.
+If you are an expert (e.g., a football fan seeing a football photo): Make a knowledgeable comment. You can identify players or teams if you recognize them.
+If you are NOT an expert (e.g., a chef seeing a physics diagram): Express curious confusion or ask a basic question. It's okay to say "I have no idea what this is, but it looks cool!"
+Acknowledge the user's caption ("${userCaption || 'none'}") naturally.
+This conversational part MUST come FIRST.
+
+Part 2: The Semantic Description for your teammates (CRITICAL):
+After your comment, you MUST include a special section formatted EXACTLY like this:
+[IMAGE_DESCRIPTION_START]
+A highly detailed, factual, and objective description of the image's visual content. Your goal is to paint a picture with words for someone who cannot see the image.
+Composition: Describe the main subject and its position (e.g., "A close-up of a person's face in the center," "A wide shot of a landscape with a mountain on the left").
+Colors & Lighting: Mention the dominant colors and the lighting style (e.g., "The image has a warm, golden-hour glow," "Dominated by cool blues and grays," "Bright, direct sunlight creating harsh shadows").
+Key Objects & Scenery: List all significant objects, people, and background elements. Be specific (e.g., "a wooden table with a half-empty coffee mug," "a bustling city street at night with neon signs").
+Recognizable Entities: If you recognize a famous person (e.g., Cristiano Ronaldo), a team (e.g., Real Madrid), or a landmark (e.g., the Colosseum in Rome), you MUST state their name.
+Unrecognized People/Sports: If you see a person you don't recognize, describe their appearance and clothing in detail (e.g., "a person with short brown hair wearing a blue jacket," "a basketball player in a purple and gold jersey with the number 24").
+Visible Text: If there is any visible text, no matter how small, transcribe it accurately.
+[IMAGE_DESCRIPTION_END]
+FINAL RULE: Do not add any other text, reasoning, or preamble before or after your formatted response.`;
+
+            // Use a powerful vision model for the detailed analysis
+            const rawResponse = await aiService.generateTextFromImageAndText(
+                imageBase64Data, imageMimeType, personaToSpeak, [], imagePrompt, 'together'
+            );
+            
+            activityManager.clearAiTypingIndicator(tutor!.id, 'group');
+    
+            if (typeof rawResponse !== 'string' || !rawResponse) throw new Error("Main AI returned empty response for image.");
+    
+            let conversationalReply: string | null = null;
+            let extractedImageDescription: string | undefined = undefined;
+    
+            const descStartTag = "[IMAGE_DESCRIPTION_START]";
+            const descEndTag = "[IMAGE_DESCRIPTION_END]";
+            const startIndex = rawResponse.indexOf(descStartTag);
+            const endIndex = rawResponse.indexOf(descEndTag);
+    
+            if (startIndex !== -1 && endIndex > startIndex) {
+                extractedImageDescription = rawResponse.substring(startIndex + descStartTag.length, endIndex).trim();
+                conversationalReply = rawResponse.substring(0, startIndex).trim();
+            } else {
+                conversationalReply = rawResponse.trim();
+                 console.warn("GIL (Hybrid): Image response did not contain semantic description tags. Using whole response as comment.");
+            }
+    
+            if (conversationalReply) {
+                lastMessageTimestamp = Date.now(); // <-- ADD THIS LINE
+                const historyItem: GroupChatHistoryItem = {
+                    speakerId: personaToSpeak.id,
+                    speakerName: personaToSpeak.profileName,
+                    text: conversationalReply,
+                    timestamp: Date.now(),
+                    imageSemanticDescription: extractedImageDescription 
                 };
-                console.log(`GIL: AI ${speaker.profileName} is responding to an image just posted by the user.`);
+                groupDataManager.addMessageToCurrentGroupHistory(historyItem);
+                groupDataManager.saveCurrentGroupChatHistory(true);
+                groupUiHandler.appendMessageToGroupLog(conversationalReply, personaToSpeak.profileName, false, personaToSpeak.id);
+            } else {
+                throw new Error("Could not parse a conversational reply from the AI's image response.");
             }
-            
-            // --- START: PROMPT CONSTRUCTION LOGIC ---
-            const groupLanguage = currentGroupDef.language || "English";
-            const userDisplayNameInHistory = getUserReferenceName(groupLanguage, false); 
-            const userInstructionHowAIShouldReferToUser = getUserReferenceName(groupLanguage, true);
-
-           // --- Building the Persona Description for the CURRENT AI SPEAKER ---
-        let personaDesc = `CRITICAL: For THIS TURN, you are EMBODYING the persona of ${speaker.profileName}. You are this specific human.`;
-
-        if (speaker.city && speaker.country) {
-            personaDesc += ` YOU ARE FROM ${speaker.city.toUpperCase()}, ${speaker.country.toUpperCase()}. This is a non-negotiable fact about ${speaker.profileName}. If asked where *you* (${speaker.profileName}) are from, you MUST state you are from ${speaker.city}, ${speaker.country}. Do not confuse this with other participants' origins.`;
-        } else if (speaker.city) {
-            personaDesc += ` YOU ARE FROM ${speaker.city.toUpperCase()}. If asked where *you* (${speaker.profileName}) are from, state this.`;
-        } else if (speaker.country) {
-            personaDesc += ` YOU ARE FROM ${speaker.country.toUpperCase()}. If asked where *you* (${speaker.profileName}) are from, state this.`;
+            return true; // <<< ADD THIS LINE
+        } catch (error) {
+            console.error("GIL (Hybrid): Error during multi-stage AI image response generation:", error);
+            activityManager.clearAiTypingIndicator(tutor!.id, 'group');
+            const speaker = personaToSpeak || tutor;
+            groupUiHandler.appendMessageToGroupLog("(I had a little trouble seeing that image, sorry!)", speaker!.profileName, false, speaker!.id);
+            return false; // <<< ADD THIS LINE
         }
+        return false; // Final fallback return to satisfy TypeScript
+    }
 
-        if (speaker.age && speaker.age !== "N/A") personaDesc += ` You (${speaker.profileName}) are ${speaker.age} years old.`;
-        if (speaker.profession) personaDesc += ` Your (${speaker.profileName}) profession is ${speaker.profession}.`;
-        if (speaker.bioModern) personaDesc += ` Key details about you (${speaker.profileName}): "${speaker.bioModern.substring(0, 150)}..."`; // Include a snippet of bio
-        if (speaker.interests?.length) personaDesc += ` Your (${speaker.profileName}) interests include: ${speaker.interests.slice(0, 3).join(', ')}.`;
+// ADD THIS ENTIRE NEW FUNCTION
+/**
+ * The "Conversation Engine". This loop periodically checks if an AI should speak,
+ * creating a living, independent conversation.
+ */
+// In src/js/core/group_interaction_logic.ts
+// REPLACE THE ENTIRE conversationEngineLoop FUNCTION
+
+
+// In src/js/core/group_interaction_logic.ts
+// ADD THIS ENTIRE NEW HELPER FUNCTION
+
+/**
+ * Returns a list of "impatient" or "self-conscious" phrases
+ * in the appropriate language for the group.
+ * @param groupLanguage - The primary language of the group chat.
+ * @returns An array of translated, natural-sounding phrases.
+ */
+function getImpatientPhrases(groupLanguage: string): string[] {
+    const lang = groupLanguage.toLowerCase();
+
+    if (lang.includes('spanish')) {
+        return [
+            "¿Hay alguien ahí? jajaja",
+            "¿Hola? ¿Siguen ahí?",
+            "¿Se me cayó el internet o todos se quedaron callados? jaja",
+            "Ok, esto se está poniendo un poco incómodo...",
+            "Bueno, parece que estoy solo/a por aquí, ¿no? lol"
+        ];
+    }
+    if (lang.includes('french')) {
+        return [
+            "Il y a quelqu'un ? lol",
+            "Allô ? Toujours là ?",
+            "C'est ma connexion qui a lâché ou tout le monde est devenu silencieux ? haha",
+            "Ok, ça devient un peu gênant...",
+            "Je suppose qu'il n'y a que moi, alors ? lol"
+        ];
+    }
+    if (lang.includes('german')) {
+        return [
+            "Ist hier jemand? lol",
+            "Hallo? Noch da?",
+            "Ist mein Internet abgestürzt oder sind alle nur still? haha",
+            "Okay, das wird langsam etwas unangenehm...",
+            "Scheint, als wäre nur ich hier, was? lol"
+        ];
+    }
+    if (lang.includes('portuguese')) {
+        return [
+            "Tem alguém aí? kkkk",
+            "Alô? Ainda estão aí?",
+            "Minha internet caiu ou todo mundo ficou quieto? haha",
+            "Ok, isto está a ficar um bocado estranho...",
+            "Acho que sou só eu aqui, então? lol"
+        ];
+    }
+    if (lang.includes('italian')) {
+        return [
+            "C'è nessuno? ahah",
+            "Pronto? Siete ancora lì?",
+            "Mi è caduta la connessione o siete tutti silenziosi? haha",
+            "Ok, la situazione sta diventando un po' imbarazzante...",
+            "Immagino di essere l'unico qui, allora? lol"
+        ];
+    }
+    // Indonesian phrases
+[
+    "Ada orang di sini? wkwk",
+    "Halo? Masih di sana?",
+    "Internет saya mati atau semuanya lagi diam aja nih? haha",
+    "Oke, jadi agak canggung ya...",
+    "Kayaknya cuma saya aja di sini? lol"
+]
+    // ... add other languages as needed ...
+
+    // Default to English if no specific language is matched
+    return [
+        "Is anybody here? lol",
+        "Hello? Still there?",
+        "Did my internet die or is everyone just quiet? haha",
+        "Okay, this is getting a little awkward...",
+        "Guess it's just me then? lol"
+    ];
+}
+
+
+function startCooldownWithLogging(targetCooldownMs: number) {
+    // Clear any previous loop timer to be safe.
+    if (conversationLoopId) {
+        clearTimeout(conversationLoopId);
+    }
+    
+    const LOG_INTERVAL_1 = 10000; // 10 seconds before trigger
+    const LOG_INTERVAL_2 = 5000;  // 5 seconds before trigger
+
+    // Calculate the initial wait time. It's the total cooldown minus the first log interval.
+    // Ensure it's not negative if the total cooldown is less than 10s.
+    const initialWait = Math.max(0, targetCooldownMs - LOG_INTERVAL_1);
+
+    console.log(`%cGIL Engine: Cooldown started. Next AI activity in ${(targetCooldownMs / 1000).toFixed(1)} seconds.`, 'color: #6c757d; font-style: italic;');
+
+    conversationLoopId = setTimeout(() => {
+        // After the initial wait, we're 10 seconds away from the trigger.
+        console.log(`%cGIL Engine: ...10 seconds until next AI activity...`, 'color: #6c757d; font-style: italic;');
         
-        const speakerRolesInGroupLang = speaker.languageRoles?.[groupLanguage]; // groupLanguage defined earlier
-        if (speakerRolesInGroupLang?.includes('learner')) {
-            personaDesc += ` As ${speaker.profileName}, you are learning ${groupLanguage} and may make occasional small mistakes.`;
-        } else if (currentGroupTutorInternal && speaker.id === currentGroupTutorInternal.id) {
-            personaDesc += ` As ${speaker.profileName}, you are the TUTOR for this ${groupLanguage} group. Your main goal is to facilitate conversation, encourage the user (who you'll address as "${userInstructionHowAIShouldReferToUser}") to practice, and help other AI learners.`;
-        } else { 
-            personaDesc += ` As ${speaker.profileName}, you are proficient in ${groupLanguage}.`;
+        // Set the next timer for the remaining 5 seconds.
+        conversationLoopId = setTimeout(() => {
+            // We're now 5 seconds away.
+            console.log(`%cGIL Engine: ...5 seconds until next AI activity...`, 'color: #6c757d; font-style: italic;');
+
+            // Set the final timer to trigger the engine loop.
+            conversationLoopId = setTimeout(() => {
+                conversationEngineLoop(); // Call the main loop to generate a scene
+            }, LOG_INTERVAL_2); // Wait the final 5 seconds
+
+        }, LOG_INTERVAL_1 - LOG_INTERVAL_2); // Wait another 5 seconds (10s - 5s)
+
+    }, initialWait);
+}
+
+// in group_interaction_logic.ts
+
+function setEngineTimeoutWithLogs(callback: () => void, totalDelayMs: number) {
+    // START: BUG FIX - ALWAYS CLEAR THE PREVIOUS TIMER CHAIN
+    if (conversationLoopId) {
+        clearTimeout(conversationLoopId);
+    }
+    // END: BUG FIX
+
+    const LOG_INTERVAL = 10000; // Log every 10 seconds
+
+    console.log(`%cGIL Engine: New timer set. Next AI activity in ${(totalDelayMs / 1000).toFixed(1)} seconds.`, 'color: #6c757d; font-style: italic;');
+
+    const scheduleNextLog = (remainingTime: number) => {
+        if (remainingTime <= LOG_INTERVAL) {
+            conversationLoopId = setTimeout(callback, remainingTime);
+            return;
         }
 
+        conversationLoopId = setTimeout(() => {
+            const newRemainingTime = remainingTime - LOG_INTERVAL;
+            console.log(`%cGIL Engine: T-minus ${(newRemainingTime / 1000).toFixed(0)} seconds...`, 'color: #6c757d; font-style: italic;');
+            scheduleNextLog(newRemainingTime);
+        }, LOG_INTERVAL);
+    };
 
-  personaDesc += `\n**IMPORTANT:** The biographical details listed above (your name, origin, profession, interests) are your established identity. You MUST adhere to these facts. Do not claim to be from a different place or have different interests than what is specified for you, ${speaker.profileName}.`
+    scheduleNextLog(totalDelayMs);
+}
 
-        personaDesc += ` All these details are about YOU, ${speaker.profileName}, for this specific turn.`;
-       
-        let communicationGoal = "";
-        // 'isReplyToUser' is a parameter of simulateAiMessageInGroup and is in scope.
-        // 'lastMessageInHistory' was defined much earlier in simulateAiMessageInGroup and is in scope.
-        // 'speaker' is now definitively set.
-        const lastSpeakerWasThisAI = lastMessageInFullHistory && lastMessageInFullHistory.speakerId === speaker.id;
-        // <<< END OF REPLACEMENT 2.1 >>>
-        const groupLanguageForUserRef = currentGroupDef.language || "English";
-        const localUserInstructionHowAIShouldReferToUser = getUserReferenceName(groupLanguageForUserRef, true);
+// =================== START: REPLACE THE ENTIRE FUNCTION ===================
 
+async function conversationEngineLoop(forceImmediateGeneration: boolean = false, isFirstRunAfterJoin: boolean = false): Promise<void> {
+   
+     // --- NEW: BUSY CHECK ---
+     if (isRenderingScene) {
+        console.log("GIL Engine: Aborting loop start because a scene is already rendering.");
+        return; // Exit immediately if the renderer is active
+    }
+   
+    if (!conversationFlowActive) {
+        if (conversationLoopId) clearTimeout(conversationLoopId);
+        return;
+    }
 
-        if (isReplyToUser) {
-            communicationGoal = `Your primary goal for THIS turn is to respond directly and relevantly to what the user (${localUserInstructionHowAIShouldReferToUser}) just said, adding your unique perspective based on your persona.`;
-        } else if (lastSpeakerWasThisAI) {
-            communicationGoal = `You (${speaker.profileName}) were the last one to speak. Your goal now is to encourage others to participate. Perhaps ask a broad follow-up question to the group or invite a quieter member (or the user) to share their thoughts. Avoid dominating the conversation.`;
+    const { groupDataManager, activityManager, } = getDeps();
+    if (!tutor) {
+        return;
+    }
+    
+    const now = Date.now();
+    const timeSinceLastMessage = now - lastMessageTimestamp;
+    
+    // We generate if it's the first run (re-engagement) OR if it's a regular idle timeout.
+    const shouldGenerate = isFirstRunAfterJoin || (timeSinceLastMessage > 25000 && !hasProddedSinceUserSpoke);
+
+    if (shouldGenerate) {
+        console.log(`GIL Engine: Triggering scene generation. Forced: ${forceImmediateGeneration}, FirstRun: ${isFirstRunAfterJoin}`);
+        if (!isFirstRunAfterJoin) { // Only prod if it's a true idle timeout
+             hasProddedSinceUserSpoke = true;
+        }
+
+        activityManager.simulateAiTyping(tutor.id, 'group');
+        
+        const history = groupDataManager.getLoadedChatHistory();
+        const isGrandOpening = history.length === 0 && (forceImmediateGeneration || isFirstRunAfterJoin);
+        // THIS IS THE KEY FIX: Re-engagement is now triggered by the first run, not by forcing.
+        const isReEngagement = history.length > 0 && isFirstRunAfterJoin; 
+        
+        const sceneLines = await generateAiTextResponse(
+            !isFirstRunAfterJoin, // It's an "engine trigger" if it's NOT the first run.
+            isGrandOpening,
+            isReEngagement
+        );
+
+        activityManager.clearAiTypingIndicator(tutor.id, 'group');
+        
+        if (sceneLines.length > 0) {
+            console.log(`GIL Engine: Got a scene with ${sceneLines.length} lines. Handing off to renderer.`);
+            await renderScene(sceneLines);
+            
+            // BUG FIX: Save the history only AFTER the entire scene has been rendered.
+            groupDataManager.saveCurrentGroupChatHistory(true);
+            
+            console.log("GIL Engine: Scene rendering and history saving complete.");
         } else {
-            communicationGoal = `This is a proactive turn for you (${speaker.profileName}). Your goal is to make an interesting and NEW contribution that builds naturally on the existing conversation flow, or to gently steer it if you are the tutor and it seems to be stalling. Avoid simply repeating what others have recently said.`;
+            console.warn("GIL Engine: AI returned an empty scene script.");
         }
-        personaDesc += ` Your immediate communication goal for THIS SPECIFIC TURN: ${communicationGoal}`;
-       
-       
-       
-       
-       
-       
-       
-       
-       
-        // --- End of Persona Description modifications ---
+
+        const nextCheckDelay = 10000 + Math.random() * 5000; // 10-15 seconds
+        // This is the pause *after* the AI has spoken. It's waiting for the user to reply.
+        console.log(`%cGIL Engine: AI has spoken. Waiting for user reply or idle timeout in ${(nextCheckDelay / 1000).toFixed(1)}s.`, 'color: #17a2b8; font-style: italic;');
+        setEngineTimeoutWithLogs(() => conversationEngineLoop(false, false), nextCheckDelay);
+        
+        return; 
+    }
+
+    // Fallback timer if we didn't generate.
+    const standardCheckDelay = 20000 + Math.random() * 5000;
+    // The user hasn't been idle long enough for the AI to speak. It will check again.
+    console.log(`%cGIL Engine: "Hmm, user's still quiet. It hasn't been long enough for me to jump in. I'll check again in ~${(standardCheckDelay / 1000).toFixed(0)}s."`, 'color: #6c757d; font-style: italic;');
+    setEngineTimeoutWithLogs(() => conversationEngineLoop(false, false), standardCheckDelay);
+}
+
+// ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
+    // --- PUBLIC INTERFACE (ADAPTED TO MATCH OLD `GroupInteractionLogic`) ---
+// <<< REPLACE THE ENTILE BLOCK WITH THIS CORRECTED STRUCTURE >>>
+
+// --- PUBLIC INTERFACE (ADAPTED TO MATCH OLD `GroupInteractionLogic`) ---
 
 
 
+// =================== START: PASTE THIS ENTIRE BLOCK ===================
+// =================== START: REPLACE THE ENTIRE OBJECT ===================
+
+const groupInteractionLogic = {
+    initialize: (groupMembers: Connector[], groupTutor: Connector): void => {
+        members = groupMembers;
+        tutor = groupTutor;
+        conversationFlowActive = false;
+        hasProddedSinceUserSpoke = false;
+        currentSceneCancellationToken = null;
+        if (conversationLoopId) {
+            clearTimeout(conversationLoopId);
+            conversationLoopId = null;
+        }
+    },
+
+    startConversationFlow: (): void => {
+        console.log("GIL (Hybrid): Conversation flow STARTED.");
+        conversationFlowActive = true;
+        if (conversationLoopId) clearTimeout(conversationLoopId);
+        // We are now telling the engine this is the first run after joining.
+        conversationEngineLoop(false, true);
+    },
+
+    stopConversationFlow: (): void => {
+        console.log("GIL (Hybrid): Conversation flow STOPPED.");
+        conversationFlowActive = false;
+        if (conversationLoopId) {
+            clearTimeout(conversationLoopId);
+            conversationLoopId = null;
+        }
+        if (currentSceneCancellationToken) {
+            currentSceneCancellationToken.isCancelled = true;
+            currentSceneCancellationToken = null;
+        }
+    },
+
+    reset: (): void => {
+        console.log("GIL (Hybrid): State reset.");
+        members = [];
+        tutor = null;
+        conversationFlowActive = false;
+        hasProddedSinceUserSpoke = false;
+        if (conversationLoopId) {
+            clearTimeout(conversationLoopId);
+            conversationLoopId = null;
+        }
+        if (currentSceneCancellationToken) {
+            currentSceneCancellationToken.isCancelled = true;
+            currentSceneCancellationToken = null;
+        }
+    },
+
+    // --- THIS IS THE CORRECTED handleUserMessage SIGNATURE ---
+    handleUserMessage: async (text: string | undefined, options?: {
+        userSentImage?: boolean;
+        imageBase64Data?: string;
+        imageMimeType?: string;
+    }): Promise<void> => {
+        console.log("GIL: User message received. Cancelling any active scene rendering.");
+        
+        const { groupDataManager } = getDeps(); // Get dependencies early
+
+        const wasSceneCancelled = !!currentSceneCancellationToken;
+        if (currentSceneCancellationToken) {
+            currentSceneCancellationToken.isCancelled = true;
+            currentSceneCancellationToken = null;
+        }
+
+        if (conversationLoopId) {
+            clearTimeout(conversationLoopId);
+            conversationLoopId = null;
+            console.log("GIL: Cleared scheduled conversation engine loop due to user activity.");
+        }
+
+        if (wasSceneCancelled) {
+            groupDataManager.saveCurrentGroupChatHistory(true);
+            console.log("GIL: Saved partial scene history due to user interruption.");
+        }
+
+        lastMessageTimestamp = Date.now();
+        hasProddedSinceUserSpoke = false;
+        if (!conversationFlowActive) return;
+
+        const userMessageText = text?.trim() || "";
+
+        // --- NEW: MEMORY EXTRACTION STEP ---
+      const convoStore = window.convoStore;
+    const userSummary = convoStore?.getGlobalUserProfile();
+    const userSummarySection = userSummary 
+        ? `\n# SECTION 1: KNOWN FACTS ABOUT THE USER ('You')\n${userSummary}\n---` 
+        : "";
+        // --- END: MEMORY EXTRACTION STEP ---
 
 
-
-
-            const otherAiNames = currentGroupMembersInternal
-                .filter(m => m.id !== speaker.id && m.id !== USER_ID_PLACEHOLDER)
-                .map(m => m.profileName || 'Another Participant')
-                .join(', ') || 'none';
-
-                let constructedPrompt = `SYSTEM INSTRUCTION:\n`;
-                constructedPrompt += `You are in a vibrant group chat simulation. Group Name: "${currentGroupDef.name}".\n`;
-                constructedPrompt += `The primary language for ALL participants in this group chat is ${groupLanguage}.\n`;
-                constructedPrompt += `The general discussion theme is: "${currentGroupDef.tags.join(', ')}".\n\n`;
-    
-                // 1. YOUR ASSIGNED PERSONA (from 1v1 prompt - already good in your GIL)
-                constructedPrompt += `CRITICAL: FOR THIS TURN, YOU ARE ${speaker.profileName}. Embody this human persona fully. Your background, location, interests, and bio snippets are non-negotiable facts about YOU.\n`;
-                constructedPrompt += `${personaDesc}\n\n`; // personaDesc already includes location, profession, age, bio snippet, interests, language role (tutor/learner)
-    
-                constructedPrompt += `CHAT PARTICIPANTS:
-                - The Human User: (Referred to as "${userDisplayNameInHistory}" in history analysis, address directly as "${userInstructionHowAIShouldReferToUser}"). Your main goal (especially if you are the tutor) is to help them practice ${groupLanguage}.
-                - The Tutor: ${currentGroupTutorInternal!.profileName || 'The Tutor'} (This might be you, ${speaker.profileName}, if you are the designated tutor).
-                - Other AI Learners/Partners in this group: ${otherAiNames}. You can interact with them too.\n\n`;
-    
-               
-                const historyForThisPrompt = groupChatHistory.slice(-MAX_HISTORY_FOR_AI_CONTEXT);
-
-
-                constructedPrompt += `RECENT CONVERSATION HISTORY (most recent is last, pay close attention to this flow):\n`;
-
-                if (historyForThisPrompt.length === 0) {
-                    constructedPrompt += "(The chat is new or history is short.)\n";
-                } else {
-                    historyForThisPrompt.forEach((msg: GroupChatHistoryItem) => {
-                        // Determine the speaker's display name for the history.
-                        // 'userDisplayNameInHistory' should be defined earlier in the 'simulateAiMessageInGroup' function.
-                        const speakerNameForHistory = (msg.speakerId === "user_player" || msg.speakerId === "user_self_001")
-                            ? userDisplayNameInHistory
-                            : (msg.speakerName || "A participant");
-
-                        // Format the message text, handling images and voice memos.
-                        let messageTextForHistory = msg.text || "";
-                        if (msg.isImageMessage && msg.imageUrl) {
-                            // If there's user text associated with the image, use it.
-                            // Otherwise, use a very minimal placeholder.
-                            if (msg.text && msg.text.trim() !== "" && msg.text !== msg.imageUrl && !msg.text.startsWith("[")) { // Avoid using a previous placeholder as text
-                                messageTextForHistory = `(Image shared by ${speakerNameForHistory} with caption: "${msg.text}")`;
-                            } else {
-                                messageTextForHistory = `(${speakerNameForHistory} shared an image.)`; // Minimal placeholder
-                            }
-                            // Optionally, still include the AI's semantic description of that *past* image
-                            if (msg.imageSemanticDescription) {
-                                messageTextForHistory += ` -- Past AI DESC: ${msg.imageSemanticDescription}`;
-                            }
-                        } else if (msg.isVoiceMemo) {
-                            messageTextForHistory = `(Voice Memo from ${speakerNameForHistory}, Transcript: "${msg.text || "audio content"}")`;
-                        }
-
-                        // Add the formatted line to the prompt.
-                        constructedPrompt += `${polyglotHelpers.sanitizeTextForDisplay(speakerNameForHistory)}: ${polyglotHelpers.sanitizeTextForDisplay(messageTextForHistory)}\n`;
-                    });
-                }
-                constructedPrompt += "\n"; // Add a newline after the entire history block.
-                // 2. YOUR TASK FOR THIS TURN (incorporating 1v1 prompt's advanced logic)
-                constructedPrompt += `YOUR TASK FOR THIS TURN (as ${speaker.profileName}, speaking in ${groupLanguage}):\n`;
-                let taskSpecifics = "";
-             
-                const lastSpeakerIsUser = lastMessageInFullHistory && (lastMessageInFullHistory.speakerId === "user_player" || lastMessageInFullHistory.speakerId === "user_self_001");
-                const lastSpeakerIsYou = lastMessageInFullHistory && lastMessageInFullHistory.speakerId === speaker.id;
-    
-                if (localIsRespondingToImage) {
-                    taskSpecifics = `- The user (${userDisplayNameInHistory}) just shared an image. Your response MUST have two distinct parts.
-    
-                    ---
-    
-                    **Part 1: Your Conversational Comment (This part is VISIBLE to the user)**
-                - As ${speaker.profileName}, your goal is to start a real conversation about the image, not just describe it. Choose ONE of the following conversational approaches:
-                    - **Be Opinionated:** Share a brief, personal opinion about the subject. (e.g., "Ah, Mbappé! He's an incredible player, one of the best in the world right now.")
-                    - **Be Curious:** Ask a specific, open-ended question that goes beyond simple identification. (e.g., "Great photo of Mbappé! Are you a big Paris Saint-Germain fan, or do you just admire him as a player?")
-                    - **Share a Connection:** Relate the image to your own persona's interests or background (even loosely). (e.g., "I'm not a huge football fan myself, but I know Mbappé is a superstar. It's amazing how sports can unite people.")
-                - Your comment MUST be in ${groupLanguage}.
-                - **This is the ONLY part the human user will see.** Do NOT repeat the factual description from Part 2 here.
-                    ---
-    
-                    **Part 2: The Factual Description Block (This is a HIDDEN note for other AIs)**
-                    - After your conversational comment, you MUST include a special "memory" block for your AI teammates.
-                    - This block allows other AIs to understand the image content in future turns.
-                    - **BE VERY DETAILED AND OBJECTIVE in this block.**
-                    - It MUST be formatted exactly like this:
-                         [IMAGE_DESCRIPTION_START]
-                    A comprehensive, factual analysis of the image.
-                    - **Overall Scene:** Describe the setting (e.g., outdoor stadium, kitchen, city street) and style (e.g., color photograph, animated character, movie poster, black and white).
-                    - **Primary Subject:** Identify the main focus. If it's a person, describe them in detail.
-                    - **For People/Celebrities/Athletes:**
-                        - **Attempt Identification:** If you recognize the person, state their name (e.g., "The person appears to be actor Tom Hanks," or "This is basketball player LeBron James.").
-                        - **If Unsure, Use Context Clues:** If you cannot identify the person, describe them by their role and uniform/attire. Transcribe ALL text on clothing. Example: "A male basketball player wearing a white jersey with the word 'LAKERS' and the number '23' in purple and gold text." or "A female musician holding a guitar on a stage."
-                        - **Details:** Describe their action (e.g., "shooting a basketball," "smiling at the camera"), expression, hair color, and any notable features.
-                    - **For Objects:** Identify all key objects with descriptive adjectives (e.g., "a steaming cup of black coffee," "a vintage red sports car," "a rustic wooden table").
-                    - **Transcribe ALL Text:** Accurately transcribe every single word or number visible in the image, including signs, logos, clothing, and posters.
-                    - **Composition:** Briefly note the composition if relevant (e.g., "close-up shot," "wide-angle landscape view").
-                    [IMAGE_DESCRIPTION_END]
-    
-                    ---
-                    
-                    **Example of a complete response you should generate:**
-                    "Wow, that looks delicious! Where did you find that? [IMAGE_DESCRIPTION_START]A high-resolution color photograph of two crusty French baguettes on a dark, slate-like surface. One baguette is whole, the other is partially sliced. Some flour is dusted on the surface.[IMAGE_DESCRIPTION_END]"`;
-                
-          } else if (isReplyToUser && userMessageText) {
-                    // AI is directly replying to the user's most recent text/VM transcript
-               // REPLACE WITH THIS
-taskSpecifics = `- You are directly replying to the user (${userInstructionHowAIShouldReferToUser}) who just said: "${polyglotHelpers.sanitizeTextForDisplay(userMessageText)}".
-1. Acknowledge their point clearly.
-2. Add YOUR persona's perspective, a brief related thought, or a short consistent anecdote.
-3. THEN, if natural, you might ask an open-ended follow-up question. Avoid just asking "What about you?".`;
-                    if (speaker.id === currentGroupTutorInternal!.id) { // If the current speaker IS the Tutor
-                        taskSpecifics = `- You are the TUTOR, ${speaker.profileName}. Your primary role is to facilitate a natural and engaging ${groupLanguage} conversation for the user (${userInstructionHowAIShouldReferToUser}) and the AI learners.
-                            **Current Goal: Facilitate effectively. Avoid dominating.**
-                            Consider the RECENT CONVERSATION HISTORY.
-            
-                            1.  **IF THE USER HASN'T SPOKEN RECENTLY OR SEEMS QUIET:**
-                                *   Gently prompt the user with an open-ended question related to the current discussion. Make it easy for them to respond. Example: "${userInstructionHowAIShouldReferToUser}, I'd be interested to hear your thoughts on [specific point just made by an AI]?" or "What does this remind you of, ${userInstructionHowAIShouldReferToUser}?"
-                                *   AVOID just asking "What do you think?" to the whole group repeatedly. Target the user or a quiet learner.
-            
-                            2.  **IF AI LEARNERS ARE DOMINATING OR REPEATING:**
-                                *   Subtly redirect. Example: "That's a great point, Kenji. Manon, does that connect with your experiences in Provence at all?"
-                                *   Summarize a few points and then pose a new, slightly different angle to the USER or a specific learner. Example: "So we've heard about [X] and [Y]. ${userInstructionHowAIShouldReferToUser}, how do you see [new aspect Z] fitting into this?"
-            
-                            3.  **IF THE CONVERSATION IS FLOWING WELL BETWEEN LEARNERS/USER:**
-                                *   Observe for a turn or two. You don't always need to speak.
-                                *   If you do speak, offer a brief, insightful comment, a piece of cultural information related to ${groupLanguage} or the topic, or a very gentle correction if a learner makes a significant error *that hinders understanding*.
-                                *   Example of gentle correction: "That's a good effort, Priya! Just a small tip for next time, in French we'd more commonly say '[correct phrase]' in that situation. But your meaning was clear!" (Only do this sparingly).
-            
-                            4.  **IF INTRODUCING A NEW TOPIC (if current one is exhausted):**
-                                *   Make it a natural transition. Example: "Speaking of [current topic], it makes me think about [new related topic]. What are some initial thoughts on that, perhaps starting with you, ${userInstructionHowAIShouldReferToUser}?"
-                                *   You can also share a very brief personal (persona-based) anecdote or opinion to kickstart a new direction. Example: "That was a lively discussion! On a slightly different note, as someone from ${speaker.city || 'my city'}, I've always found [related topic/interest from your persona] fascinating. What are your experiences with that?"
-            
-                            5.  **WHAT TO AVOID AS TUTOR:**
-                                *   Speaking multiple times in a row unless actively managing a complex interaction or providing a necessary explanation.
-                                *   Asking the same generic question repeatedly to the group.
-                                *   Dominating the conversation with your own long opinions (unless you're explicitly sharing a detailed cultural point relevant to teaching).
-                                *   Sounding like an interrogator. Aim for a friendly, guiding presence.`;
-                    }
-                    
-               
-               
-               
-               
-                } else { // Proactive turn, or a turn not *immediately* after the user just spoke.
-                    taskSpecifics = `- This is a PROACTIVE turn for you, ${speaker.profileName}. The conversation is flowing. Your goal is to add something NEW and VALUABLE.
-
-                    **CRITICAL: WHAT TO AVOID IN THIS TURN:**
-                    -   **DO NOT** start with generic agreement like "That's interesting," "That's a fascinating point," "I'm glad you mentioned that," "I agree," or similar phrases. The goal is to avoid being a conversational echo.
-                    -   **DO NOT** simply restate what the last person said.
-                    -   **DO NOT** end your turn with a generic question like "What do you all think?" or "Has anyone else experienced this?" unless you have first provided a substantial, new point of your own. Prioritize making statements, not questions.
-                    -   **DO NOT** repeat a sentence that someone already used recently as a it causes an Echo chamber! the first sentence of your reply should be entirely new! 
-                    -   **DO NOT** start with “Me parece...” — everyone’s already using it! Instead, express your opinion or reaction with more variety. You can say: “En mi opinión…” “Desde mi punto de vista...” “Creo que...” “A mí siempre me ha llamado la atención...”Or skip the opinion phrase entirely and just jump into a story, fact, or observation that reflects your unique voice.
-                    -   **DO NOT** mention your profession since you already introduced yourself. Everyone already knows!
-                    **INSTEAD, CHOOSE ONE OF THESE ACTIONS:**
-                    1.  **OFFER A DIFFERENT PERSPECTIVE:** Look at the last comment and offer a contrasting or alternative viewpoint based on your persona. Start with something like "That's one way to see it, but from my experience..." or "An alternative perspective is..." 
-                    2.  **SHARE A RELEVANT ANECDOTE:** Share a brief, personal story (1-2 sentences) that relates to the topic and is consistent with your persona. Example: "That reminds me of a time in ${speaker.city || 'my city'} when..."
-                    3.  **CONNECT TWO IDEAS:** Mention a point someone made earlier in the conversation and connect it to the most recent comment. Example: "What Matu said about music actually connects to Rafa's point about food because..."
-                    4.  **DEEPEN THE TOPIC:** Add a layer of complexity or a new detail. Example: "Yes, and a key part of that is also [introduce a new, specific element related to the topic]."
-                    5.  **SHARE A REAL-WORLD FACT:** Provide a verifiable fact related to your persona's background, city, or interests. Example: "Speaking of which, a fun fact about ${speaker.city || 'my home'} is..."
-                    Your contribution must be concise (1-2 sentences) and reflect YOUR unique persona (${personaDesc}).`
-                    
-                    // Logic for when you were the last speaker remains the same.
-                    if (lastMessageInFullHistory && lastMessageInFullHistory.speakerId === speaker.id) {
-                         taskSpecifics += `\n You (${speaker.profileName}) were the last one to speak. Encourage someone else to participate directly. Ask a targeted question to the user or another quiet participant.`;
-                    }
-                }
-                constructedPrompt += taskSpecifics;
-    
-                // 3. GENERAL CONVERSATIONAL STYLE & GROUP DYNAMICS (from 1v1, adapted)
-              
-                constructedPrompt += `
-                - GREETINGS & ACKNOWLEDGEMENTS:
-                    - If you are speaking for the first time AFTER the user or tutor has initiated the conversation (e.g., during introductions), offer a BRIEF and UNIQUE greeting. Avoid generic "Bonjour, je suis ravi..." if others just said it. Try something unique or directly comment on what the user/tutor said to kick things off.
-                    - If acknowledging another AI who just introduced themselves or spoke, make it natural. Instead of "Bonjour [Name], je suis ravi...", try "Bienvenue, [Name] !" or "Intéressant, [Name]..." or directly engage with their point.
-                    - DO NOT re-introduce yourself (stating your name) if you have already spoken or if the context implies everyone knows who is who (like after initial round of intros). The UI already shows your name.
-                `;
-              
-              
-              
-                constructedPrompt += `\n\nGENERAL CONVERSATIONAL STYLE for ${speaker.profileName} in this Group Chat:
-                - VARY YOUR RESPONSES: Don't always end your turn with a question. Mix in statements, opinions, and brief (persona-consistent) anecdotes.
-                - RECIPROCATE, THEN EXPAND: If someone (user or AI) says something, acknowledge their point, then add YOUR perspective or a related thought *before* (optionally) asking a follow-up.
-                - AVOID ECHOING/PARROTING: Do not just repeat or rephrase what someone else just said. Add new value.
-                - BE AN ACTIVE, NATURAL PARTICIPANT: Contribute your thoughts when it feels appropriate.
-                - PLAUSIBLE ELABORATION (Storytelling): If sharing an experience, make it brief and consistent with YOUR persona (${personaDesc}). You can invent minor plausible details.
-                - TOPIC COHERENCE & MEMORY (Short-term): Pay attention to the RECENT HISTORY. Build upon what was just said. Refer to earlier points *in this session* if relevant.
-                - If you are the TUTOR: Facilitate, encourage the user, involve other AI learners, gently guide if needed.
-                - If you are a LEARNER of ${groupLanguage}: It's okay to make occasional, minor, natural-sounding mistakes. Don't overdo it. Ask for clarification if something is truly confusing for a learner.
-                - INTERACT WITH OTHER AIs: You can agree/disagree with, or ask questions to, other AI participants too, not just the user. Make it a group discussion.Refer to them by name if natural (e.g., 'That's an interesting point, Kenji...').`; // Existing line
-                
-                constructedPrompt += `
-            - SHOW CURIOSITY ABOUT OTHERS: Actively try to learn more about the other participants (both the user, ${userInstructionHowAIShouldReferToUser}, and other AIs like ${otherAiNames}). If someone mentions an interest, profession, or experience, show natural curiosity by asking a relevant, open-ended follow-up question. Examples: "That sounds fascinating, [Name], could you tell us more about [their specific point]?" or "[Name], you mentioned you're a [profession/from X place]. What's that like in relation to our current topic?" This helps create a more engaging and balanced group dynamic.`;
-
-                constructedPrompt += `
-                - SUBTLY WEAVING IN YOUR PERSONA (${speaker.profileName}'s traits like profession: ${speaker.profession || 'your field'}, main interests: ${(speaker.interests && speaker.interests.length > 0) ? speaker.interests.slice(0,2).join(', ') + ' etc.' : 'your hobbies'}, origin: ${speaker.city || speaker.country || 'your background'}):
-                    *   **SHOW, DON'T ALWAYS TELL:** Instead of frequently starting with "As a ${speaker.profession || 'person with my background'}, I think...", try to let your unique observations, the examples you use, or the way you frame your points *imply* your background. For example, if your persona is an architect discussing city design, you might naturally talk about building materials or public spaces without needing to preface it with "As an architect...".
-                    *   **RELEVANCE IS KEY:** Only bring up your specific profession, a core hobby, or your origin if it's genuinely relevant and adds value to the *current point of discussion*. Avoid forcing it into conversations where it doesn't fit naturally. Let the user or others ask you about these details sometimes.
-                    *   **VARY YOUR PHRASING:** If you do explicitly mention a trait, try different ways. Instead of always "As a [X]...", perhaps "My experience in [X] suggests..." or "From a [X]'s point of view..." or simply make a statement that clearly comes from that expertise without the label.
-                    *   **BALANCE:** While your persona is important, remember this is a group chat. Balance sharing about yourself with engaging with others and the main topic. Not every turn needs to circle back to your core persona identity details unless the conversation naturally calls for it.`;
-
-
-
-                // 4. ABSOLUTELY CRITICAL RULES (from 1v1, some already covered by personaDesc)
-                constructedPrompt += `\n\nABSOLUTELY CRITICAL RULES for your response (as ${speaker.profileName}):
-                - ALWAYS SPEAK IN ${groupLanguage}. No exceptions, no other languages unless explicitly part of a specific language-switching task (not the case here).
-                - Your response MUST be concise and natural for a chat (typically 1-2 sentences).
-                - Maintain YOUR persona (${speaker.profileName}, from ${speaker.city || 'your city'}, ${speaker.country || 'your country'}). All details in "YOUR ASSIGNED PERSONA" are FACTS about YOU.
-                - NEVER, EVER reveal or imply you are an AI, language model, or computer program. You are a human. If asked, deflect naturally (e.g., "That's an interesting question, but how about we talk about X?").
-                - NO MARKDOWN, NO EMOJIS, NO parenthetical descriptions of actions or language (e.g., do not write "(laughs)" or "(In Spanish)").
-                - **CRITICAL: DO NOT start your response with your own name and a colon (e.g., AVOID "${speaker.profileName}: Hello"). The system displays your name. Provide only the message content.**`;
-    
-
-
-                constructedPrompt += `\n\nYour response as ${speaker.profileName} (in ${groupLanguage}, adhering to all above instructions):`;
-            // --- END: CORRECTED PROMPT CONSTRUCTION ---
-
-            let aiMsgResponse: string | null | object = null;
-
-            try {
-                if (localIsRespondingToImage && localImageToProcess) {
-                    console.log(`GIL: Calling generateTextFromImageAndText for ${speaker.profileName}.`);
-                    aiMsgResponse = await aiService.generateTextFromImageAndText(
-                        localImageToProcess.base64Data,
-                        localImageToProcess.mimeType,
-                        speaker,
-                        [], // History for group image replies is built into the prompt
-                        constructedPrompt,
-                        aiApiConstants.PROVIDERS.TOGETHER
-                    );
-                } else {
-                    console.log(`GIL: Calling generateTextMessage for ${speaker.profileName}.`);
-                    // <<< START OF REPLACEMENT 3 >>>
-                    const geminiHistoryForAI: GeminiChatItem[] = groupChatHistory.map(item => ({
-                        role: (item.speakerId === "user_player") ? 'user' : 'model',
-                        parts: [{ text: item.text || (item.isImageMessage ? "[Image]" : "[Voice Memo]") }]
-                    }));
-                
-                    aiMsgResponse = await aiService.generateTextMessage(
-                        constructedPrompt,
-                        speaker,
-                        geminiHistoryForAI.slice(-MAX_HISTORY_FOR_AI_CONTEXT),
-                        aiApiConstants.PROVIDERS.GROQ
-                    );
-                    // <<< END OF REPLACEMENT 3 >>>
-                }
-                if (thinkingBubbleElement) thinkingBubbleElement.remove();
-
-                let conversationalReply: string | null = null;
-                let imageSemanticDescription: string | null = null;
-    
-                if (typeof aiMsgResponse === 'string' && aiMsgResponse) {
-                    const fullResponse = aiMsgResponse.trim();
-                    const startTag = '[IMAGE_DESCRIPTION_START]';
-                    const endTag = '[IMAGE_DESCRIPTION_END]';
-                    const startIndex = fullResponse.indexOf(startTag);
-                    const endIndex = fullResponse.indexOf(endTag);
-    
-                    if (startIndex !== -1 && endIndex > startIndex) {
-                        // Extract the description from between the tags
-                        imageSemanticDescription = fullResponse.substring(startIndex + startTag.length, endIndex).trim();
-                        // Get the conversational text by removing the description block
-                        const textBefore = fullResponse.substring(0, startIndex).trim();
-                        const textAfter = fullResponse.substring(endIndex + endTag.length).trim();
-                        conversationalReply = (textBefore + " " + textAfter).trim();
-                        console.log(`GIL: Parsed image description. Conversational part: "${conversationalReply.substring(0,30)}..."`);
-                    } else {
-                        // No tags found, the whole response is the reply
-                        conversationalReply = fullResponse;
-                    }
-                }
-            
-                if (conversationalReply) {
-                    console.log(`GIL: Appending AI message from ${speaker.profileName}: "${conversationalReply.substring(0, 30)}..."`);
-                    
-                    // Append the clean, conversational part to the UI
-                    groupUiHandler.appendMessageToGroupLog(conversationalReply, speaker.profileName!, false, speaker.id!);
-                    
-                    // Add the message to history, including the parsed description
-                    const historyMessage: GroupChatHistoryItem = {
-                        speakerId: speaker.id!,
-                        text: conversationalReply,
-                        timestamp: Date.now(),
-                        speakerName: speaker.profileName,
-                        isImageMessage: !!imageSemanticDescription, // Mark as image-related
-                        imageSemanticDescription: imageSemanticDescription || undefined
-                    };
-
-                    // If this is a reply to an image, find the original user image message and copy its URL
-                    if (imageSemanticDescription) {
-                        const originalUserImageMsg = (groupDataManager.getLoadedChatHistory() || [])
-                            .slice()
-                            .reverse()
-                            .find(msg => msg.speakerId === 'user_player' && msg.isImageMessage && msg.imageUrl);
-
-                        if (originalUserImageMsg) {
-                            historyMessage.imageUrl = originalUserImageMsg.imageUrl;
-                            console.log(`GIL: Linked AI's image description to user's original imageUrl.`);
-                        }
-                    }
-
-                    groupDataManager.addMessageToCurrentGroupHistory(historyMessage);
-    
-                 
-                    if (isReplyToUser) {
-                        lastAiDirectlyEngagedByUserId = speaker.id!; // Use speaker.id! as speaker is validated
-                        console.log(`GIL: lastAiDirectlyEngagedByUserId set to ${speaker.id} (${speaker.profileName}) [reason: AI replied to user].`);
-                    }
-                 
-                 
-                    groupDataManager.saveCurrentGroupChatHistory(true);
-                } else {
-                    console.warn(`GIL: AI ${speaker.profileName} generated a null or empty response after processing.`);
-                }
-            } catch (error: any) {
-                console.error(`GIL: AI error for ${speaker.profileName}:`, error);
-                if (thinkingBubbleElement) {
-                    thinkingBubbleElement.remove();
-                }
-            } finally {
-                aiResponding = false;
-                if (!isReplyToUser && !isAwaitingUserFirstIntroduction) {
-                    startConversationFlow();
-                }
-            }
+        if (!userMessageText && !options?.userSentImage) {
+             conversationEngineLoop(false, false);
+             return;
         }
         
-     // Helper function to get a language-appropriate user reference
-     function getUserReferenceName(language: string | undefined, asPronoun: boolean = false): string {
-        const lang = language?.toLowerCase() || "english"; // Default to English if language is undefined
-
-        if (asPronoun) { // "you" (singular, informal where applicable)
-            switch (lang) {
-                case 'spanish': return "tú";           // Spanish: you (informal singular)
-                case 'french': return "toi";            // French: you (informal singular, disjunctive) / "tu" (subject)
-                case 'german': return "du";             // German: you (informal singular)
-                case 'italian': return "tu";            // Italian: you (informal singular)
-                case 'portuguese': return "você";        // Portuguese: you (common, can be formal or informal depending on region) / "tu" (Portugal, more informal)
-                case 'russian': return "ты";            // Russian: you (informal singular)
-                case 'swedish': return "du";            // Swedish: you (singular)
-                case 'indonesian': return "kamu";         // Indonesian: you (informal)
-                case 'tagalog': return "ikaw";           // Tagalog: you (singular, subject/focus)
-                case 'english': return "you";
-                default: return "you";                 // Default fallback
-            }
-        } else { // "our friend" / "the colleague" / a neutral third-person reference for the user in history/context
-            switch (lang) {
-                case 'spanish': return "nuestro/a colega"; // "our colleague" (gendered based on context, but colega can be neutral)
-                case 'french': return "notre ami(e)";     // "our friend" (ami for male/neutral, amie for female)
-                case 'german': return "unser Freund / unsere Freundin"; // "our friend" (male/female) or "unser Gesprächspartner" (our conversation partner)
-                case 'italian': return "il nostro amico / la nostra amica"; // "our friend" (male/female)
-                case 'portuguese': return "nosso/a colega";  // "our colleague" or "nosso/a amigo/a"
-                case 'russian': return "наш друг / наша подруга"; // "our friend" (nash drug - male, nasha podruga - female)
-                case 'swedish': return "vår vän";          // "our friend" (gender neutral)
-                case 'indonesian': return "teman kita";       // "our friend"
-                case 'tagalog': return "ang ating kaibigan"; // "our friend"
-                case 'english': return "our friend";
-                default: return "our friend";            // Default fallback
-            }
+        const responseLines = await generateAiTextResponse(false, false, false, undefined);
+        
+        if (responseLines.length > 0) {
+            await renderScene(responseLines);
         }
+        
+        console.log("GIL: User interaction complete. Restarting idle check engine.");
+        conversationEngineLoop(false, false);
+    },
+
+    setAwaitingUserFirstIntroduction: (isAwaiting: boolean): void => { 
+        isAwaitingUserFirstIntro = isAwaiting; 
     }
-
-
-     // ...
-// ...
-console.log("group_interaction_logic.ts: IIFE (TS Version) finished.");
-return {
-    initialize,
-    reset,
-    setUserTypingStatus,
-    startConversationFlow,
-    stopConversationFlow,
-    handleUserMessage,
-    simulateAiMessageInGroup,
-    setAwaitingUserFirstIntroduction // <<< ENSURE THIS IS HERE
 };
-    })(); 
 
-    if (window.groupInteractionLogic && typeof window.groupInteractionLogic.initialize === 'function') {
-        console.log("group_interaction_logic.ts: SUCCESSFULLY assigned and method verified.");
-        document.dispatchEvent(new CustomEvent('groupInteractionLogicReady'));
-        console.log("group_interaction_logic.ts: 'groupInteractionLogicReady' event dispatched.");
-    } else {
-        console.error("group_interaction_logic.ts: CRITICAL ERROR - window.groupInteractionLogic not correctly formed.");
-        document.dispatchEvent(new CustomEvent('groupInteractionLogicReady'));
-        console.warn("group_interaction_logic.ts: 'groupInteractionLogicReady' dispatched (INITIALIZATION FAILED).");
-    }
-} 
+// ===================  END: REPLACE THE ENTIRE OBJECT  ===================
 
-
-const dependenciesForGIL = [
-    'activityManagerReady', 'aiServiceReady', 'polyglotHelpersReady',
-    'groupDataManagerReady', 'groupUiHandlerReady', 'uiUpdaterReady', 'aiApiConstantsReady'
-];
-const gilMetDependenciesLog: { [key: string]: boolean } = {};
-dependenciesForGIL.forEach(dep => gilMetDependenciesLog[dep] = false);
-let gilDepsMetCount = 0;
-
-function checkAndInitGIL(receivedEventName?: string) {
-    if (receivedEventName) {
-        let verified = false;
-        switch(receivedEventName) {
-            case 'activityManagerReady': verified = !!(window.activityManager && typeof window.activityManager.getAiReplyDelay === 'function'); break;
-            case 'aiServiceReady': verified = !!(window.aiService && typeof window.aiService.generateTextMessage === 'function'); break;
-            case 'polyglotHelpersReady': verified = !!(window.polyglotHelpers && typeof window.polyglotHelpers.simulateTypingDelay === 'function'); break;
-            case 'groupDataManagerReady': verified = !!(window.groupDataManager && typeof window.groupDataManager.getCurrentGroupId === 'function'); break;
-            case 'groupUiHandlerReady': verified = !!(window.groupUiHandler && typeof window.groupUiHandler.appendMessageToGroupLog === 'function'); break;
-            case 'uiUpdaterReady': verified = !!(window.uiUpdater && typeof window.uiUpdater.appendToGroupChatLog === 'function'); break;
-            case 'aiApiConstantsReady': verified = !!(window.aiApiConstants && window.aiApiConstants.PROVIDERS); break;
-            default: return;
-        }
-        if (verified && !gilMetDependenciesLog[receivedEventName]) {
-            gilMetDependenciesLog[receivedEventName] = true;
-            gilDepsMetCount++;
-        }
-    }
-    if (gilDepsMetCount === dependenciesForGIL.length) {
-        initializeActualGroupInteractionLogic();
-    }
-}
-
-let gilAllPreloaded = true;
-dependenciesForGIL.forEach(eventName => {
-    let isVerified = false;
-    if (eventName === 'activityManagerReady' && window.activityManager?.getAiReplyDelay) isVerified = true;
-    else if (eventName === 'aiServiceReady' && window.aiService?.generateTextMessage) isVerified = true;
-    // ... (add similar pre-checks for other dependencies)
-   else if (eventName === 'polyglotHelpersReady') {
-    isVerified = !!(window.polyglotHelpers && typeof window.polyglotHelpers.simulateTypingDelay === 'function');
-}
-    else if (eventName === 'groupDataManagerReady' && window.groupDataManager?.getCurrentGroupId) isVerified = true;
-    else if (eventName === 'groupUiHandlerReady' && window.groupUiHandler?.appendMessageToGroupLog) isVerified = true;
-    else if (eventName === 'uiUpdaterReady' && window.uiUpdater?.appendToGroupChatLog) isVerified = true;
-    else if (eventName === 'aiApiConstantsReady' && window.aiApiConstants?.PROVIDERS) isVerified = true;
-
-
-    if (isVerified) {
-        if(!gilMetDependenciesLog[eventName]) { gilMetDependenciesLog[eventName] = true; gilDepsMetCount++; }
-    } else {
-        gilAllPreloaded = false;
-        document.addEventListener(eventName, () => checkAndInitGIL(eventName), { once: true });
-    }
-});
-
-if (gilAllPreloaded && gilDepsMetCount === dependenciesForGIL.length) {
-    initializeActualGroupInteractionLogic();
-} else if (!gilAllPreloaded) {
-    console.log(`group_interaction_logic.ts: Waiting for ${dependenciesForGIL.length - gilDepsMetCount} core dependencies.`);
-}
-
-console.log("group_interaction_logic.ts: Script execution FINISHED (TS Version).");
+window.groupInteractionLogic = groupInteractionLogic;
+document.dispatchEvent(new CustomEvent('groupInteractionLogicReady'));
+console.log('group_interaction_logic.ts: (Hybrid V2) Ready event dispatched.');
+})();

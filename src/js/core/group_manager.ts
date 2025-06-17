@@ -290,33 +290,49 @@ function initializeActualGroupManager(): void {
                 console.warn(`GroupManager: Could only find ${selectedAdditionalMembers.length} additional members matching criteria/fallback for group '${groupDef.name}' (needed ${neededAdditionalCount}). Potential pool size was ${potentialAdditionalMembers.length}.`);
             }
 
-            const loadedHistory = groupDataManager.getLoadedChatHistory();
-            console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
+         // <<< REPLACE THE END OF THE joinGroup FUNCTION WITH THIS LOGIC >>>
 
-            if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
-                groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
-            } else {
-                console.error("GroupManager: Cannot show group chat view (handler missing or invalid data). Name:", groupDef.name, "Members:", currentGroupMembersArray.length);
-                resetGroupState();
-                groupDataManager.setCurrentGroupContext(null, null);
-                return;
-            }
+    // ... (all the logic for selecting members and tutor happens before this) ...
 
-            tabManager.switchToTab('groups');
-            (window.shellController as any)?.switchView?.('groups');
-            chatOrchestrator?.renderCombinedActiveChatsList?.();
+    const loadedHistory = groupDataManager.getLoadedChatHistory();
+    console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
 
-            if (groupInteractionLogic?.initialize && groupInteractionLogic?.startConversationFlow && currentGroupTutorObject) {
-                groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
-                if (loadedHistory.length === 0) {
-                    sendWelcomeMessagesToGroup(groupDef, currentGroupTutorObject, currentGroupMembersArray);
-                }
-                groupInteractionLogic.startConversationFlow();
-            } else {
-                console.error("GroupManager: groupInteractionLogic not fully available or host (currentGroupTutorObject) missing for interaction flow.");
-            }
-            console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
-        } // End of joinGroup
+    // --- NEW, CORRECT ORDER ---
+    // 1. First, INITIALIZE the interaction logic with the members and tutor.
+    //    This sets the 'tutor' variable inside group_interaction_logic.ts.
+    if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
+        groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+    } else {
+        console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host (currentGroupTutorObject) missing. Cannot proceed with interaction.");
+        // We should probably exit here to avoid further errors.
+        return; 
+    }
+    
+    // 2. Now that GIL is initialized, show the UI.
+    if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
+        groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
+    } else {
+        console.error("GroupManager: Cannot show group chat view (handler missing or invalid data). Name:", groupDef.name, "Members:", currentGroupMembersArray.length);
+        resetGroupState();
+        groupDataManager.setCurrentGroupContext(null, null);
+        return;
+    }
+
+    tabManager.switchToTab('groups');
+    (window.shellController as any)?.switchView?.('groups');
+    chatOrchestrator?.renderCombinedActiveChatsList?.();
+    
+    // 3. Finally, START the conversation flow.
+    //    By now, the 'tutor' variable is guaranteed to be set.
+    if (groupInteractionLogic?.startConversationFlow) {
+        groupInteractionLogic.startConversationFlow();
+    } else {
+        console.error("GroupManager: groupInteractionLogic.startConversationFlow not available.");
+    }
+    // --- END OF NEW, CORRECT ORDER ---
+
+    console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
+} // End of joinGroup
 
         function sendWelcomeMessagesToGroup(groupDef: Group, tutor: Connector, members: Connector[]): void {
             console.log("GM: sendWelcomeMessagesToGroup() - START for group:", groupDef?.name);
@@ -352,16 +368,16 @@ function initializeActualGroupManager(): void {
             console.log("GM: sendWelcomeMessagesToGroup() - FINISHED. Tutor welcome sent, awaiting user intro via GIL.");
         }
 
-        function userIsTypingInGroupSignal(): void {
-            const { groupInteractionLogic } = getDeps();
-            isUserTypingInGroup = true;
-            groupInteractionLogic?.setUserTypingStatus(true);
-            clearTimeout(userTypingTimeoutId!); 
-            userTypingTimeoutId = setTimeout(() => {
-                isUserTypingInGroup = false;
-                groupInteractionLogic?.setUserTypingStatus(false);
-            }, 2500);
-        }
+      // <<< REPLACE THE FUNCTION WITH THIS EMPTY VERSION >>>
+function userIsTypingInGroupSignal(): void {
+    // This function's original purpose was to notify the AI when the user was typing
+    // to prevent interruptions. Our new "Conversation Block" and long cooldown system
+    // makes this feature obsolete. We are leaving the function here as a shell
+    // to prevent errors from the event listeners that still call it, but it does nothing.
+    
+    // const { groupInteractionLogic } = getDeps(); // No longer needed
+    // groupInteractionLogic?.setUserTypingStatus(true); // This was the error
+}
 
         function leaveCurrentGroup(triggerReload: boolean = true, updateSidebar: boolean = true): void {
             const { groupInteractionLogic, groupUiHandler, groupDataManager, tabManager, chatOrchestrator } = getDeps(); 

@@ -214,12 +214,22 @@ function initializeActualConversationManager(): void {
             }
             convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory); // This already saves the updated history
         // ...
-            convoStore.saveAllConversationsToStorage();
+        convoStore.saveAllConversationsToStorage();
 
-            if (chatOrchestrator?.notifyNewActivityInConversation) {
-                chatOrchestrator.notifyNewActivityInConversation(connectorId);
+        if (chatOrchestrator?.notifyNewActivityInConversation) {
+            chatOrchestrator.notifyNewActivityInConversation(connectorId);
+        }
+
+        // Broadcast the new message event for live UI updates
+        console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
+        document.dispatchEvent(new CustomEvent('new-message-in-store', {
+            detail: {
+                connectorId: connectorId,
+                message: messageObject
             }
-            return messageObject;
+        }));
+
+        return messageObject;
         }
 
         async function addModelResponseMessage(
@@ -253,6 +263,16 @@ function initializeActualConversationManager(): void {
             if (chatOrchestrator?.notifyNewActivityInConversation) {
                 chatOrchestrator.notifyNewActivityInConversation(connectorId);
             }
+            
+            // Broadcast the new message event for live UI updates
+            console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
+            document.dispatchEvent(new CustomEvent('new-message-in-store', {
+                detail: {
+                    connectorId: connectorId,
+                    message: messageObject
+                }
+            }));
+    
             return messageObject;
         }
         
@@ -296,6 +316,15 @@ function initializeActualConversationManager(): void {
             if (success) {
                 convoStore.saveAllConversationsToStorage();
                 chatOrchestrator?.notifyNewActivityInConversation?.(connectorId);
+    
+                // Broadcast the new system message event for live UI updates (like call logs)
+                console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
+                document.dispatchEvent(new CustomEvent('new-message-in-store', {
+                    detail: {
+                        connectorId: connectorId,
+                        message: fullMessage
+                    }
+                }));
             }
             return success;
         }

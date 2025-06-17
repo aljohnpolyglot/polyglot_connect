@@ -223,49 +223,65 @@ function getAllGroupDefinitions(
             console.log(`GDM: Message added to internal history for group ${currentGroupIdInternal}. New length: ${groupChatHistoryInternal.length}`);
         }
 
-        function saveCurrentGroupChatHistory(triggerListUpdate: boolean = true): void {
-            if (!polyglotHelpers || !currentGroupIdInternal || !Array.isArray(groupChatHistoryInternal)) {
-                console.warn("GDM.saveCurrentGroupChatHistory: Cannot save. Missing helpers, currentGroupId, or history is not an array.");
-                return;
-            }
+    // In group_data_manager.ts
+// REPLACE THE ENTIRE saveCurrentGroupChatHistory FUNCTION
+// In src/js/core/group_data_manager.ts
+// REPLACE THE ENTIRE saveCurrentGroupChatHistory FUNCTION
+function saveCurrentGroupChatHistory(triggerListUpdate: boolean = true): void {
+    if (!polyglotHelpers || !currentGroupIdInternal || !Array.isArray(groupChatHistoryInternal)) {
+        console.warn("GDM.saveCurrentGroupChatHistory: Cannot save. Missing dependencies or context.");
+        return;
+    }
+
+    const allHistories = polyglotHelpers.loadFromLocalStorage(GROUP_CHAT_HISTORY_STORAGE_KEY) as Record<string, GroupChatHistoryItem[]> || {};
     
-            const allHistories = polyglotHelpers.loadFromLocalStorage(GROUP_CHAT_HISTORY_STORAGE_KEY) as Record<string, GroupChatHistoryItem[]> || {};
-            
-            // --- START OF NEW LOGIC FOR PRUNING ---
-            const MESSAGES_TO_KEEP_IMAGES_FOR = 5; // Keep full image data for the last 5 messages
-            let historyToSave = groupChatHistoryInternal.slice(-MAX_MESSAGES_STORED_PER_GROUP);
-    
-            // Create a pruned version of the history specifically for saving
-            const prunedHistory = historyToSave.map((message, index) => {
-                // If the message is an image and is older than the last X messages, prune its data URL
-                if (message.isImageMessage && message.imageUrl && index < historyToSave.length - MESSAGES_TO_KEEP_IMAGES_FOR) {
-                    // Create a copy of the message and remove the large data URL
-                    const prunedMessage = { ...message };
-                    delete prunedMessage.imageUrl; // Remove the heavy part
-                    // Optionally, add a flag indicating it was pruned
-                    (prunedMessage as any).imagePruned = true; 
-                    return prunedMessage;
-                }
-                // Otherwise, keep the message as is (it's either not an image, or it's recent enough)
-                return message;
-            });
-            // --- END OF NEW LOGIC FOR PRUNING ---
-    
-            allHistories[currentGroupIdInternal] = prunedHistory; // Save the pruned history
-    
-            try {
-                polyglotHelpers.saveToLocalStorage(GROUP_CHAT_HISTORY_STORAGE_KEY, allHistories);
-                console.log(`GDM.saveCurrentGroupChatHistory: Saved history for group ${currentGroupIdInternal}. Stored ${prunedHistory.length} messages.`);
-            } catch (e) {
-                console.error(`GDM.saveCurrentGroupChatHistory: FAILED TO SAVE. LocalStorage quota likely exceeded even after pruning.`, e);
-                // Optionally, implement a more aggressive pruning or a notification to the user here.
-            }
-    
-            if (triggerListUpdate && chatOrchestrator?.renderCombinedActiveChatsList) {
-                console.log("GDM.saveCurrentGroupChatHistory: Triggering active chat list update via chatOrchestrator.");
-                chatOrchestrator.renderCombinedActiveChatsList();
-            }
+    // --- START OF NEW, ROBUST PRUNING LOGIC ---
+    const MESSAGES_TO_KEEP_MEDIA_FOR = 5; // Keep full media data URLs for only the last 5 messages
+    let historyToSave = groupChatHistoryInternal.slice(-MAX_MESSAGES_STORED_PER_GROUP);
+
+    // Create a pruned version of the history specifically for saving to LocalStorage
+    const prunedHistoryForStorage = historyToSave.map((message, index) => {
+        const msgCopy = { ...message };
+
+        // Prune heavy data that is only needed for the initial AI call, not for re-rendering history.
+        if (msgCopy.base64ImageDataForAI) {
+            delete msgCopy.base64ImageDataForAI;
         }
+
+        // Prune old media Data URLs to prevent LocalStorage quota errors.
+       // REPLACEMENT LINE
+const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.length - MESSAGES_TO_KEEP_MEDIA_FOR);
+
+        // Prune old IMAGE data URLs
+        if (isOldMessage && msgCopy.isImageMessage && msgCopy.imageUrl?.startsWith('data:image')) {
+            delete msgCopy.imageUrl; 
+            (msgCopy as any).imagePruned = true; // Add a flag for the UI to handle
+        }
+
+        // Prune old VOICE MEMO data URLs
+        if (isOldMessage && msgCopy.isVoiceMemo && msgCopy.audioBlobDataUrl?.startsWith('data:audio')) {
+            delete msgCopy.audioBlobDataUrl;
+            (msgCopy as any).audioPruned = true; // Add a flag for the UI to handle
+        }
+
+        return msgCopy;
+    });
+    // --- END OF NEW, ADAPTED PRUNING LOGIC ---
+
+    allHistories[currentGroupIdInternal] = prunedHistoryForStorage; // Save the pruned history
+
+    try {
+        polyglotHelpers.saveToLocalStorage(GROUP_CHAT_HISTORY_STORAGE_KEY, allHistories);
+        console.log(`GDM.saveCurrentGroupChatHistory: Saved history for group ${currentGroupIdInternal}. Stored ${prunedHistoryForStorage.length} messages.`);
+    } catch (e: any) {
+        console.error(`GDM.saveCurrentGroupChatHistory: FAILED TO SAVE. LocalStorage quota likely exceeded.`, e.message);
+        // This error is now expected if the history is still too large even after pruning.
+    }
+
+    if (triggerListUpdate && chatOrchestrator?.renderCombinedActiveChatsList) {
+        chatOrchestrator.renderCombinedActiveChatsList();
+    }
+}
 
         function setCurrentGroupContext(groupId: string | null, groupData: Group | null): void {
             // --- GDM.DEBUG.CONTEXT.1 ---

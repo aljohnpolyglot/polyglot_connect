@@ -111,9 +111,89 @@ const serviceMethods = ((): ChatSessionHandlerModule => {
         textMessageHandler, polyglotConnectors, chatOrchestrator, polyglotHelpers
     } = resolvedDeps!; 
 
-   function initialize(): void {
+ // Define the wrapper here so it can be referenced by both add/remove event listener
+const newMessageInStoreListener = (event: Event) => {
+    // This is the "proxy" that safely casts the generic Event to our CustomEvent
+    handleNewMessageInStore(event as CustomEvent);
+};
+
+/**
+ * Handles the 'new-message-in-store' global event.
+ * Checks if the new message belongs to the currently active chat (embedded or modal)
+ * and appends it to the UI in real-time.
+ * @param {CustomEvent} event The event containing the new message details.
+ */
+// <<< START OF REPLACEMENT FUNCTION >>>
+/**
+ * Handles the 'new-message-in-store' global event.
+ * Checks if the new message belongs to the currently active chat (embedded or modal)
+ * and appends it to the UI in real-time. This is wrapped in a setTimeout
+ * to prevent race conditions with modal dialogs opening simultaneously.
+ * @param {CustomEvent} event The event containing the new message details.
+ */
+function handleNewMessageInStore(event: CustomEvent): void {
+    setTimeout(() => {
+        const { connectorId, message } = event.detail as { connectorId: string, message: MessageInStore };
+    
+        if (!connectorId || !message) {
+            console.warn("CSH: handleNewMessageInStore - Received event with invalid detail.", event.detail);
+            return;
+        }
+    
+        const currentEmbeddedId = chatActiveTargetManager.getEmbeddedChatTargetId();
+        const currentModalConnector = chatActiveTargetManager.getModalMessageTargetConnector();
+        let messageAppended = false;
+    
+        // Check if the message belongs to the active embedded chat
+        if (currentEmbeddedId && currentEmbeddedId === connectorId) {
+            console.log(`CSH: New message for active embedded chat (${connectorId}). Appending to UI.`);
+            const convoRecord = conversationManager.getConversationById(connectorId);
+            const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
+            
+            const msgOptions: ChatMessageOptions = { ...message };
+    
+            if (senderClass === 'connector' && convoRecord?.connector) {
+                msgOptions.avatarUrl = convoRecord.connector.avatarModern;
+                msgOptions.senderName = convoRecord.connector.profileName;
+                msgOptions.connectorId = convoRecord.connector.id;
+            }
+    
+            uiUpdater.appendToEmbeddedChatLog?.(message.text || "", senderClass, msgOptions);
+            messageAppended = true;
+        }
+    
+        // Check if the message belongs to the active modal chat
+        if (currentModalConnector && currentModalConnector.id === connectorId) {
+            console.log(`CSH: New message for active modal chat (${connectorId}). Appending to UI.`);
+            const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
+    
+            const msgOptions: ChatMessageOptions = {
+                ...message,
+                avatarUrl: currentModalConnector.avatarModern,
+                senderName: currentModalConnector.profileName,
+                connectorId: currentModalConnector.id
+            };
+    
+            uiUpdater.appendToMessageLogModal?.(message.text || "", senderClass, msgOptions);
+            messageAppended = true;
+        }
+    
+        if (messageAppended) {
+            console.log("CSH: Message was appended to a live view, re-rendering active chat list.");
+            chatOrchestrator.renderCombinedActiveChatsList();
+        }
+    }, 0); // Execute on the next tick of the event loop
+}
+
+
+function initialize(): void {
     console.log("CSH_TS: initialize() - START.");
-    chatActiveTargetManager.clearModalMessageTargetConnector(); 
+    chatActiveTargetManager.clearModalMessageTargetConnector();
+    // Use the type-safe wrapper function for adding and removing the listener
+    document.removeEventListener('new-message-in-store', newMessageInStoreListener); 
+    document.addEventListener('new-message-in-store', newMessageInStoreListener);
+    console.log("CSH_TS: Added global event listener for 'new-message-in-store'.");
+    
     console.log("ChatSessionHandler (TS): Initialized. Modal target cleared. Embedded target state preserved.");
     console.log("CSH_TS: initialize() - FINISHED.");
 }
