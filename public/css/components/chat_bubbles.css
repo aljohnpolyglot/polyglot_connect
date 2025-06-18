@@ -51,8 +51,10 @@
 .chat-message-wrapper.connector-wrapper {
     align-self: flex-start; /* Aligns this wrapper to the left */
     flex-direction: row;
+    position: relative; /* New: Needed for absolute positioning of avatar */
+    /* New: Creates a permanent gutter for the avatar */
+    padding-left: calc(var(--chat-bubble-avatar-size, 30px) + var(--spacing-xs, 8px)); 
 }
-
 /* --- Avatar Styling (if shown next to bubbles) --- */
 /* HTML: <img class="chat-bubble-avatar" src="..."> */
 .chat-bubble-avatar {
@@ -61,13 +63,14 @@
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
-    background-color: var(--avatar-bg-fallback-light, #e0e0e0); /* Fallback */
-    /* Consider a subtle border that matches the chat-log-bg for a cutout effect */
-    /* border: 2px solid var(--chat-log-bg, var(--bg-white, #ffffff)); */
+    background-color: var(--avatar-bg-fallback-light, #e0e0e0);
+    
+    /* --- NEW POSITIONING RULES --- */
+    position: absolute;
+    left: 0;
+    bottom: 0; /* Aligns avatar to the bottom of the wrapper */
 }
-.chat-message-wrapper.has-avatar-left .chat-bubble-avatar {
-    margin-right: var(--spacing-xs, 8px);
-}
+
 .chat-message-wrapper.has-avatar-right .chat-bubble-avatar { /* For user avatar if implemented */
     margin-left: var(--spacing-xs, 8px);
 }
@@ -93,6 +96,7 @@
     max-width: 100%; /* Takes full width of its .chat-message-wrapper parent */
     box-sizing: border-box;
     position: relative; /* For sender name or other internal absolute elements */
+    margin-right: 1rem;
 }
 
 /* User's Bubble */
@@ -107,6 +111,7 @@
     background-color: var(--chat-bubble-connector-bg, var(--bg-alt-color, #e9ecef));
     color: var(--chat-bubble-connector-text, var(--text-color-default, #212529));
     border-bottom-left-radius: 6px; /* Tail effect */
+    margin-left: 0.6rem;
 }
 
 /* Tutor Bubble (Specific style for tutors, e.g., in group chats) */

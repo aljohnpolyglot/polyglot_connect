@@ -292,13 +292,27 @@ if (isFirstMessageInLog) {
     const currentSpeakerId = options.speakerId || options.connectorId;
     
     if (shouldDisplayTimestamp) {
-        // A timestamp breaks the sequence.
+        // A timestamp breaks the sequence, so the next message is treated as a new one.
         lastSpeakerPerLog.delete(logElement);
     } else {
         const lastSpeakerId = lastSpeakerPerLog.get(logElement);
-        if (currentSpeakerId && lastSpeakerId === currentSpeakerId && !options.isThinking) {
-            // It's a consecutive message if speaker is same and it's not a "thinking" bubble.
+    
+        // Check if the current message is a consecutive one from the same non-user speaker.
+        if (currentSpeakerId && lastSpeakerId === currentSpeakerId && !options.isThinking && !senderClass.includes('user')) {
+            // It's a consecutive message, so add the class to hide the name.
             messageWrapper.classList.add('is-consecutive');
+    
+            // Find the PREVIOUS message wrapper from this speaker to remove its avatar.
+            // This makes the avatar "move" to the newest message in the sequence.
+            const previousMessageWrapper = logElement.querySelector(`:scope > .chat-message-wrapper[data-speaker-id="${currentSpeakerId}"]:last-child`);
+            
+            if (previousMessageWrapper) {
+                const previousAvatar = previousMessageWrapper.querySelector('.chat-bubble-avatar');
+                if (previousAvatar) {
+                    previousAvatar.remove();
+                    previousMessageWrapper.classList.remove('has-avatar-left');
+                }
+            }
         }
     }
     // --- END: Consecutive Message Logic ---
@@ -465,94 +479,129 @@ if (isFirstMessageInLog) {
             messageDiv.appendChild(transcriptSpan);
         }
     
-        if (avatarHtml) {
-            messageWrapper.innerHTML = avatarHtml;
-            messageWrapper.classList.add('has-avatar-left');
-        }
-        messageWrapper.appendChild(messageDiv);
+        messageDiv.innerHTML = contentHtml; // The bubble content is ready.
 
-    } else {
-        // --- REGULAR TEXT/IMAGE OR SYSTEM MESSAGE RENDERING ---
-        messageWrapper.classList.add('chat-message-wrapper');
-        messageDiv.classList.add('chat-message-ui');
+    // Create and append the avatar as a proper DOM element.
+    // This allows the logic from Step 1 to find and remove it later.
+    const shouldShowAvatar = !senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl;
 
-        // Add sender-specific wrapper and bubble classes
-        if (senderClass.includes('user')) {
-            messageWrapper.classList.add('user-wrapper');
-            messageDiv.classList.add('user');
-        } else if (senderClass.includes('system-message')) {
-            messageWrapper.classList.add('system-message-wrapper');
-            messageDiv.classList.add('system-message');
-        } else { // Connector
-            messageWrapper.classList.add('connector-wrapper');
-            messageDiv.classList.add('connector');
-        }
-
-        // Add conditional classes to the bubble itself
-        if (options.isThinking) messageDiv.classList.add('connector-thinking');
-        if (options.isError) messageDiv.classList.add('error-message-bubble');
-        if (senderClass && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking) {
-            const groupClasses = senderClass.split(' ').filter(cls => cls !== 'connector');
-            if (groupClasses.length) messageDiv.classList.add(...groupClasses);
-        }
-
-        let avatarHtml = ''; // To store potential avatar HTML for this branch
+    if (shouldShowAvatar) {
+        // Create the avatar image element
+        const avatarElement = document.createElement('img');
         const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
         const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
         const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
 
-        if (!senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl) {
-            let avatarConnectorId = options.connectorId || options.speakerId || '';
-            if (!avatarConnectorId && (logElement?.id === currentDomElements?.embeddedChatLog?.id || logElement?.id === currentDomElements?.messageChatLog?.id)) {
-                const parentContainer = logElement.id === currentDomElements?.embeddedChatLog?.id ? currentDomElements.embeddedChatContainer : currentDomElements.messagingInterface;
-                avatarConnectorId = parentContainer?.dataset.currentConnectorId || '';
-            }
-            const altText = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
-            if (avatarConnectorId) {
-                avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar clickable-chat-avatar" data-connector-id="${currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId)}" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-            } else {
-                avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-            }
+        avatarElement.src = currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl || '');
+        avatarElement.alt = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
+        avatarElement.className = 'chat-bubble-avatar left-avatar'; // The classes needed for styling
+        avatarElement.onerror = () => { if(avatarElement) { avatarElement.onerror = null; avatarElement.src = placeholderAvatarSrc; }};
+
+        // Make the avatar clickable if it has an ID
+        let avatarConnectorId = options.connectorId || options.speakerId || '';
+        if (avatarConnectorId) {
+            avatarElement.classList.add('clickable-chat-avatar');
+            avatarElement.dataset.connectorId = currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId);
         }
 
-        // Content for the bubble (text and/or image)
-        let contentHtml = '';
-        const isGroupChatLog = logElement?.id === currentDomElements?.groupChatLogDiv?.id;
-
-        // Always show sender name for AI in group chat (if provided and not thinking bubble)
-        if (options.senderName && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking && options.showSenderName !== false && isGroupChatLog) {
-            contentHtml += `<strong class="chat-message-sender-name">${currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName)}</strong>`;
-        }
-
-        // Display the main text (could be message, caption, or AI's comment on image)
-        if (text && text.trim() !== "") {
-            let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
-            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
-            
-            // Add a line break after the sender name if there is text content
-            if (contentHtml !== '') {
-                contentHtml += '<br>';
-            }
-            contentHtml += `<span class="chat-message-text">${processedText}</span>`;
-        }
-
-        // Display the image if imageUrl is provided
-        if (options.imageUrl) {
-            if (contentHtml.trim() !== '' && !contentHtml.endsWith('<br>') && text && text.trim() !== "" && !text.startsWith("[User sent an image")) {
-                contentHtml += '<br>';
-            }
-            contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
-        }
-
-        messageDiv.innerHTML = contentHtml;
-
-        // Assemble avatar and message content into the wrapper
-        if (avatarHtml) {
-            messageWrapper.innerHTML = avatarHtml; // Avatar first
-            messageWrapper.classList.add('has-avatar-left'); // Add class if avatar is present
-        }
-        messageWrapper.appendChild(messageDiv); // Then the bubble
+        // Add the avatar to the wrapper.
+        messageWrapper.appendChild(avatarElement);
+        messageWrapper.classList.add('has-avatar-left');
     }
+
+    // Add the message bubble next to the avatar (or by itself).
+    messageWrapper.appendChild(messageDiv);
+
+} else {
+    // --- REGULAR TEXT/IMAGE OR SYSTEM MESSAGE RENDERING ---
+    messageWrapper.classList.add('chat-message-wrapper');
+    messageDiv.classList.add('chat-message-ui');
+
+    // Add sender-specific wrapper and bubble classes
+    if (senderClass.includes('user')) {
+        messageWrapper.classList.add('user-wrapper');
+        messageDiv.classList.add('user');
+    } else if (senderClass.includes('system-message')) {
+        messageWrapper.classList.add('system-message-wrapper');
+        messageDiv.classList.add('system-message');
+    } else { // Connector
+        messageWrapper.classList.add('connector-wrapper');
+        messageDiv.classList.add('connector');
+    }
+
+    // Add conditional classes to the bubble itself
+    if (options.isThinking) messageDiv.classList.add('connector-thinking');
+    if (options.isError) messageDiv.classList.add('error-message-bubble');
+    if (senderClass && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking) {
+        const groupClasses = senderClass.split(' ').filter(cls => cls !== 'connector');
+        if (groupClasses.length) messageDiv.classList.add(...groupClasses);
+    }
+
+    // --- FIX: Declare contentHtml here before it's used ---
+    let contentHtml = '';
+    const isGroupChatLog = logElement?.id === currentDomElements?.groupChatLogDiv?.id;
+
+    // Always show sender name for AI in group chat (if provided and not a thinking bubble and not consecutive)
+    if (options.senderName && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking && options.showSenderName !== false && isGroupChatLog) {
+        contentHtml += `<strong class="chat-message-sender-name">${currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName)}</strong>`;
+    }
+
+    // Display the main text (could be message, caption, or AI's comment on image)
+    if (text && text.trim() !== "") {
+        let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
+        processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+        
+        // Add a line break after the sender name if there is text content
+        if (contentHtml !== '') {
+            contentHtml += '<br>';
+        }
+        contentHtml += `<span class="chat-message-text">${processedText}</span>`;
+    }
+
+    // Display the image if imageUrl is provided
+    if (options.imageUrl) {
+        if (contentHtml.trim() !== '' && !contentHtml.endsWith('<br>') && text && text.trim() !== "" && !text.startsWith("[User sent an image")) {
+            contentHtml += '<br>';
+        }
+        contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
+    }
+    // --- End of contentHtml creation ---
+
+
+    // --- Assemble Avatar and Message Content ---
+    messageDiv.innerHTML = contentHtml; // The bubble content is ready.
+
+    // Create and append the avatar as a proper DOM element.
+    // This allows the consecutive message logic to find and remove it later.
+    const shouldShowAvatar = !senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl;
+
+    if (shouldShowAvatar) {
+        // Create the avatar image element
+        const avatarElement = document.createElement('img');
+        const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
+        const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
+        const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
+
+        avatarElement.src = currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl || '');
+        avatarElement.alt = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
+        avatarElement.className = 'chat-bubble-avatar left-avatar';
+        avatarElement.onerror = () => { if(avatarElement) { avatarElement.onerror = null; avatarElement.src = placeholderAvatarSrc; }};
+
+        // Make the avatar clickable if it has an ID
+        let avatarConnectorId = options.connectorId || options.speakerId || '';
+        if (avatarConnectorId) {
+            avatarElement.classList.add('clickable-chat-avatar');
+            avatarElement.dataset.connectorId = currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId);
+        }
+
+        // Add the avatar to the wrapper.
+        messageWrapper.appendChild(avatarElement);
+        messageWrapper.classList.add('has-avatar-left');
+    }
+
+    // Add the message bubble next to the avatar (or by itself).
+    messageWrapper.appendChild(messageDiv);
+}
 
     logElement.appendChild(messageWrapper);
 

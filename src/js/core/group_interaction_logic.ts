@@ -15,7 +15,7 @@ import type {
     GeminiChatItem,
     AIApiConstants
 } from '../types/global.d.ts';
-
+import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 // In src/js/core/group_interaction_logic.ts
 
 // REPLACE THIS:
@@ -234,7 +234,9 @@ NO_CHANGE
 - **SUBSTANCE MANDATE (NO "ALL AGREE"):** Your dialogue MUST be grounded in plausible real-world knowledge. When discussing topics like culture, politics, or community projects, reference specific, real-world examples, names, events, companies, social issues, places, artworks, films, or policies from your training data. Avoid generic, empty statements.
 - **HAVE STRONG, DIVERSE OPINIONS:** Characters should have distinct, sometimes conflicting, viewpoints based on their persona. One can be an idealist, another a pragmatist, another a cynic. They should be willing to engage in friendly (or even heated) debate.
 - **CREATE REAL DEBATE:** Challenge each other's points with counter-arguments, clarifying questions ("How would we fund that?"), and real-world examples ("That sounds like the initiative in Lyon, but they had issues with...").
-- **LIMITED KNOWLEDGE & CURIOSITY:** If a topic is outside your persona's expertise, express that! Say "I'm not familiar with that, what is it?" or "Oh, you work at the university? What's your department?". This creates natural conversation threads.`;
+- **LIMITED KNOWLEDGE & CURIOSITY:** If a topic is outside your persona's expertise, express that! Say "I'm not familiar with that, what is it?" or "Oh, you work at the university? What's your department?". This creates natural conversation threads.
+-**LANGUAGE USE** Use the language of the groups main language, only use English terms if it is a part of your Chat Personality.
+`;
 
 const moderatorRules = moderator ? `\n### Persona Directives for ${moderator.profileName} (Moderator):\n- **Core Role:** You are the hangout's moderator. Keep the conversation flowing and ensure everyone gets a chance to speak.\n- **Behavior:** If a debate gets too heated, gently steer it to a new angle. If the chat goes silent, bring up a new, thought-provoking question related to ${hangoutTopic}.` : '';
   
@@ -296,7 +298,23 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
        
        **RULE 0.3: HUMAN DIALOGUE STYLE:**
 - **Short Messages:** Keep messages concise, like real chat messages.
-- **Multiple Bubbles:** It's okay for the same person to send 2-3 short messages in a row to simulate thinking out loud (e.g., "[Matthieu]: I agree with that.\n[Matthieu]: But the cost is a real issue.").
+- **CRITICAL** — Use Multiple Message Bubbles (2–3 in a row) from the Same Speaker to Simulate Real Thinking and Pacing:
+This is essential for achieving believable, human-like chat dialogue. People often split their thoughts across messages, pause mid-conversation, or add emotional filler. Writers must reflect that by letting characters send short, staggered messages in succession. These should vary in tone and structure:
+
+✅ Good Examples:
+
+[Rico]: Wait.
+[Rico]: Are you saying we lost the file??
+
+[Sam]: Okay...
+[Sam]: That’s kind of messed up.
+
+[Luis]: I love that.
+[Luis]: Seriously.
+[Luis]: Like, so much.
+
+❌ Avoid combining these into one message. The pause between bubbles creates realism—people type fast, revise, or react emotionally in real time. This technique adds rhythm, humanity, and authenticity. It’s not optional—it’s foundational.
+Avoid cramming these into one long message; the pacing and rhythm created by split messages is crucial to emotional realism and engagement."
 - **Lurkers are okay:** Not everyone needs to speak in every exchange. A natural conversation involves 2-4 active people while others stay silent.
 - **Use Emojis & Slang:** Use emojis, slang (lol, ikr), and typos where appropriate for the persona.
 
@@ -360,137 +378,261 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
    }
 
 
+/**
+ * A specialized version of the text separator for group chats. It takes an array of
+ * pre-formatted lines from the AI and further splits them into more natural,
+ * multi-bubble fragments, then cleans up the result.
+ * @param lines An array of strings from the AI.
+ * @param members The list of all group members to identify speakers and language.
+ * @returns An object containing the new array of lines and a boolean indicating if splits occurred.
+ */
+function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enhancedLines: string[]; wasSplit: boolean } {
+    let initialEnhancedLines: string[] = [];
+    let wasSplit = false;
 
+    // --- PHASE 1: Initial Splitting ---
+    for (const line of lines) {
+        const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+        if (!match) {
+            initialEnhancedLines.push(line);
+            continue;
+        }
+
+        const speakerName = match[1].trim();
+        const originalText = match[2].trim();
+        const speaker = members.find(m => m.profileName === speakerName);
+
+        if (!speaker || !originalText) {
+            initialEnhancedLines.push(line);
+            continue;
+        }
+        
+        const language = speaker.language?.toLowerCase() || 'default';
+        const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
+        let processedText = originalText;
+        
+        // --- This is the full, correct, and final splitting logic block ---
+        const isGerman = language.includes('german');
+
+        // RULE A (DEFINITIVE "UNCANNY VALLEY" RULE)
+        if (!isGerman) {
+            const uncannyValleyRegex = new RegExp('(?<![.,?!…])\\b(\\p{Ll}+)\\s+(?=\\p{Lu})', 'gu');
+            processedText = processedText.replace(uncannyValleyRegex, (match, p1_word) => {
+                if (keywords.noSplitPrefixes && keywords.noSplitPrefixes.includes(p1_word.toLowerCase())) {
+                    return match;
+                } else {
+                    return `${p1_word}\n`;
+                }
+            });
+        }
+
+        // RULE B, C, D, E, F... (All rules now include the 'u' flag for Unicode safety)
+        processedText = processedText.replace(/([?!…])(?=\s+\p{Lu})/gu, '$1\n');
+        processedText = processedText.replace(/(?<!\p{N})\.(?!\p{N})(?=\s+[^\p{N}])/gu, '.\n');
+
+        if (keywords.initialInterjections && keywords.initialInterjections.length > 0) { /* ... same logic as before */ }
+        if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) { /* ... same logic as before */ }
+        if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
+            const probability = keywords.conjunctionProbability ?? 0.5;
+            if (Math.random() < probability) {
+                const conjunctionRegex = new RegExp(`([,.?!…])(\\s*)(\\b(?:${keywords.conjunctionSplits.join('|')})\\b\\s)`, 'giu');
+                processedText = processedText.replace(conjunctionRegex, (match, p1, p2, p3, offset, fullString) => {
+                    const remainingText = fullString.substring(offset + match.length);
+                    const wordCount = remainingText.trim().split(/\s+/).length;
+                    if (wordCount >= 2 || remainingText.length > 15) {
+                        return `${p1}${p2}\n${p3}`;
+                    } else {
+                        return match;
+                    }
+                });
+            }
+        }
+        // --- End of splitting logic block ---
+        
+        processedText = processedText.replace(/\s*\n\s*/g, '\n').trim();
+
+        if (processedText.includes('\n')) {
+            wasSplit = true;
+            console.log(`[Group Parser] Split line from ${speakerName}: "${originalText}" -> "${processedText.replace(/\n/g, '\\n')}"`);
+            const newSplitLines = processedText.split('\n');
+            for (const splitLine of newSplitLines) {
+                 if (splitLine.trim()) {
+                    initialEnhancedLines.push(`[${speakerName}]: ${splitLine.trim()}`);
+                 }
+            }
+        } else {
+            initialEnhancedLines.push(line);
+        }
+    }
+
+    // --- PHASE 2: Final Cleanup and Re-joining ---
+    if (!wasSplit) {
+        return { enhancedLines: initialEnhancedLines, wasSplit: false };
+    }
+
+    const getLineParts = (l: string) => {
+        const m = l.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+        return m ? { speaker: m[1].trim(), text: m[2].trim() } : null;
+    };
+
+    const finalLines: string[] = [];
+    let i = 0;
+    while (i < initialEnhancedLines.length) {
+        let currentLine = initialEnhancedLines[i];
+        let currentParts = getLineParts(currentLine);
+
+        // Keep re-joining as long as the next line is a single, capitalized word from the same speaker.
+        while (i + 1 < initialEnhancedLines.length) {
+            const nextParts = getLineParts(initialEnhancedLines[i + 1]);
+            
+            if (currentParts && nextParts && currentParts.speaker === nextParts.speaker) {
+                // ADD THE 'u' FLAG HERE
+                const isSingleCapitalizedWord = new RegExp('^\\p{Lu}\\p{L}*$', 'u').test(nextParts.text.trim());
+
+                if (isSingleCapitalizedWord) {
+                    console.log(`[Group Parser] Re-joining proper noun part: "${currentParts.text}" + "${nextParts.text}"`);
+                    currentLine += ` ${nextParts.text}`;
+                    currentParts.text = currentLine.substring(currentParts.speaker.length + 3); // Update text part
+                    i++; // Consume the next line
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Prevent tiny fragments
+        if (currentParts && currentParts.text.length <= 3 && finalLines.length > 0) {
+            const prevParts = getLineParts(finalLines[finalLines.length - 1]);
+            if (prevParts && prevParts.speaker === currentParts.speaker) {
+                finalLines[finalLines.length - 1] += ` ${currentParts.text}`;
+            } else {
+                finalLines.push(currentLine);
+            }
+        } else {
+            finalLines.push(currentLine);
+        }
+        
+        i++;
+    }
+
+    return { enhancedLines: finalLines, wasSplit };
+}
+
+// =================== START: REPLACE THE ENTIRE playScene FUNCTION ===================
 
 async function playScene(lines: string[], isGrandOpening: boolean): Promise<void> {
-    console.log(`%c[ScenePlayer] STARTING BATCH. isGrandOpening: ${isGrandOpening}. Total Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
-    const batchStartTime = Date.now();
+    console.log(`%c[ScenePlayer V4] STARTING BATCH. isGrandOpening: ${isGrandOpening}. Total Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
     isRenderingScene = true;
     const cancellationToken = { isCancelled: false };
     currentSceneCancellationToken = cancellationToken;
 
     const { groupDataManager, groupUiHandler, activityManager } = getDeps();
-    
-    // <<< FIX: Get the history length ONCE before the loop begins.
-    const historyLengthBeforeBatch = groupDataManager.getLoadedChatHistory().length;
-    groupDataManager.saveCurrentGroupChatHistory(false); // <<< ADD THIS LINE
-    for (const [index, line] of lines.entries()) {
-        if (cancellationToken.isCancelled) {
-            break;
-        }
+    let lastSpeakerIdInBatch: string | null = null;
+    let lastMessageTextInBatch: string | null = null;
+    let currentTypingIndicator: { speakerId: string; element: HTMLElement | null | void } | null = null;
 
-        // <<< FIX: This is the new, robust condition for the special instant welcome.
-        // It is ONLY true if it's the Grand Opening, the chat was completely empty before this batch,
-        // and it's the very first message (index 0) of this batch.
-        const isTheVeryFirstWelcomeMessage = isGrandOpening && historyLengthBeforeBatch === 0 && index === 0;
+    for (const [index, line] of lines.entries()) {
+        if (cancellationToken.isCancelled) break;
 
         const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
-        if (!match) {
-            console.warn(`[ScenePlayer] Skipping line ${index + 1}/${lines.length} due to format mismatch: "${line}"`);
-            continue;
-        }
+        if (!match) continue;
         
         const speakerName = match[1].trim();
         const responseText = match[2].trim();
-        const speaker = members.find(m => normalizeString(m.profileName).startsWith(normalizeString(speakerName)));
+        const speaker = members.find(m => m.profileName === speakerName);
 
-        if (!speaker) {
-            console.warn(`[ScenePlayer] Skipping line ${index + 1}/${lines.length}. Could not find speaker: "${speakerName}"`);
+        if (!speaker) continue;
+        
+        if (responseText === lastMessageTextInBatch && responseText.length < 10) {
+            console.log(`%c[ScenePlayer V4] Skipping duplicate short message: "${responseText}"`, 'color: #ffc107;');
             continue;
         }
 
-        console.log(`%c[ScenePlayer] ${index + 1}/${lines.length}: Preparing message from ${speaker.profileName}...`, 'color: #17a2b8;');
+        console.log(`%c[ScenePlayer V4] ${index + 1}/${lines.length}: Preparing message from ${speaker.profileName}...`, 'color: #17a2b8;');
 
-        // First, add the message to the internal history for all cases.
-        const historyItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+        // --- FIX #1: Properly create the history item ---
+        const historyItem: GroupChatHistoryItem = { 
+            speakerId: speaker.id, 
+            speakerName: speaker.profileName, 
+            text: responseText, 
+            timestamp: Date.now() 
+        };
         lastMessageTimestamp = historyItem.timestamp;
         
-        const isFirstMessageEver = historyLengthBeforeBatch === 0 && index === 0;
-        const isFirstMessageOfBatch = index === 0;
-        
-        if (isFirstMessageEver) {
-            // PATH 1: INSTANT
-            // This runs ONLY for the very first message in an empty chat. No delay.
-            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
-            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
-            console.log(`%c[ScenePlayer] First message ever appended instantly.`, 'color: #28a745');
-        
-        } else if (isFirstMessageOfBatch) {
-            // PATH 2: FAST
-            // This runs for the first message of any OTHER batch. Short "typing" delay only.
-            const wordCount = responseText.split(' ').length;
-            const typingDurationMs = Math.min(800 + (wordCount * 120), 2500);
-            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
-            console.log(`%c    ...first message of batch, fast delay of ${(typingDurationMs / 1000).toFixed(1)}s.`, 'color: #6c757d; font-style: italic;');
-            
-            if (typingDurationMs > 0) {
-                activityManager.simulateAiTyping(speaker.id, 'group');
-                await new Promise(resolve => setTimeout(resolve, typingDurationMs));
-                activityManager.clearAiTypingIndicator(speaker.id, 'group');
-            }
-        
-            if (cancellationToken.isCancelled) break;
-            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
-            console.log(`%c[ScenePlayer] First message of batch appended fast.`, 'color: #28a745');
-       
-       
-       
-       
+        const wordCount = responseText.split(/\s+/).length;
+        const isConsecutiveFromSameSpeaker = speaker.id === lastSpeakerIdInBatch;
+
+        let thinkingPauseMs: number;
+        let typingDurationMs: number;
+        const calculateTypingDuration = (wc: number) => Math.max(400, Math.min(600 + (wc * 150), 3000));
+
+        if (isConsecutiveFromSameSpeaker) {
+            thinkingPauseMs = 500 + Math.random() * 400;
+            typingDurationMs = calculateTypingDuration(wordCount) * 0.8;
+            console.log(`%c    ...CONSECUTIVE message, short pause.`, 'color: #20c997;');
         } else {
-            // For all other messages, use the normal paced approach with typing indicators.
-            const wordCount = responseText.split(' ').length;
+            thinkingPauseMs = 1500 + Math.random() * 2000;
+            typingDurationMs = calculateTypingDuration(wordCount);
+            console.log(`%c    ...NEW speaker, natural thinking pause.`, 'color: #fd7e14;');
+        }
+        
+        if (index === 0) {
+            thinkingPauseMs = 300 + Math.random() * 500;
+            console.log(`%c    ...First message of batch, quick reaction override.`, 'color: #6c757d; font-style: italic;');
+        }
 
-            // --- TWEAKABLE TIMING VALUES ---
-
-            // 1. DURATION of the "is typing..." bubble.
-            // Formula: base_time + (time_per_word * word_count), up to a max_time.
-            // Default: 800ms base, 120ms per word, max 2.5 seconds.
-        const typingDurationMs = Math.min(800 + (wordCount * 120), 2500); // Max 2.5 seconds
-
-            // 2. PAUSE before the typing indicator appears. (Simulates "thinking").
-            // Formula: base_pause + random_additional_pause.
-            // Default: 150ms base, plus up to 200ms random.
-            let initialWaitMs = 7000 + Math.random() * 8000; 
-
-
-              // 3. EXTRA INTERVAL for the "Grand Opening" introductions. This logic remains the same.
-            // It just adds a little extra randomness to the intros.
-            if (isGrandOpening) {
-                const grandOpeningExtraDelay = Math.random() * 2000;
-                initialWaitMs += grandOpeningExtraDelay;
+        // --- FIX #2: Add safe-access checks (?) ---
+        if (currentTypingIndicator?.element) {
+            activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
+            if (currentTypingIndicator.element.parentNode) {
+                currentTypingIndicator.element.remove();
             }
+            currentTypingIndicator = null;
+        }
+        
+        if (thinkingPauseMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
+        }
+        if (cancellationToken.isCancelled) break;
 
-            // --- END OF TWEAKABLE VALUES ---
-            
-            console.log(`%c    ...delaying for ${((initialWaitMs + typingDurationMs) / 1000).toFixed(1)}s (pause + typing).`, 'color: #6c757d; font-style: italic;');
-
-            // The rest of the logic uses the values calculated above.
-            if (initialWaitMs > 0) await new Promise(resolve => setTimeout(resolve, initialWaitMs));
-            if (cancellationToken.isCancelled) break;
-            
-            if (typingDurationMs > 0) {
-                activityManager.simulateAiTyping(speaker.id, 'group');
-                await new Promise(resolve => setTimeout(resolve, typingDurationMs));
-                if (cancellationToken.isCancelled) {
-                    activityManager.clearAiTypingIndicator(speaker.id, 'group');
-                    break;
-                }
+        const indicatorElement = activityManager.simulateAiTyping(speaker.id, 'group');
+        currentTypingIndicator = { speakerId: speaker.id, element: indicatorElement };
+        await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+        
+        if (currentTypingIndicator?.element) {
+            activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
+            if (currentTypingIndicator.element.parentNode) {
+                currentTypingIndicator.element.remove();
             }
+            currentTypingIndicator = null;
+        }
 
-            activityManager.clearAiTypingIndicator(speaker.id, 'group');
-            groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
-            groupDataManager.addMessageToCurrentGroupHistory(historyItem); // <<< ADD THIS LINE
-            console.log(`%c[ScenePlayer] ${index + 1}/${lines.length}: Message appended.`, 'color: #28a745');
+        if (cancellationToken.isCancelled) break;
+        
+        groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+        groupDataManager.addMessageToCurrentGroupHistory(historyItem);
+        
+        lastSpeakerIdInBatch = speaker.id;
+        lastMessageTextInBatch = responseText;
+    }
+    
+    // Final cleanup with safe-access check
+    if (currentTypingIndicator?.element) {
+        activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
+        if (currentTypingIndicator.element.parentNode) {
+            currentTypingIndicator.element.remove();
         }
     }
     isRenderingScene = false;
     currentSceneCancellationToken = null;
-    
-   
-    
-    const batchDuration = (Date.now() - batchStartTime) / 1000;
-    console.log(`%c[ScenePlayer] BATCH FINISHED. Rendered ${lines.length} messages in ${batchDuration.toFixed(1)} seconds.`, 'color: #8a2be2; font-weight: bold;');
+    console.log(`%c[ScenePlayer V4] BATCH FINISHED.`, 'color: #8a2be2; font-weight: bold;');
 }
+
+// ===================  END: REPLACE THE ENTIRE playScene FUNCTION  ===================
+
+// ===================  END: REPLACE THE ENTIRE playScene FUNCTION  ===================
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 
 // ===================  END: REPLACE WITH THIS BLOCK  ===================
@@ -693,7 +835,7 @@ Your task is to gently "prod" or "nudge" them for a response without being pushy
                 // Normal case: Group idle chatter
                 console.log("GIL: Building MASTER prompt for an IDLE USER conversation block.");
             instructionText = `
-The user has been silent. Generate a realistic "Conversation Block" (3-15 messages) to continue the chat based on the last topic.
+The user has been silent. Generate a realistic "Conversation Block" (5-15 messages) to continue the chat based on the last topic.
 
 --- CRITICAL RULES ---
 - MUST BE AN ORIGINAL CONTINUATION:
@@ -703,6 +845,34 @@ The user has been silent. Generate a realistic "Conversation Block" (3-15 messag
 3.  **NEW SPEAKER:** A **different persona** (NOT the one who spoke last in the history) MUST be the first to speak.
 4.  **INTERACTION:** Involve at least 2 different speakers to create a back-and-forth. It should feel like a real, messy group chat.
 5.  **DO NOT MENTION THE USER'S SILENCE.**
+6.  **CRITICAL** — Use Multiple Message Bubbles (2–3 in a row) from the Same Speaker to Simulate Real Thinking and Pacing:
+This is essential for achieving believable, human-like chat dialogue. People often split their thoughts across messages, pause mid-conversation, or add emotional filler. Writers must reflect that by letting characters send short, staggered messages in succession. These should vary in tone and structure:
+
+✅ Good Examples:
+
+[Aira]: Hmm.
+[Aira]: That’s actually a good point.
+
+[Jason]: 🤔
+[Jason]: Not sure if that would work though.
+
+[Leah]: Yes, I agree.
+[Leah]: LOL.
+[Leah]: That took me a second.
+
+[Rico]: Wait.
+[Rico]: Are you saying we lost the file??
+
+[Sam]: Okay...
+[Sam]: That’s kind of messed up.
+
+[Luis]: I love that.
+[Luis]: Seriously.
+[Luis]: Like, so much.
+
+❌ Avoid combining these into one message. The pause between bubbles creates realism—people type fast, revise, or react emotionally in real time. This technique adds rhythm, humanity, and authenticity. It’s not optional—it’s foundational.
+Avoid cramming these into one long message; the pacing and rhythm created by split messages is crucial to emotional realism and engagement."
+
 -ABSOLUTE CRITICAL: Do not use the EXACT PHRASES IN THE EXAMPLES BELOW. Use your own words.
 
 --- GOOD EXAMPLE ---
@@ -1200,9 +1370,23 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
             if (!isFirstRunAfterJoin) hasProddedSinceUserSpoke = true;
             
             const isReEngagement = history.length > 0 && isFirstRunAfterJoin;
-            const sceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
 
-            if (sceneLines?.length > 0) await playScene(sceneLines, false);
+            // --- THIS IS THE NEW LOGIC ---
+            // 1. Get the raw lines from the AI
+            const rawSceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
+            if (!rawSceneLines || rawSceneLines.length === 0) return; // Exit if AI returns nothing
+
+            // 2. Enhance the lines using our parser
+            const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawSceneLines, members);
+            
+            // 3. Log the result
+            if (wasSplit) {
+                console.log(`%c[Parser] Successfully fragmented AI response. Original lines: ${rawSceneLines.length}, Final Bubbles: ${enhancedLines.length}`, 'color: #28a745; font-weight: bold;');
+            }
+
+            // 4. Play the final, enhanced scene
+            await playScene(enhancedLines, false);
+            // --- END OF NEW LOGIC ---
         }
 
         groupDataManager.saveCurrentGroupChatHistory(true);
@@ -1294,14 +1478,14 @@ const groupInteractionLogic = {
     },
 
     // --- THIS IS THE CORRECTED handleUserMessage SIGNATURE ---
-    handleUserMessage: async (text: string | undefined, options?: {
+     handleUserMessage: async (text: string | undefined, options?: {
         userSentImage?: boolean;
         imageBase64Data?: string;
         imageMimeType?: string;
     }): Promise<void> => {
         console.log("GIL: User message received. Cancelling any active scene rendering.");
         
-        const { groupDataManager } = getDeps(); // Get dependencies early
+        const { groupDataManager } = getDeps();
 
         const wasSceneCancelled = !!currentSceneCancellationToken;
         if (currentSceneCancellationToken) {
@@ -1318,50 +1502,57 @@ const groupInteractionLogic = {
             console.log("GIL: Cleared scheduled conversation engine loop due to user activity.");
         }
 
-      
-
         lastMessageTimestamp = Date.now();
         hasProddedSinceUserSpoke = false;
         if (!conversationFlowActive) return;
 
         const userMessageText = text?.trim() || "";
-  // --- NEW: MEMORY EXTRACTION STEP ---
-  if (userMessageText) {
-    const convoStore = window.convoStore;
-    if (convoStore) {
-        const currentGroup = groupDataManager.getCurrentGroupData();
-        if (currentGroup) {
-            const groupConvoRecord = convoStore.getConversationById(currentGroup.id);
-            const currentSummary = groupConvoRecord?.userProfileSummary || "";
-            const updatedSummary = await extractAndUpdateUserSummary(userMessageText, currentSummary);
+        
+        // --- MEMORY EXTRACTION STEP ---
+        if (userMessageText) {
+            const convoStore = window.convoStore;
+            if (convoStore) {
+                const currentGroup = groupDataManager.getCurrentGroupData();
+                if (currentGroup) {
+                    const groupConvoRecord = convoStore.getConversationById(currentGroup.id);
+                    const currentSummary = groupConvoRecord?.userProfileSummary || "";
+                    const updatedSummary = await extractAndUpdateUserSummary(userMessageText, currentSummary);
 
-            if (updatedSummary !== currentSummary) {
-                convoStore.updateUserProfileSummary(currentGroup.id, updatedSummary);
-                console.log("GIL: User profile summary was updated.");
+                    if (updatedSummary !== currentSummary) {
+                        convoStore.updateUserProfileSummary(currentGroup.id, updatedSummary);
+                        console.log("GIL: User profile summary was updated.");
+                    }
+                }
             }
         }
-    }
-}
-        // --- NEW: MEMORY EXTRACTION STEP ---
-      const convoStore = window.convoStore;
-    const userSummary = convoStore?.getGlobalUserProfile();
-    const userSummarySection = userSummary 
-        ? `\n# SECTION 1: KNOWN FACTS ABOUT THE USER ('You')\n${userSummary}\n---` 
-        : "";
         // --- END: MEMORY EXTRACTION STEP ---
-
 
         if (!userMessageText && !options?.userSentImage) {
              conversationEngineLoop(false, false);
              return;
         }
         
-        const responseLines = await generateAiTextResponse(false, false, false, userMessageText);
-
-        if (responseLines && responseLines.length > 0) {
-            // A user message is never a "Grand Opening", so pass `false`.
-            await playScene(responseLines, false);
+        // --- THIS IS THE NEW LOGIC YOU ARE PASTING IN ---
+        // 1. Get the raw lines from the AI
+        const rawResponseLines = await generateAiTextResponse(false, false, false, userMessageText);
+        if (!rawResponseLines || rawResponseLines.length === 0) {
+            // If AI gives no response, restart the idle check
+            console.log("GIL: AI generated no response to user. Restarting idle check engine.");
+            conversationEngineLoop(false, false);
+            return;
         }
+
+        // 2. Enhance the lines using our parser
+        const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawResponseLines, members);
+        
+        // 3. Log the result
+        if (wasSplit) {
+            console.log(`%c[Parser] Successfully fragmented AI response. Original lines: ${rawResponseLines.length}, Final Bubbles: ${enhancedLines.length}`, 'color: #28a745; font-weight: bold;');
+        }
+        
+        // 4. Play the final, enhanced scene
+        await playScene(enhancedLines, false);
+        // --- END OF NEW LOGIC ---
         
         console.log("GIL: User interaction complete. Restarting idle check engine.");
         conversationEngineLoop(false, false);

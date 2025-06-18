@@ -111,7 +111,7 @@ function runPersonasInitialization(): void {
                 { lang: "Spanish", levelTag: "beginner", flagCode: "es" },
                 { lang: "German", levelTag: "beginner", flagCode: "de" }
             ],
-            interests: ["video games", "indie music", "urban exploration", "skateboarding", "graphic design"],
+            interests: ["video games", "indie music", "urban exploration", "skateboarding", "graphic design", "Charli XCX", "Tame Impala" ],
             dislikes: ["slow internet connections", "mainstream pop music", "pay-to-win video games", "people who look down on gaming as a hobby", "formal dress codes", "waking up early for morning classes", "unimaginative, corporate graphic design", "tourist traps", "spoilers for movies or games", "condescending attitudes"],
             personalityTraits: ["casual", "friendly", "enthusiastic", "creative", "curious"],
             communicationStyle: "Spoken style is casual, friendly, and enthusiastic, with some Quebecois slang ('c'est l'fun', 'jaser').",

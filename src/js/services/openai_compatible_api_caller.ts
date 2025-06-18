@@ -183,7 +183,28 @@ if (!Array.isArray(messages) || messages.length === 0) {
         const choice = responseData.choices?.[0];
 
         if (choice?.message?.content !== undefined) {
-            return choice.message.content as string;
+            const responseText = choice.message.content as string;
+        
+            // --- DETAILED AI RESPONSE LOGGING ---
+            if (responseText) {
+                // Replace persona names like [Chloé] with "You" for logging purposes.
+                // This does not change the actual data being returned.
+                const loggableResponse = responseText.replace(/\[([^\]]+)\]:/g, 'You:');
+                
+                console.groupCollapsed(`%c[AI Response Preview] 💬`, 'color: #4CAF50;');
+                console.log(
+                    `%c${loggableResponse}`,
+                    `
+                    line-height: 1.6; 
+                    font-family: Consolas, "Courier New", monospace;
+                    padding: 5px;
+                    `
+                );
+                console.groupEnd();
+            }
+            // --- END OF LOGGING BLOCK ---
+        
+            return responseText;
         } else {
             console.error(`${functionName}: Invalid response structure from ${provider}. No content.`, responseData);
             throw new Error(`Invalid response from ${provider}.`);

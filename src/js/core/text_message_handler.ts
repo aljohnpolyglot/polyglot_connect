@@ -12,6 +12,8 @@ import type {
     MessageInStore,
     GeminiChatItem // <<< --- ADD THIS LINE IF MISSING ---
 } from '../types/global.d.ts';
+
+import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
 
 export interface TextMessageHandlerModule {
@@ -104,6 +106,257 @@ function initializeActualTextMessageHandler(): void {
 
     const methods = ((): TextMessageHandlerModule => {
         'use strict';
+
+
+
+
+// =================== START: REPLACE WITH THIS FINAL, SMARTER HELPER FUNCTION ===================
+// in src/js/core/text_message_handler.ts
+
+// =================== START: REPLACE WITH THIS LANGUAGE-AWARE FUNCTION ===================
+// in src/js/core/text_message_handler.ts
+
+// =================== START: REPLACE THE ENTIRE TMH PARSER FUNCTION ===================
+
+/**
+ * Intelligently inserts newline characters into a single string to create
+ * a multi-bubble chat effect, using language-specific keywords and contextual patterns.
+ * @param text The single-line text from the AI.
+ * @param connector The persona object, used to determine the language.
+ * @param options An object containing configuration like probability.
+ * @returns A new string with newline characters inserted, or the original string.
+ */
+function intelligentlySeparateText(
+    text: string, 
+    connector: Connector,
+    options: { probability?: number }
+): string {
+    const { probability = 1.0 } = options; 
+
+    // --- Phase 1: Pre-checks and Setup ---
+    if (Math.random() > probability) {
+        return text;
+    }
+    
+    if (text.length < 20 && !/[?!…]/.test(text)) {
+        return text;
+    }
+
+    const language = connector.language?.toLowerCase() || 'default';
+    const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
+    let processedText = text;
+    
+    // --- Phase 2: Apply Splitting Rules (Unicode-Aware V2) ---
+    const isGerman = language.includes('german');
+    const PROTECTED_SPACE = '##SPACE##'; // A unique placeholder
+
+    // --- NEW RULE 0: Protect Multi-Word Proper Nouns ---
+    // This finds sequences of capitalized words and temporarily joins them
+    // to prevent other rules from splitting them apart.
+    // e.g., "Champions League" -> "Champions##SPACE##League"
+    if (!isGerman) {
+        // It now requires a lowercase letter specifically (not just any word), no preceding punctuation,
+        // a single space, and then an uppercase letter. This is very specific.
+        const uncannyValleyRegex = new RegExp('(?<![.,?!…])\\b(\\p{Ll}+)\\s+(?=\\p{Lu})', 'gu');
+        
+        processedText = processedText.replace(uncannyValleyRegex, (match, p1_wordBeforeCapital) => {
+            if (keywords.noSplitPrefixes && keywords.noSplitPrefixes.includes(p1_wordBeforeCapital.toLowerCase())) {
+                return match;
+            } else {
+                return `${p1_wordBeforeCapital}\n`;
+            }
+        });
+    }
+    // RULE B: Split after strong sentence terminators.
+    const terminatorRegex = new RegExp('([?!…])(?=\\s+\\p{Lu})', 'gu');
+    processedText = processedText.replace(terminatorRegex, '$1\n');
+
+    // RULE C: Split after a period (but not decimals).
+    const periodRegex = new RegExp('(?<!\\p{N})\\.(?!\\p{N})(?=\\s+[^\\p{N}])', 'gu');
+    processedText = processedText.replace(periodRegex, '.\n');
+
+    // RULE D: Isolate language-specific initial interjections.
+    if (keywords.initialInterjections && keywords.initialInterjections.length > 0) {
+        const interjectionRegex = new RegExp(`^((?:${keywords.initialInterjections.join('|')})[\\s!,.]*)+`, 'iu');
+        const match = processedText.match(interjectionRegex);
+        if (match && match[0].length < processedText.length) {
+            processedText = processedText.replace(interjectionRegex, (matchedStr) => `${matchedStr.trim()}\n`);
+        }
+    }
+
+    // RULE E: Split specific, pre-defined two-part interjections.
+    if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) {
+        const twoPartRegex = new RegExp(`^(${keywords.twoPartInterjections.join('|')})\\b`, 'iu');
+        const match = processedText.match(twoPartRegex);
+        if (match) {
+            const phrase = match[0];
+            const splitPhrase = phrase.replace(' ', '\n');
+            processedText = processedText.replace(phrase, splitPhrase);
+        }
+    }
+
+    // RULE F: Split before a conjunction (with probability and clause-length check).
+    if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
+        const probability = keywords.conjunctionProbability ?? 0.5; // (or 0.75 in TMH)
+        if (Math.random() < probability) {
+            const conjunctionRegex = new RegExp(`([,.?!…])(\\s*)(\\b(?:${keywords.conjunctionSplits.join('|')})\\b\\s)`, 'giu');
+            processedText = processedText.replace(conjunctionRegex, (match, p1, p2, p3, offset, fullString) => {
+                const remainingText = fullString.substring(offset + match.length);
+                const wordCountOfRemainder = remainingText.trim().split(/\s+/).length;
+                if (wordCountOfRemainder >= 2 || remainingText.length > 15) {
+                    return `${p1}${p2}\n${p3}`;
+                } else {
+                    return match;
+                }
+            });
+        }
+    }
+    
+    // --- NEW FINAL STEP: Restore the spaces in the protected nouns ---
+    processedText = processedText.replace(new RegExp(PROTECTED_SPACE, 'g'), ' ');
+
+    // --- Phase 3: Final Cleanup and Re-joining ---
+    if (processedText === text) {
+        return text;
+    }
+    
+    processedText = processedText.replace(/\s*\n\s*/g, '\n').trim();
+
+    const initialLines = processedText.split('\n');
+    const finalLines: string[] = [];
+
+    let i = 0;
+    while (i < initialLines.length) {
+        let currentLine = initialLines[i];
+
+        // --- NEW RE-JOINING LOGIC ---
+        // Keep re-joining as long as the next line is a single, capitalized word.
+        // This correctly handles names like "Paolo Rossi" or even "Jean-Claude Van Damme".
+        while (i + 1 < initialLines.length) {
+            const nextLine = initialLines[i + 1];
+            // A proper noun part is a SINGLE capitalized word.
+            const isSingleCapitalizedWord = new RegExp('^\\p{Lu}\\p{L}*$', 'u').test(nextLine.trim());
+
+            if (isSingleCapitalizedWord && !isGerman) {
+                console.log(`[Parser] Re-joining proper noun part: "${currentLine}" + "${nextLine}"`);
+                currentLine += ` ${nextLine}`;
+                i++; // Consume the next line
+            } else {
+                break; // Stop merging if the next line doesn't fit the pattern.
+            }
+        }
+        
+        // --- Prevent tiny fragments (logic remains the same) ---
+        const isTargetedInterjection = keywords.initialInterjections.includes(currentLine.toLowerCase().replace(/[.,!]/g, ''));
+        if (currentLine.length <= 3 && !isTargetedInterjection && finalLines.length > 0) {
+            finalLines[finalLines.length - 1] += ` ${currentLine}`;
+        } else {
+            finalLines.push(currentLine);
+        }
+        
+        i++;
+    }
+    
+    return finalLines.join('\n');
+}
+
+// ===================  END: REPLACE THE ENTIRE TMH PARSER FUNCTION  ===================
+
+// ===================  END: REPLACE WITH THIS LANGUAGE-AWARE FUNCTION  ===================
+// ===================  END: ADD THIS ENTIRE NEW HELPER FUNCTION  ===================
+
+
+
+
+/**
+ * Renders a sequence of AI messages with realistic, word-count-based delays
+ * and typing indicators, specifically for 1v1 chats.
+ * @param lines The array of message strings from the AI.
+ * @param targetId The ID of the connector receiving the messages.
+ * @param connector The full Connector object for the AI persona.
+ * @param context 'embedded' or 'modal' to direct the UI updates.
+ */
+async function playAiResponseScene(
+    lines: string[],
+    targetId: string,
+    connector: Connector,
+    context: 'embedded' | 'modal'
+): Promise<void> {
+    const { uiUpdater, conversationManager } = getSafeDeps("playAiResponseScene")!;
+    const appendToLog = context === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal;
+
+    console.log(`%c[1v1 ScenePlayer V4] STARTING BATCH for ${connector.profileName}. Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
+    
+    let lastMessageTextInBatch: string | null = null; // <<< NEW: For duplicate check
+
+    for (const [index, text] of lines.entries()) {
+        if (!text || text.trim() === '') continue;
+
+        // --- NEW: DUPLICATE PREVENTION LOGIC ---
+        if (text.trim() === lastMessageTextInBatch && text.trim().length < 10) {
+            console.log(`%c[1v1 ScenePlayer V4] Skipping duplicate short message: "${text}"`, 'color: #ffc107;');
+            continue;
+        }
+
+        const wordCount = text.split(/\s+/).length;
+        const isFirstMessageOfBatch = index === 0;
+
+        let thinkingPauseMs: number;
+        let typingDurationMs: number;
+
+        // --- NEW REALISTIC PACING LOGIC ---
+        const calculateTypingDuration = (wc: number) => Math.max(400, Math.min(700 + (wc * 150), 3500));
+
+        if (isFirstMessageOfBatch) {
+            // First message has a slightly longer, more thoughtful pause.
+            thinkingPauseMs = 700 + Math.random() * 500; // e.g., 0.7s to 1.2s
+            typingDurationMs = calculateTypingDuration(wordCount);
+            console.log(`%c    ...[${index + 1}/${lines.length}] First message, natural pause.`, 'color: #6c757d; font-style: italic;');
+        } else {
+            // Subsequent (fragmented) messages are faster.
+            thinkingPauseMs = 400 + Math.random() * 300; // e.g., 0.4s to 0.7s
+            typingDurationMs = calculateTypingDuration(wordCount) * 0.7; // 30% faster typing
+            console.log(`%c    ...[${index + 1}/${lines.length}] CONSECUTIVE message, short pause.`, 'color: #20c997; font-style: italic;');
+        }
+
+        // 1. Wait for the "thinking" pause.
+        if (thinkingPauseMs > 0) await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
+        
+        // 2. Show the "is typing..." bubble.
+        const thinkingMsgOptions: ChatMessageOptions = { /*...*/ };
+        const thinkingMsg = appendToLog?.(`${connector.profileName?.split(' ')[0]} is typing...`, 'connector-thinking', thinkingMsgOptions);
+
+        // 3. Wait for the "typing" duration.
+        if (typingDurationMs > 0) await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+
+        // 4. CRITICAL FIX: Remove the thinking bubble BEFORE appending the real one.
+        if (thinkingMsg?.remove) {
+            thinkingMsg.remove();
+        }
+        
+        // 5. Now it's safe to append the real message.
+        appendToLog?.(text, 'connector', {
+            avatarUrl: connector.avatarModern,
+            senderName: connector.profileName,
+            timestamp: Date.now(),
+            connectorId: connector.id
+        });
+        await conversationManager.addModelResponseMessage(targetId, text);
+        
+        lastMessageTextInBatch = text.trim(); // <<< NEW: Update last message text
+    }
+    console.log(`%c[1v1 ScenePlayer V4] BATCH FINISHED for ${connector.profileName}.`, 'color: #8a2be2; font-weight: bold;');
+}
+
+
+
+
+
+
+
+
+
+
         console.log("text_message_handler.ts: IIFE for actual methods STARTING.");
 
         const {
@@ -386,78 +639,58 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 } else if (isHumanError || isBlockedResponse) {
                     if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: isHumanError, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
               // ...
-} else { // This is where AI response is handled
-    let conversationalReply = aiResponseText; // Default to full response
-    let extractedImageDescriptionForStore: string | undefined = undefined;
-
-    // Check if the AI response was for an image (i.e., imageFile was part of the user's message)
-    if (imageFile && typeof aiResponseText === 'string') { // imageFile is from sendEmbeddedTextMessage scope
+// REPLACE WITH THIS EXACT BLOCK
+} else { // This is where the successful AI response is handled
+    // Check if the user's message included an image file.
+    if (imageFile && typeof aiResponseText === 'string') {
+        // --- IMAGE PATH: This logic is for parsing image responses ---
+        let conversationalReply = aiResponseText;
+        let extractedImageDescriptionForStore: string | undefined = undefined;
         const descStartTag = "[IMAGE_DESCRIPTION_START]";
         const descEndTag = "[IMAGE_DESCRIPTION_END]";
         const startIndex = aiResponseText.indexOf(descStartTag);
         const endIndex = aiResponseText.indexOf(descEndTag);
 
-        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-            extractedImageDescriptionForStore = aiResponseText
-                .substring(startIndex + descStartTag.length, endIndex)
-                .trim();
-
-            let partBefore = aiResponseText.substring(0, startIndex).trim();
-            let partAfter = aiResponseText.substring(endIndex + descEndTag.length).trim();
-
-            conversationalReply = partBefore;
-            if (partAfter) conversationalReply += (partBefore ? " " : "") + partAfter;
-            conversationalReply = conversationalReply.trim();
-
-            console.log(`TMH.${functionName} (Embedded): Parsed AI image response. Conversational: "${conversationalReply.substring(0, 30)}...", Description: "${extractedImageDescriptionForStore.substring(0, 50)}..."`);
-        } else {
-            console.warn(`TMH.${functionName} (Embedded): Image description tags not found in AI response for image. Full response treated as conversational: "${aiResponseText.substring(0, 50)}..."`);
-            // conversationalReply remains the full aiResponseText - this is the fallback.
+        if (startIndex !== -1 && endIndex > startIndex) {
+            extractedImageDescriptionForStore = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
+            conversationalReply = aiResponseText.substring(0, startIndex).trim();
         }
-    }
-
-    // Now, use the potentially modified conversationalReply for UI and storage
-    // The skipUiAppend here is for the USER's message, not the AI's reply.
-    // AI's reply should generally always be appended.
-    uiUpdater.appendToEmbeddedChatLog?.(
-        conversationalReply, 
-        'connector', 
-        { 
+        
+        // Append the single conversational part to the log
+        uiUpdater.appendToEmbeddedChatLog?.(conversationalReply, 'connector', { 
             avatarUrl: currentConnector.avatarModern, 
             senderName: currentConnector.profileName, 
             timestamp: Date.now(), 
             connectorId: currentConnector.id 
-        }
-    );
-    console.log(`TMH.${functionName}: AI message appended to embedded UI. Text: "${conversationalReply.substring(0,30)}"`);
-    
-    await conversationManager.addModelResponseMessage(
-        currentEmbeddedChatTargetId!, 
-        conversationalReply // Store the (parsed) conversational part
-    );
-    aiRespondedSuccessfully = true;
-
-    // Store the extracted factual description on the original user's image message
-    if (imageFile && extractedImageDescriptionForStore && userMessageId) { // userMessageId is from options or generated
-        console.log(`TMH.${functionName} (Embedded): Attempting to update original user image message (ID: ${userMessageId}) with AI's detailed description.`);
-        const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId!);
-        if (convoRecordForUpdate && convoRecordForUpdate.messages) {
-            const originalUserMsgIndex = convoRecordForUpdate.messages.findIndex(m => m.id === userMessageId);
-            if (originalUserMsgIndex !== -1) {
-                convoRecordForUpdate.messages[originalUserMsgIndex].imageSemanticDescription = extractedImageDescriptionForStore;
-                
-                if (window.convoStore?.updateConversationProperty && window.convoStore.saveAllConversationsToStorage) {
-                     window.convoStore.updateConversationProperty(currentEmbeddedChatTargetId!, 'messages', [...convoRecordForUpdate.messages]);
-                     window.convoStore.saveAllConversationsToStorage();
-                     console.log(`TMH.${functionName} (Embedded): Updated user image message ${userMessageId} with AI's detailed description in store.`);
-                } else {
-                    console.warn(`TMH.${functionName} (Embedded): convoStore update methods not available to save AI's detailed image description.`);
+        });
+        await conversationManager.addModelResponseMessage(currentEmbeddedChatTargetId!, conversationalReply);
+        
+        // Update the original user message with the new description
+        if (extractedImageDescriptionForStore && userMessageId) {
+            const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId!);
+            if (convoRecordForUpdate?.messages) {
+                const msgIndex = convoRecordForUpdate.messages.findIndex(m => m.id === userMessageId);
+                if (msgIndex !== -1) {
+                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescriptionForStore;
+                    window.convoStore?.updateConversationProperty(currentEmbeddedChatTargetId!, 'messages', [...convoRecordForUpdate.messages]);
+                    window.convoStore?.saveAllConversationsToStorage();
                 }
-            } else {
-                console.warn(`TMH.${functionName} (Embedded): Could not find original user image message with ID ${userMessageId} to update.`);
             }
         }
+    } else if (aiResponseText) {
+        // --- TEXT-ONLY PATH with Auto-Separator ---
+        console.log(`[Auto-Separator] Raw AI Text: "${aiResponseText}"`);
+        // Pass the connector object here
+        const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 0.7 });
+        console.log(`[Auto-Separator] Processed Text: "${processedText.replace(/\n/g, '\\n')}"`);
+        
+        const responseLines = processedText.split('\n').filter(line => line.trim());
+        await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
     }
+    
+    
+    // This applies to both successful paths (image or text)
+    aiRespondedSuccessfully = true;
 }
 // ...
             } catch (e: any) {
@@ -881,70 +1114,55 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                      uiUpdater.appendToMessageLogModal?.("Sorry, I couldn't get a response.", 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
                 } else if (isHumanError || isBlockedResponse) {
                     uiUpdater.appendToMessageLogModal?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: isHumanError, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                } else {
-                    let conversationalReply_modal = aiResponseText;
-                    let extractedImageDescription_modal: string | undefined = undefined;
-    
-                    // Check if the AI response was for an image (i.e., imageFile was part of the user's message)
-                    if (imageFile && typeof aiResponseText === 'string') { // imageFile is from the sendModalTextMessage scope
+                } else { // This is where the successful AI response is handled
+                    // Check if the user's message included an image file.
+                    if (imageFile && typeof aiResponseText === 'string') {
+                        // --- IMAGE PATH: This logic is for parsing image responses ---
+                        let conversationalReply_modal = aiResponseText;
+                        let extractedImageDescription_modal: string | undefined = undefined;
                         const descStartTag = "[IMAGE_DESCRIPTION_START]";
                         const descEndTag = "[IMAGE_DESCRIPTION_END]";
                         const startIndex = aiResponseText.indexOf(descStartTag);
                         const endIndex = aiResponseText.indexOf(descEndTag);
-    
-                        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-                            extractedImageDescription_modal = aiResponseText
-                                .substring(startIndex + descStartTag.length, endIndex)
-                                .trim();
-    
-                            let partBefore = aiResponseText.substring(0, startIndex).trim();
-                            let partAfter = aiResponseText.substring(endIndex + descEndTag.length).trim();
-    
-                            conversationalReply_modal = partBefore;
-                            if (partAfter) conversationalReply_modal += (partBefore ? " " : "") + partAfter; // Ensure space if both parts exist
-                            conversationalReply_modal = conversationalReply_modal.trim();
-    
-                            console.log(`TMH.${functionName} (Modal): Parsed AI image response. Conversational: "${conversationalReply_modal.substring(0, 30)}...", Description: "${extractedImageDescription_modal.substring(0, 50)}..."`);
-                        } else {
-                            console.warn(`TMH.${functionName} (Modal): Image description tags not found in AI response for image. Full response treated as conversational: "${aiResponseText.substring(0, 50)}..."`);
-                            // conversationalReply_modal remains the full aiResponseText, which is the desired fallback.
+                        
+                        if (startIndex !== -1 && endIndex > startIndex) {
+                            extractedImageDescription_modal = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
+                            conversationalReply_modal = aiResponseText.substring(0, startIndex).trim();
                         }
-                    }
-    
-                    // Now, use the potentially modified conversationalReply_modal for UI and storage
-                    uiUpdater.appendToMessageLogModal?.(
-                        conversationalReply_modal, 
-                        'connector', 
-                        { 
+                
+                        // Append the single conversational part to the log
+                        uiUpdater.appendToMessageLogModal?.(conversationalReply_modal, 'connector', {
                             avatarUrl: currentConnector.avatarModern, 
                             senderName: currentConnector.profileName, 
                             timestamp: Date.now() 
-                        }
-                    );
-                    await conversationManager.addModelResponseMessage(targetId, conversationalReply_modal); // Store the (parsed) conversational part
-                    aiRespondedSuccessfully = true;
-    
-                    // Store the extracted factual description on the original user's image message
-                    if (imageFile && extractedImageDescription_modal && userMessageId) { // userMessageId is from options or generated at the start of sendModalTextMessage
-                        console.log(`TMH.${functionName} (Modal): Attempting to update original user image message (ID: ${userMessageId}) with AI's detailed description.`);
-                        const convoRecordForUpdate = conversationManager.getConversationById(targetId);
-                        if (convoRecordForUpdate && convoRecordForUpdate.messages) {
-                            const originalUserMsgIndex = convoRecordForUpdate.messages.findIndex(m => m.id === userMessageId);
-                            if (originalUserMsgIndex !== -1) {
-                                convoRecordForUpdate.messages[originalUserMsgIndex].imageSemanticDescription = extractedImageDescription_modal;
-                                
-                                if (window.convoStore?.updateConversationProperty && window.convoStore.saveAllConversationsToStorage) {
-                                     window.convoStore.updateConversationProperty(targetId, 'messages', [...convoRecordForUpdate.messages]);
-                                     window.convoStore.saveAllConversationsToStorage();
-                                     console.log(`TMH.${functionName} (Modal): Updated user image message ${userMessageId} with AI's detailed description in store.`);
-                                } else {
-                                    console.warn(`TMH.${functionName} (Modal): convoStore update methods not available to save AI's detailed image description to user message.`);
+                        });
+                        await conversationManager.addModelResponseMessage(targetId, conversationalReply_modal);
+                
+                        // Update the original user message with the new description
+                        if (extractedImageDescription_modal && userMessageId) {
+                            const convoRecordForUpdate = conversationManager.getConversationById(targetId);
+                            if (convoRecordForUpdate?.messages) {
+                                const msgIndex = convoRecordForUpdate.messages.findIndex(m => m.id === userMessageId);
+                                if (msgIndex !== -1) {
+                                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription_modal;
+                                    window.convoStore?.updateConversationProperty(targetId, 'messages', [...convoRecordForUpdate.messages]);
+                                    window.convoStore?.saveAllConversationsToStorage();
                                 }
-                            } else {
-                                console.warn(`TMH.${functionName} (Modal): Could not find original user image message with ID ${userMessageId} to update with AI's detailed description.`);
                             }
                         }
-                     }
+                    } else if (aiResponseText) {
+                        // --- TEXT-ONLY PATH with Auto-Separator ---
+                        console.log(`[Auto-Separator] Raw AI Text: "${aiResponseText}"`);
+                        // Pass the connector object here
+                        const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
+                        console.log(`[Auto-Separator] Processed Text: "${processedText.replace(/\n/g, '\\n')}"`);
+                        
+                        const responseLines = processedText.split('\n').filter(line => line.trim());
+                        await playAiResponseScene(responseLines, targetId, currentConnector, 'modal');
+                    }
+                
+                    // This applies to both successful paths (image or text)
+                    aiRespondedSuccessfully = true;
                 }
             } catch (e: any) {
                 if (thinkingMsg?.remove) thinkingMsg.remove();
@@ -1193,6 +1411,13 @@ function checkAndInitTMH(receivedEventName?: string) {
         initializeActualTextMessageHandler();
     }
 }
+
+
+
+
+
+
+
 
 console.log('TMH_SETUP: Starting initial dependency pre-check for functional TextMessageHandler.');
 tmhDepsMet = 0;

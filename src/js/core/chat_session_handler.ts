@@ -463,16 +463,17 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
                         connectorIdForButton: msg.connectorIdForButton,
                         connectorNameForDisplay: msg.connectorNameForDisplay,
                         isVoiceMemo: msg.isVoiceMemo,
-                      audioSrc: msg.audioBlobDataUrl || undefined,
-                      imageUrl: msg.content_url || undefined,
+                        audioSrc: msg.audioBlobDataUrl || undefined,
+                        imageUrl: msg.content_url || undefined,
                         avatarUrl: convo.connector?.avatarModern,
                         senderName: convo.connector?.profileName,
                         connectorId: convo.connector?.id
                     };
-    
+            
                     uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
                 });
-                    } else {
+            } else {
+                // --- THIS IS THE RESTORED LOGIC ---
                 // This is a new conversation. Manually add the placeholder.
                 console.log(`CSH_TS: New modal conversation with ${convo.connector!.profileName}. Manually inserting placeholder.`);
                 if (domElements.messageChatLog && polyglotHelpers && convo.connector) {
@@ -483,6 +484,7 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
                             <p>Send a message to start!</p>
                         </div>`;
                 }
+                // --- END OF RESTORED LOGIC ---
             }
             uiUpdater.scrollMessageModalToBottom?.();
             uiUpdater.resetMessageModalInput?.();

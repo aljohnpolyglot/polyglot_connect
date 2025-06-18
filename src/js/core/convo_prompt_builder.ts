@@ -77,13 +77,12 @@ function _addMessageToHistoryAndTruncate(
 // <<< END OF REPLACEMENT FUNCTION >>>
 // IN: src/js/core/convo_prompt_builder.ts
 // REPLACE the entire buildInitialGeminiHistory function with this:
+// in src/js/core/convo_prompt_builder.ts
 
 export async function buildInitialGeminiHistory(connectorOriginal: Connector): Promise<GeminiChatItem[]> {
     const newHistoryArray: GeminiChatItem[] = [];
-    const functionName = "buildInitialGeminiHistory (Refactored)";
+    const functionName = "buildInitialGeminiHistory (Reordered)";
 
-    // For simplicity, we'll use connectorOriginal directly as our persona data source.
-    // In your full version, you'd keep your identity/memory service calls here.
     const persona = connectorOriginal; 
 
     if (!persona || !persona.id) {
@@ -95,83 +94,74 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
 
     const systemPromptParts: string[] = [];
 
-    // --- 1. Get Shared Core & Personality Rules from the Central File ---
- // IN: buildInitialGeminiHistory
-// MODIFY THIS SECTION
+    // --- STEP 1: Core Identity & Personality (Who you ARE) ---
+    const convoStore = window.convoStore;
+    const userSummary = convoStore?.getGlobalUserProfile();
+    systemPromptParts.push(getCoreIdentityPrompt(persona, userSummary));
+    systemPromptParts.push(getPersonalityAndBehaviorPrompt(persona, window.polyglotHelpers));
 
-    // --- 1. Get Shared Core & Personality Rules from the Central File ---
-const convoStore = window.convoStore;
-const userSummary = convoStore?.getGlobalUserProfile();
-systemPromptParts.push(getCoreIdentityPrompt(persona, userSummary)); // <<< PASS THE SUMMARY
-systemPromptParts.push(getPersonalityAndBehaviorPrompt(persona, window.polyglotHelpers));
-    // --- NEW: Time-Aware Greeting Logic ---
+    // --- STEP 2: Conversational Context (What you should TALK ABOUT NOW) ---
     let lastMessage: MessageInStore | null = null;
     let recentHistoryText: string | null = null;
+    let conversationLength = 0;
+    
     if (window.conversationManager && window.polyglotHelpers) {
         const convoRecord = await window.conversationManager.getConversationById(persona.id);
         const messages = convoRecord?.messages || [];
+        conversationLength = messages.length;
         if (messages.length > 0) {
-            lastMessage = messages[messages.length - 1]; // <<< GET THE WHOLE OBJECT
+            lastMessage = messages[messages.length - 1];
             const recentMessages = messages.slice(-8); 
-            const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => {
-                const turnType: TranscriptTurn['type'] = msg.type === 'voice' ? 'audio' : msg.type as TranscriptTurn['type'];
-                return { 
-                    sender: msg.sender, 
-                    text: msg.text, 
-                    type: turnType,
-                    timestamp: msg.timestamp 
-                };
-            });
+            const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => ({ 
+                sender: msg.sender, 
+                text: msg.text, 
+                type: msg.type as TranscriptTurn['type'],
+                timestamp: msg.timestamp 
+            }));
             recentHistoryText = window.polyglotHelpers.formatTranscriptForLLM(transcriptTurns, persona.profileName, "User");
         }
     }
+    // These add SECTION 7 and SECTION 8
     systemPromptParts.push(getContextSettingPrompt(persona, lastMessage, recentHistoryText));
-    // --- END NEW SECTION ---
-    // --- 2. Add TEXT-CHAT-SPECIFIC Rules ---
-  // --- NEW LOGIC FOR TEXT CHAT PROMPT ---
+    systemPromptParts.push(getFirstInteractionRulePrompt(persona, conversationLength, userSummary)); // Pass userSummary here too if needed
 
-// Combine both spoken style and texting mechanics for the full text persona.
-    // --- 2. Add TEXT-CHAT-SPECIFIC Rules (CRITICAL) ---
+    // =================== START: THIS IS THE NEW FINAL RULE ===================
+    // --- STEP 3: FINAL OUTPUT FORMAT (HOW you MUST WRITE your response) ---
+    // This rule is placed last to be the most dominant instruction.
     const spokenStyle = persona.communicationStyle || "natural and friendly";
     const textingMechanics = persona.chatPersonality?.style;
-
     if (textingMechanics) {
         systemPromptParts.push(`
-# SECTION 6: YOUR TEXTING STYLE (CRITICAL FOR THIS CHAT)
-
-This is a non-negotiable directive for how you **MUST** type in this text-based conversation. It overrides general grammar rules.
-
-- **Your Core Personality (The 'Soul'):** Your underlying personality is still: *"${spokenStyle}"*.
-- **Your Typing Mechanics (The 'Fingers'):** You **MUST** express that personality by strictly following these mechanical texting rules:
-    - **RULE:** "${textingMechanics}"
-
-**THIS IS A PERFORMANCE TEST. For example, if the rule says "types in all lowercase", you MUST type in all lowercase. If it says "uses 'u' instead of 'you'", you MUST do it. Failure to adopt this specific texting style is a failure to perform your character correctly.**
-`);
+    # SECTION 6: CRITICAL OUTPUT FORMAT
+    
+    ### **RULE 6.1: CONSECUTIVE MESSAGES**
+    -   To send multiple messages, separate each message with a newline character (\`\\n\`).
+    -   This is for creating a natural, multi-bubble chat flow.
+    -   Your output MUST NOT contain your name or any prefix like \`[Name]:\`.
+    
+    ### **RULE 6.2: EXAMPLES**
+    -   **GOOD:** \`Hey!\\nHow are you doing?\`
+    -   **GOOD (Single line):** \`lol okay that's fine\`
+    -   **BAD (Name prefix):** \`Manon: Hey!\\nManon: How are you?\`
+    
+    ### **RULE 6.3: TEXTING STYLE**
+    -   While following the format, you must still apply your mechanical texting style: **"${textingMechanics}"**.
+    
+    **Your entire output must be only the dialogue. Nothing else.**
+    `);
     } else {
-        // Fallback for personas without a specific chat personality
+        // Fallback for personas without a specific chat personality.
         systemPromptParts.push(`
---- TEXT COMMUNICATION STYLE ---
-Your communication style for this text chat is: "${spokenStyle}". Type naturally, following standard grammar and punctuation.
+    # SECTION 6: TEXT COMMUNICATION STYLE
+    - **Your Communication Style:** Your style for this text chat is: "${spokenStyle}". Type naturally, following standard grammar and punctuation.
+    - **Output Format:** Your response should be a single, coherent message.
         `);
     }
-    // --- 3. Finalize and Build ---
- // --- NEW: Get conversation length for context-specific rules ---
- let conversationLength = 0;
- if (window.conversationManager) {
-     const convoRecord = await window.conversationManager.getConversationById(persona.id);
-     conversationLength = convoRecord?.messages?.length || 0;
- }
- 
- // --- 2.5: Add the CRITICAL First Interaction Rule if applicable ---
- systemPromptParts.push(getFirstInteractionRulePrompt(persona, conversationLength));
+    // ===================  END: THIS IS THE NEW FINAL RULE  ===================
 
-
- // --- 3. Finalize and Build ---
- const fullSystemPrompt = systemPromptParts.filter(p => p && p.trim()).join('\n\n');
- _addMessageToHistoryAndTruncate(newHistoryArray, 'user', fullSystemPrompt);
-
-
-
+    // --- Finalize and Build ---
+    const fullSystemPrompt = systemPromptParts.filter(p => p && p.trim()).join('\n\n');
+    _addMessageToHistoryAndTruncate(newHistoryArray, 'user', fullSystemPrompt);
 
     _addMessageToHistoryAndTruncate(newHistoryArray, 'model', `Understood. I will act as ${persona.profileName} and follow all text chat instructions.`);
     
