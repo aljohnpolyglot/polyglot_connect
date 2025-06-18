@@ -121,7 +121,10 @@
     color: var(--chat-bubble-tutor-text, var(--secondary-color-dark, #0c5464));
     /* border: 1px solid var(--secondary-color-light, #b6e2f9); */ /* Optional border */
 }
-
+.modal-content .chat-message-text{
+  align-items: left;
+    /* border: 1px solid var(--secondary-color-light, #b6e2f9); */ /* Optional border */
+}
 /* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
 /* HTML: <strong class="chat-message-sender-name">Sender:</strong> <span class="chat-message-text">...</span> */
 /* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
