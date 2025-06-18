@@ -241,7 +241,8 @@ body.dark-mode .clickable-chat-avatar:hover {
     display: block;
     font-size: 0.8em;
     font-weight: var(--font-weight-semibold, 600);
-    margin-bottom: var(--spacing-xxs, 4px);
+  margin-bottom: var(--spacing-xxs, 4px);
+ 
     color: var(--text-color-muted-light, #6c757d); /* Default sender name color */
 }
 .chat-message-ui.user .chat-message-sender-name { display: none; } /* Don't show for user's own messages */
