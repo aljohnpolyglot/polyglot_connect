@@ -112,7 +112,7 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
         if (messages.length > 0) {
             lastMessage = messages[messages.length - 1];
             // <<< THIS IS THE CHANGE >>>
-            const recentMessages = messages.slice(-20); 
+            const recentMessages = messages.slice(-25); 
             // <<< END OF CHANGE >>>
             const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => ({ 
                 sender: msg.sender, 

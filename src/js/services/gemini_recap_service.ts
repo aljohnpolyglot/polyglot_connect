@@ -12,9 +12,9 @@ console.log("gemini_recap_service.ts: Script execution STARTED (TS Version).");
 
 export interface GeminiRecapServiceModule {
     generateSessionRecap: (
-        cleanedTranscriptText: string, // <<< CHANGED from fullCallTranscript
+        cleanedTranscriptText: string,
         connector: Connector
-    ) => Promise<RecapData>;
+    ) => Promise<{ recapData: RecapData, nickname: string }>;
 }
 window.geminiRecapService = {} as GeminiRecapServiceModule;
 
@@ -74,9 +74,16 @@ function initializeActualGeminiRecapService(): void {
             sessionId: `error-${Date.now()}`, date: new Date().toLocaleDateString(), duration: "N/A", startTimeISO: null
         });
 
+        // --- THIS IS THE FIX ---
+        // The dummy method must also conform to the interface's return type.
         const dummyMethods: GeminiRecapServiceModule = {
-            generateSessionRecap: async () => defaultErrorStructure("Gemini Recap Service not initialized (core deps missing).")
+            generateSessionRecap: async () => {
+                const errorRecap = defaultErrorStructure("Gemini Recap Service not initialized (core deps missing).");
+                return { recapData: errorRecap, nickname: "System Error" };
+            }
         };
+        // --- END OF FIX ---
+
         Object.assign(window.geminiRecapService!, dummyMethods);
         document.dispatchEvent(new CustomEvent('geminiRecapServiceReady'));
         console.warn("gemini_recap_service.ts: 'geminiRecapServiceReady' dispatched (INITIALIZATION FAILED - core deps).");
@@ -194,12 +201,12 @@ If a section has no relevant items, provide an empty array [] or null for userIn
 
                 // Validate essential fields from parsedResponse
                               // Validate essential fields from parsedResponse
-                              if (typeof parsedResponse.conversationSummary !== 'string' || !Array.isArray(parsedResponse.keyTopicsDiscussed)) {
-                                console.warn(`${functionName}: Parsed Gemini JSON missing essential fields or has incorrect types.`);
-                                // ADD THE RETURN STATEMENT HERE
-                                const malformedRecap = defaultErrorRecapStructure("Gemini (Malformed Structure)");
-                                return { recapData: malformedRecap, nickname: nickname || "System" };
-                           }
+                                           // Validate essential fields from parsedResponse
+                if (typeof parsedResponse.conversationSummary !== 'string' || !Array.isArray(parsedResponse.keyTopicsDiscussed)) {
+                    console.warn(`${functionName}: Parsed Gemini JSON missing essential fields or has incorrect types.`);
+                    const malformedRecap = defaultErrorRecapStructure("Gemini (Malformed Structure)");
+                    return { recapData: malformedRecap, nickname: nickname || "System" };
+                }
 
                 // Construct a full RecapData object, ensuring all keys are present by merging with defaults
                 const finalRecap: RecapData = {
@@ -223,13 +230,10 @@ If a section has no relevant items, provide an empty array [] or null for userIn
         console.log("gemini_recap_service.ts: IIFE (TS Version) finished.");
      
         // FIX: Return an object that conforms to the GeminiRecapServiceModule interface
+            // Return an object that conforms to the updated GeminiRecapServiceModule interface
+                  // Return an object that conforms to the updated GeminiRecapServiceModule interface
         return {
-            generateSessionRecap: async (cleanedTranscriptText, connector) => {
-                // Call the internal implementation which returns both data and a nickname
-                const { recapData } = await generateSessionRecap(cleanedTranscriptText, connector);
-                // Return only the recapData to match the public interface's contract
-                return recapData;
-            }
+            generateSessionRecap: generateSessionRecap
         };
 
     })();

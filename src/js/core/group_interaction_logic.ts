@@ -42,7 +42,12 @@ let lastMessageTimestamp: number = 0;
 let hasProddedSinceUserSpoke: boolean = false; // <<< ADD THIS LINE
 let isRenderingScene: boolean = false; // <<< ADD THIS LINE
 let currentSceneCancellationToken: { isCancelled: boolean } | null = null; // <<< ADD THIS LINE
-    // --- DEPENDENCY GETTER ---
+let currentTypingIndicator: { speakerId: string | undefined; element: HTMLElement | null | void } | null = null;
+
+
+
+
+// --- DEPENDENCY GETTER ---
   // REPLACE WITH THIS BLOCK:
 const getDeps = () => ({
     polyglotHelpers: window.polyglotHelpers!,
@@ -393,22 +398,7 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
     let initialEnhancedLines: string[] = [];
     let wasSplit = false;
 
-    // --- PHASE 1: Initial Splitting ---
     for (const line of lines) {
-      
-      
-      
-      
-        const CHANCE_TO_BE_A_SINGLE_BUBBLE = 0.30; // 30% chance for groups, as they have more messages
-        if (Math.random() < CHANCE_TO_BE_A_SINGLE_BUBBLE) {
-            console.log(`[Group Parser] Intentionally skipping split for realism on line: "${line}"`);
-            initialEnhancedLines.push(line);
-            continue; // Skip the rest of the parsing for this line and move to the next.
-        }
-      
-      
-      
-      
         const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
         if (!match) {
             initialEnhancedLines.push(line);
@@ -417,6 +407,17 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
 
         const speakerName = match[1].trim();
         const originalText = match[2].trim();
+        
+        // --- THIS IS THE NEW, SMARTER SKIP LOGIC ---
+        // Only consider skipping the split for realism on SHORTER messages.
+        const CHANCE_TO_BE_A_SINGLE_BUBBlE = 0.30;
+        if (originalText.length < 50 && Math.random() < CHANCE_TO_BE_A_SINGLE_BUBBlE) {
+            console.log(`[Group Parser] Intentionally skipping split for realism on short line: "${line}"`);
+            initialEnhancedLines.push(line);
+            continue; // Skip the rest of the parsing for this line.
+        }
+        // --- END OF NEW LOGIC ---
+
         const speaker = members.find(m => m.profileName === speakerName);
 
         if (!speaker || !originalText) {
@@ -428,76 +429,50 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
         let processedText = originalText;
         
-        // <<< The "split before capital letter" rule has been completely REMOVED. >>>
-
-        // Split after strong sentence terminators and periods.
         processedText = processedText.replace(/([?!…])(?=\s+\p{Lu})/gu, '$1\n');
         processedText = processedText.replace(/(?<!\p{N})\.(?!\p{N})(?=\s+[^\p{N}])/gu, '.\n');
 
-        // Split initial and two-part interjections.
-        if (keywords.initialInterjections && keywords.initialInterjections.length > 0) {
-            // <<< THIS IS THE NEW PROBABILITY CHECK >>>
-            const interjectionSplitProbability = 0.7; // High chance (85%) to split, but not 100%
-            if (Math.random() < interjectionSplitProbability) {
-            
-                // This regex now specifically looks for an interjection at the start of the line.
-                const interjectionRegex = new RegExp(`^(\\b(?:${keywords.initialInterjections.join('|')})\\b)`, 'iu');
+        // --- Final, Correct Interjection Logic for Group Chat ---
+        const interjectionSplitProbability = 0.7;
+        if (Math.random() < interjectionSplitProbability) {
+            const allInterjections = [
+                ...(keywords.initialInterjections || []),
+                ...(keywords.twoPartInterjections || [])
+            ];
+
+            if (allInterjections.length > 0) {
+                const sortedInterjections = allInterjections.sort((a, b) => b.length - a.length);
+                const interjectionRegex = new RegExp(`^(${sortedInterjections.join('|').replace(/\s/g, '\\s')})\\b`, 'iu');
+                
                 const match = processedText.match(interjectionRegex);
         
-                // We only proceed if we found a match AND there's more text after it.
                 if (match && match[0].length < processedText.length) {
-                    const matchedWord = match[0];
-                    let textAfterWord = processedText.substring(matchedWord.length);
+                    const matchedPhrase = match[0];
+                    let textAfterPhrase = processedText.substring(matchedPhrase.length);
         
-                    // Check if the characters immediately following the word are a comma and a space.
-                    if (textAfterWord.trim().startsWith(',')) {
-                        // This is the "Ah," or "Oui," case.
-                        
-                        // We will replace the original word and the comma with just the word and a newline.
-                        // First, find the comma and any following spaces.
+                    if (textAfterPhrase.trim().startsWith(',')) {
                         const commaAndSpacesRegex = /^\s*,\s*/;
-                        const textToReplace = matchedWord + textAfterWord.match(commaAndSpacesRegex)![0];
-                        
-                        // The replacement is just the word and a newline. The comma is gone.
-                        processedText = processedText.replace(textToReplace, `${matchedWord}\n`);
-        
-                    } else if (textAfterWord.trim().startsWith('!') || textAfterWord.trim().startsWith('.')) {
-                        // This handles cases like "Wow!" or "Right."
+                        const textToReplace = matchedPhrase + textAfterPhrase.match(commaAndSpacesRegex)![0];
+                        processedText = processedText.replace(textToReplace, `${matchedPhrase}\n`);
+                    } else if (textAfterPhrase.trim().startsWith('!') || textAfterPhrase.trim().startsWith('.')) {
                         const punctuationAndSpacesRegex = /^\s*[!.]\s*/;
-                        const textToReplace = matchedWord + textAfterWord.match(punctuationAndSpacesRegex)![0];
-                        processedText = processedText.replace(textToReplace, `${matchedWord}${textAfterWord.trim()[0]}\n`);
+                        const textToReplace = matchedPhrase + textAfterPhrase.match(punctuationAndSpacesRegex)![0];
+                        processedText = processedText.replace(textToReplace, `${matchedPhrase}${textAfterPhrase.trim()[0]}\n`);
                     }
                 }
             }
         }
-    
-        if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) {
-            const twoPartRegex = new RegExp(`^(${keywords.twoPartInterjections.join('|')})\\b`, 'iu');
-            const twoPartMatch = processedText.match(twoPartRegex);
-            if (twoPartMatch) {
-                const phrase = twoPartMatch[0];
-                processedText = processedText.replace(phrase, phrase.replace(' ', '\n'));
-            }
-        }
         
-        // <<< THIS IS THE NEW, SMARTER CONJUNCTION RULE for group chat >>>
         if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
-            const conjunctionProbability = keywords.conjunctionProbability ?? 0.7; // Default to 70% chance
-            
-            // <<< THIS IS THE PROBABILITY CHECK, NOW RESTORED >>>
+            const conjunctionProbability = keywords.conjunctionProbability ?? 0.7;
             if (Math.random() < conjunctionProbability) {
-                // This regex finds a comma, optional space, and then one of the conjunction words.
-                // Example Match: ", but", ", so", ", alors"
                 const conjunctionRegex = new RegExp(`,\\s*(\\b(?:${keywords.conjunctionSplits.join('|')})\\b)`, 'giu');
                 
                 processedText = processedText.replace(conjunctionRegex, (match, p1_conjunction, offset, fullString) => {
-                    // Check if the part *after* the conjunction is long enough to be its own bubble.
                     const remainingText = fullString.substring(offset + match.length);
                     if (remainingText.trim().split(/\s+/).length >= 2 || remainingText.length > 10) {
-                        // If it is, replace ", but" with "\nbut". The comma is gone.
                         return `\n${p1_conjunction}`;
                     }
-                    // Otherwise, don't split, leave the text as is.
                     return match; 
                 });
             }
@@ -518,7 +493,6 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         }
     }
 
-    // --- PHASE 2: Final Cleanup (No changes needed here) ---
     if (!wasSplit) {
         return { enhancedLines: initialEnhancedLines, wasSplit: false };
     }
@@ -534,17 +508,15 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
 }
 
 // =================== START: REPLACE THE ENTIRE playScene FUNCTION ===================
-
 async function playScene(lines: string[], isGrandOpening: boolean): Promise<void> {
-    console.log(`%c[ScenePlayer V4] STARTING BATCH. isGrandOpening: ${isGrandOpening}. Total Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
+    console.log(`%c[Group ScenePlayer] BATCH START. isGrandOpening: ${isGrandOpening}. Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
     isRenderingScene = true;
     const cancellationToken = { isCancelled: false };
     currentSceneCancellationToken = cancellationToken;
 
     const { groupDataManager, groupUiHandler, activityManager } = getDeps();
     let lastSpeakerIdInBatch: string | null = null;
-    let lastMessageTextInBatch: string | null = null;
-    let currentTypingIndicator: { speakerId: string; element: HTMLElement | null | void } | null = null;
+    let indicatorElement: HTMLElement | null = null;
 
     for (const [index, line] of lines.entries()) {
         if (cancellationToken.isCancelled) break;
@@ -553,94 +525,84 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         if (!match) continue;
         
         const speakerName = match[1].trim();
-        const responseText = match[2].trim();
+        let responseText = match[2].trim();
         const speaker = members.find(m => m.profileName === speakerName);
 
-        if (!speaker) continue;
+        if (!speaker || !responseText) continue;
         
-        if (responseText === lastMessageTextInBatch && responseText.length < 10) {
-            console.log(`%c[ScenePlayer V4] Skipping duplicate short message: "${responseText}"`, 'color: #ffc107;');
-            continue;
+        if (responseText.length < 12 && responseText.endsWith('.') && !responseText.endsWith('..')) {
+            responseText = responseText.slice(0, -1);
         }
-
-        console.log(`%c[ScenePlayer V4] ${index + 1}/${lines.length}: Preparing message from ${speaker.profileName}...`, 'color: #17a2b8;');
-
-        // --- FIX #1: Properly create the history item ---
-        const historyItem: GroupChatHistoryItem = { 
-            speakerId: speaker.id, 
-            speakerName: speaker.profileName, 
-            text: responseText, 
-            timestamp: Date.now() 
-        };
-        lastMessageTimestamp = historyItem.timestamp;
         
+        // --- NEW REALISM TIMING ---
         const wordCount = responseText.split(/\s+/).length;
         const isConsecutiveFromSameSpeaker = speaker.id === lastSpeakerIdInBatch;
+        const CHANCE_TO_DISAPPEAR = 0.25; // Slightly higher chance in groups
 
         let thinkingPauseMs: number;
         let typingDurationMs: number;
-        const calculateTypingDuration = (wc: number) => Math.max(400, Math.min(600 + (wc * 150), 3000));
+        let disappearDurationMs = 0;
+
+        const calculateTypingDuration = (wc: number) => Math.max(400, Math.min(500 + (wc * 600) + (Math.random() * 500), 20000));
 
         if (isConsecutiveFromSameSpeaker) {
-            thinkingPauseMs = 500 + Math.random() * 400;
-            typingDurationMs = calculateTypingDuration(wordCount) * 0.8;
-            console.log(`%c    ...CONSECUTIVE message, short pause.`, 'color: #20c997;');
+            // NEW: Longer, more human pause between consecutive messages
+            thinkingPauseMs = 1400 + Math.random() * 1200; // 1.4s to 2.6s
         } else {
             thinkingPauseMs = 1500 + Math.random() * 2000;
-            typingDurationMs = calculateTypingDuration(wordCount);
-            console.log(`%c    ...NEW speaker, natural thinking pause.`, 'color: #fd7e14;');
         }
-        
-        if (index === 0) {
-            thinkingPauseMs = 300 + Math.random() * 500;
-            console.log(`%c    ...First message of batch, quick reaction override.`, 'color: #6c757d; font-style: italic;');
-        }
+        typingDurationMs = calculateTypingDuration(wordCount) * (isConsecutiveFromSameSpeaker ? 0.8 : 1.0);
 
-        // --- FIX #2: Add safe-access checks (?) ---
-        if (currentTypingIndicator?.element) {
-            activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
-            if (currentTypingIndicator.element.parentNode) {
-                currentTypingIndicator.element.remove();
-            }
-            currentTypingIndicator = null;
+        // NEW: The "disappearing indicator" effect
+        if (wordCount > 5 && Math.random() < CHANCE_TO_DISAPPEAR) {
+            disappearDurationMs = 1000 + Math.random() * 1300; // 1.0s to 2.3s of "thinking"
         }
         
-        if (thinkingPauseMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
+        console.log(
+            `%c[Group ScenePlayer] Speaker: ${speaker.profileName} | Msg ${index + 1}/${lines.length} | Words: ${wordCount} | Thinking: ${(thinkingPauseMs / 1000).toFixed(1)}s, Disappear: ${(disappearDurationMs / 1000).toFixed(1)}s, Typing: ${(typingDurationMs / 1000).toFixed(1)}s | Text: "${responseText.substring(0, 40)}..."`,
+            'color: #28a745;'
+        );
+
+        // --- Correct Animation Sequence ---
+        await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
+        if (cancellationToken.isCancelled) break;
+
+        const indicatorText = `${speaker.profileName} is typing...`;
+        indicatorElement = groupUiHandler.updateGroupTypingIndicator(indicatorText);
+
+        if (disappearDurationMs > 0) {
+            const typingBurst = typingDurationMs * (0.4 + Math.random() * 0.2); // 40-60% of the time
+            await new Promise(resolve => setTimeout(resolve, typingBurst));
+            if (indicatorElement) indicatorElement.remove();
+            
+            await new Promise(resolve => setTimeout(resolve, disappearDurationMs));
+            if (cancellationToken.isCancelled) break;
+
+            indicatorElement = groupUiHandler.updateGroupTypingIndicator(indicatorText);
+            await new Promise(resolve => setTimeout(resolve, typingDurationMs - typingBurst));
+        } else {
+            await new Promise(resolve => setTimeout(resolve, typingDurationMs));
         }
         if (cancellationToken.isCancelled) break;
 
-        const indicatorElement = activityManager.simulateAiTyping(speaker.id, 'group');
-        currentTypingIndicator = { speakerId: speaker.id, element: indicatorElement };
-        await new Promise(resolve => setTimeout(resolve, typingDurationMs));
-        
-        if (currentTypingIndicator?.element) {
-            activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
-            if (currentTypingIndicator.element.parentNode) {
-                currentTypingIndicator.element.remove();
-            }
-            currentTypingIndicator = null;
+        if (indicatorElement) {
+            indicatorElement.remove();
+            indicatorElement = null;
         }
-
-        if (cancellationToken.isCancelled) break; // Check for cancellation again after the wait
-        
         groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+        
+        const historyItem: GroupChatHistoryItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+        lastMessageTimestamp = historyItem.timestamp;
         groupDataManager.addMessageToCurrentGroupHistory(historyItem);
         
         lastSpeakerIdInBatch = speaker.id;
-        lastMessageTextInBatch = responseText;
     }
     
-    // Final cleanup with safe-access check
-    if (currentTypingIndicator?.element) {
-        activityManager.clearAiTypingIndicator(currentTypingIndicator.speakerId, 'group');
-        if (currentTypingIndicator.element.parentNode) {
-            currentTypingIndicator.element.remove();
-        }
-    }
+    if (indicatorElement) indicatorElement.remove();
+    
     isRenderingScene = false;
     currentSceneCancellationToken = null;
-    console.log(`%c[ScenePlayer V4] BATCH FINISHED.`, 'color: #8a2be2; font-weight: bold;');
+    console.log(`%c[Group ScenePlayer] BATCH FINISHED.`, 'color: #8a2be2; font-weight: bold;');
 }
 
 // ===================  END: REPLACE THE ENTIRE playScene FUNCTION  ===================
@@ -677,7 +639,7 @@ async function generateAiTextResponse(
 
 
 
-    const MAX_RECENT_HISTORY = 25; // <<< Let's set a much smaller limit
+    const MAX_RECENT_HISTORY = 40; // <<< Let's set a much smaller limit
 
     const groupHistory = groupDataManager.getLoadedChatHistory();
     
@@ -1387,7 +1349,11 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
             // --- THIS IS THE NEW LOGIC ---
             // 1. Get the raw lines from the AI
             const rawSceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
-            if (!rawSceneLines || rawSceneLines.length === 0) return; // Exit if AI returns nothing
+            if (!rawSceneLines || rawSceneLines.length === 0) {
+                // If AI returns nothing, just reset the loop timer
+                startCooldownWithLogging(15000 + Math.random() * 5000);
+                return; 
+            }
 
             // 2. Enhance the lines using our parser
             const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawSceneLines, members);

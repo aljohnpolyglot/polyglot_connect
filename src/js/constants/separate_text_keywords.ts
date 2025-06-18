@@ -38,7 +38,7 @@ interface SeparationKeywords {
     "french": {
       initialInterjections: ["lol", "mdr", "ptdr", "wow", "ah", "ah bon", "oui", "ouais", "nan", "non", "si", "hmm", "euh", "bah", "bon", "attends", "attendez", "ok", "d'accord", "bref", "genre", "sérieux", "putain", "carrément", "grave", "franchement"],
       twoPartInterjections: ["ah bon", "c'est pas", "mon dieu", "n'importe quoi"],
-      conjunctionSplits: ["mais", "donc", "et puis", "en fait", "du coup", "par contre", "enfin", "aussi", "puis", "alors"],
+      conjunctionSplits: ["mais", "donc", "et puis", "en fait", "du coup", "par contre", "enfin", "aussi", "puis", "alors", "mon dieu"],
       noSplitPrefixes: ["à", "a", "le", "la", "les", "un", "une", "des", "au", "aux", "du", "en", "de", "d'", "par", "pour", "sur","avec","de","de la" , "du", "et"],
       conjunctionProbability: 0.6
     },
@@ -66,7 +66,6 @@ interface SeparationKeywords {
       noSplitPrefixes: ["a", "e", "di", "da", "in", "con", "su", "per", "tra", "fra", "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "un", "della","delle","del","dei","degli","della","delle","di","dei","degli","della","delle"],
       conjunctionProbability: 0.3 // <<< Lowered based on our findings
     },
-  
     "portuguese (brazil)": {
       initialInterjections: ["kkk", "mds", "nossa", "eita", "eitaa", "carro", "slk", "aff", "putz", "sim", "exato", "claro", "verdade", "tá", "ta bom", "ok", "não", "nao", "ué", "ata", "opa", "oi", "olá", "boa noite", "valeu", "entendi", "legal", "legalll", "bom", "hum", "hmm", "tipo", "ah", "mano", "cara", "f"],
       twoPartInterjections: [], // Can be added later
@@ -87,7 +86,7 @@ interface SeparationKeywords {
     
     "tagalog": {
       initialInterjections: ["haha", "gago", "tanga", "shet", "tangina", "inaka", "pota", "putangina", "omsim", "weh", "ay", "ayoko", "grabe", "hoy", "oo", "hindi", "hinde", "sige", "ge", "syempre", "legit", "totoo", "ok", "okay", "uy", "pre", "tol", "sis", "bes", "salamat", "ganda", "lupet", "angas", "basta", "kase", "parang"],
-      twoPartInterjections: [],
+      twoPartInterjections: ["talaga ba"],
       conjunctionSplits: ["pero", "kaya", "tapos", "kasi", "kase", "habang", "at", "pati", "tsaka"],
       noSplitPrefixes: ["sa", "ang", "mga", "ng", "nang", "para", "nasa", "kasama si", "si", "kay"],
       conjunctionProbability: 0.8 // Taglish is very fragmented
@@ -95,7 +94,7 @@ interface SeparationKeywords {
     
     "swedish": {
       initialInterjections: ["hej", "hejsan", "halloj", "tjena", "tja", "ja", "jo", "nej", "visst", "precis", "exakt", "såklart", "fan", "jävlar", "wow", "ehh", "åh", "oj", "tack", "vsg", "just det", "eller hur", "alltså", "ju", "väl", "liksom", "typ", "okej", "ok", "hmm"],
-      twoPartInterjections: [],
+      twoPartInterjections: ["ja tack"],
       conjunctionSplits: ["men", "så", "fast", "därför", "dessutom", "och", "eller", "också", "sedan", "sen"],
       noSplitPrefixes: ["en", "ett", "i", "på", "av", "för", "till", "med", "om", "från", "och", "eller", "också", "sedan", "sen"],
       conjunctionProbability: 0.4

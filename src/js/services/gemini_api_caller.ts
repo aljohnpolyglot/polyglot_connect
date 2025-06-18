@@ -3,20 +3,23 @@ import type { AIApiConstants } from "../types/global.d.ts";
 
 console.log("gemini_api_caller.ts: Script execution STARTED (TS Version).");
 
+// --- THIS IS THE NEW, EXPORTED SOURCE OF TRUTH ---
+export const GEMINI_KEY_NICKNAMES = [
+    'JOKIC', 'LUKA', 'SGA', 'EMBIID', 'TATUM',
+    'ANT', 'HALIBURTON', 'BOOKER', 'WEMBY', 'BRUNSON', 'SABONIS'
+];
+// --- END OF EXPORTED BLOCK ---
+
+
 // --- Start of IIFE ---
 (() => {
     'use strict';
 
-    // aiConstants will be fetched from window.aiApiConstants (or window._aiApiConstants)
-    // The critical check is that it exists when _ensureAiConstantsCache is first called.
+    // ...
     
     const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 
-    const GEMINI_KEY_NICKNAMES = [
-        'JOKIC', 'LUKA', 'SGA', 'EMBIID', 'TATUM',
-        'ANT', 'HALIBURTON', 'BOOKER', 'WEMBY', 'BRUNSON', 'SABONIS'
-    ];
-
+    // The line defining GEMINI_KEY_NICKNAMES is now removed from here.
 
     let CACHED_STANDARD_SAFETY_SETTINGS: any[] | null = null; 
     

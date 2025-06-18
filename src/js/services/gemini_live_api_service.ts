@@ -5,7 +5,8 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai"; 
 import { LIVE_API_SETUP_TIMEOUT_MS } from './ai_constants'; 
-
+// At the top of the file, with other imports
+import { GEMINI_KEY_NICKNAMES } from './gemini_api_caller.js';
 console.log("gemini_live_api_service.ts: Script execution STARTED (Manual WebSocket Approach).");
 const SERVICE_VERSION = "ManualWebSocket v0.1";
 
@@ -38,7 +39,8 @@ window.geminiLiveApiService = {} as GeminiLiveApiServiceModule;
 
 
 // ADD THIS HELPER FUNCTION
-function getLiveCallApiKey(): string | null {
+// This new version mirrors the logic from gemini_api_caller.ts for consistency and robustness
+function getLiveCallApiKey(): { key: string, nickname: string } | null {
     const potentialKeys: (string | undefined)[] = [
         import.meta.env.VITE_GEMINI_API_KEY,
         import.meta.env.VITE_GEMINI_API_KEY_ALT,
@@ -52,8 +54,8 @@ function getLiveCallApiKey(): string | null {
         import.meta.env.VITE_GEMINI_API_KEY_ALT_9,
         import.meta.env.VITE_GEMINI_API_KEY_ALT_10,
     ];
-    
-    const validKeys = potentialKeys.filter(key => 
+
+    const validKeys = potentialKeys.filter(key =>
         key && typeof key === 'string' && !key.includes("YOUR_") && key.length > 20
     ) as string[];
 
@@ -64,10 +66,14 @@ function getLiveCallApiKey(): string | null {
 
     const randomIndex = Math.floor(Math.random() * validKeys.length);
     const randomKey = validKeys[randomIndex];
-    
-    console.log(`%c📞 Live Call: Randomly selecting key #${randomIndex + 1} for connection.`, 'color: #ff8c00; font-weight: bold;');
-    
-    return randomKey;
+    const nickname = GEMINI_KEY_NICKNAMES[randomIndex] || `Rookie #${randomIndex + 1}`;
+
+    console.log(
+        `%c📞 Live Call Draft Pick: ${nickname}!`,
+        'color: #ff8c00; font-weight: bold; font-size: 14px;'
+    );
+
+    return { key: randomKey, nickname: nickname };
 }
 
 
@@ -112,16 +118,17 @@ function initializeActualGeminiLiveApiService(): void {
                 await closeConnection("New connection requested"); 
             }
 
-            const apiKey = getLiveCallApiKey();
-            if (!apiKey) {
+            const apiKeyData = getLiveCallApiKey();
+            if (!apiKeyData || !apiKeyData.key) {
                 console.error("Live Call Connect: Failed to get a valid API key. Aborting connection.");
-                // We can't call callbacks.onError yet, so we throw an error that the
-                // live_call_handler will catch and handle appropriately.
+                // ...
                 throw new Error("No valid API key available for live call.");
             }
+            const { key: apiKey } = apiKeyData; // Destructure to get the key
 
             const fullModelName = modelName.startsWith("models/") ? modelName : `models/${modelName}`;
             const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+       
             console.log(`GeminiLiveService (${funcName}): Connecting to WebSocket: ${wsUrl.split('?')[0]}?key=...`);
 
             try {

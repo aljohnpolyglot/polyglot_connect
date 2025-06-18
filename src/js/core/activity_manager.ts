@@ -1,9 +1,11 @@
 // D:\polyglot_connect\src\js\core\activity_manager.ts
 
-import type {
-    PolyglotHelpersOnWindow as PolyglotHelpers,
+import type { 
+    Connector, 
+    PolyglotHelpersOnWindow as PolyglotHelpers, 
     UiUpdater,
-    Connector
+    GroupUiHandler,
+    ActivityManager // <<< ADD THIS LINE
 } from '../types/global.d.ts';
 
 console.log('activity_manager.ts: Script loaded, waiting for core dependencies.');
@@ -16,12 +18,18 @@ interface ActivityManagerModule {
 }
 
 // Placeholder assignment (optional, but good practice if other modules might pre-check it)
+// Placeholder assignment that conforms to the ActivityManager interface
+// Placeholder assignment that conforms to the ActivityManager interface
 window.activityManager = {
     isConnectorActive: () => true,
-    simulateAiTyping: () => console.warn("AM placeholder: simulateAiTyping"),
-    clearAiTypingIndicator: () => console.warn("AM placeholder: clearAiTypingIndicator"),
-    getAiReplyDelay: () => 1500
-} as ActivityManagerModule;
+    simulateAiTyping: () => {
+        console.warn("AM placeholder: simulateAiTyping called.");
+        return null;
+    },
+    clearAiTypingIndicator: () => console.warn("AM placeholder: clearAiTypingIndicator called."),
+    getAiReplyDelay: () => 1500,
+    isPlaceholder: true // <<< ADD THIS LINE
+} as any; // Use 'as any' to allow the extra property
 console.log('activity_manager.ts: Placeholder window.activityManager assigned.');
 
 
@@ -52,7 +60,7 @@ function initializeActualActivityManager(): void {
     }
     console.log('activity_manager.ts: Core functional dependencies (including functional UiUpdater) appear ready (detailed check passed).');
 
-    window.activityManager = ((): ActivityManagerModule => {
+    window.activityManager = ((): ActivityManager => {
         'use strict';
         console.log("core/activity_manager.ts: IIFE started for actual methods.");
 
@@ -90,49 +98,35 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
         }
 
        // PASTE THIS ENTIRE CORRECTED FUNCTION
-       function simulateAiTyping(connectorId: string, chatType: string = 'embedded', aiMessageText: string = ""): HTMLElement | null {
+       function simulateAiTyping(connectorId: string, chatType: string = 'embedded'): HTMLElement | null {
         const currentUiUpdater = getFunctionalUiUpdater();
     
         const timeoutKey = `${connectorId}_${chatType}`;
+        // Clear any old timeout just in case, but we won't set a new one here.
         if (personaTypingTimeouts[timeoutKey]) {
             clearTimeout(personaTypingTimeouts[timeoutKey]);
         }
     
         const connector = polyglotConnectors.find(c => c.id === connectorId);
-        if (!connector) return null;
+        if (!connector) return null; 
     
         const displayName = connector.profileName?.split(' ')[0] || connector.name || "Partner";
         const typingText = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
         
-        // This variable will hold the bubble element, regardless of chat type
-        let thinkingMsgElement: HTMLElement | null = null;
-    
+        // This function now ONLY creates and returns the element.
+        // The calling function is responsible for its lifecycle (how long it stays visible).
         if (chatType === 'group') {
             const groupUiHandler = window.groupUiHandler;
-            if (groupUiHandler?.updateGroupTypingIndicator) {
-                // Now we capture the returned element
-                thinkingMsgElement = groupUiHandler.updateGroupTypingIndicator(typingText);
-            }
+            return groupUiHandler?.updateGroupTypingIndicator(typingText) || null;
         } else if (chatType === 'embedded') {
-            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToEmbeddedChatLog(typingText, 'connector-thinking');
+            return currentUiUpdater?.appendToEmbeddedChatLog(typingText, 'connector-thinking') || null;
         } else if (chatType === 'modal_message') {
-            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToMessageLogModal(typingText, 'connector-thinking');
+            return currentUiUpdater?.appendToMessageLogModal(typingText, 'connector-thinking') || null;
         } else if (chatType === 'voiceChat_modal') {
-            if (currentUiUpdater) thinkingMsgElement = currentUiUpdater.appendToVoiceChatLog(typingText, 'connector-thinking');
-        } else {
-            return null;
+            return currentUiUpdater?.appendToVoiceChatLog(typingText, 'connector-thinking') || null;
         }
-    
-        const displayDuration = getAiReplyDelay(connector, aiMessageText.length);
         
-        personaTypingTimeouts[timeoutKey] = setTimeout(() => {
-            // This clear on timeout now works for groups as well
-            if (thinkingMsgElement) {
-                 clearAiTypingIndicator(connectorId, chatType, thinkingMsgElement);
-            }
-        }, Math.max(500, displayDuration));
-    
-        return thinkingMsgElement;
+        return null;
     }
      // PASTE THIS ENTIRE CORRECTED FUNCTION
      function clearAiTypingIndicator(

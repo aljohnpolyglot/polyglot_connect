@@ -215,9 +215,38 @@ function initializeActualAiService(): void {
             return "No meaningful content after initial formatting.";
         }
 
-        const cleaningPrompt = `You are an expert text processor. Your task is to clean and reconstruct a raw voice call transcript...`; // The long prompt remains the same
+        // --- THIS IS THE CORRECTED PROMPT ---
+      // --- THIS IS THE ENHANCED PROMPT TO FIX ORDERING ---
+        // --- THIS IS THE ULTIMATE MULTI-LANGUAGE ENHANCED PROMPT ---
+        const cleaningPrompt = `You are an expert dialogue editor. Your task is to reconstruct a raw, and potentially out-of-order, voice call transcript. The dialogue is between "${userName}" and "${connector.profileName}".
 
-        // --- 2. The S+ Tier Cleaning Carousel ---
+Your process MUST follow two critical steps:
+1.  **Fix Content and Formatting:**
+    *   The transcript contains fragmented words and incorrect spacing due to real-time transcription. You MUST combine these fragments into whole words.
+    *   This applies to ALL languages. For example:
+        *   **Tagalog:** "Ayo s n ama n" must become "Ayos naman". "kam ust a" must become "kamusta".
+        *   **English:** "how are y ou" must become "how are you".
+        *   **Spanish:** "Com o est as" must become "Como estas".
+        *   **French:** "c 'est" must become "c'est". "je ne sais p as" must become "je ne sais pas".
+    *   Ensure all punctuation is natural and readable.
+    *   Maintain the original speaker turns and the language used.
+
+2.  **Fix Conversational Order:**
+    *   The transcript is a real-time log, so lines can be interleaved incorrectly. You MUST re-order the cleaned-up lines to create a logical, turn-by-turn conversational flow.
+    *   **Example of Re-ordering:**
+        *   Raw: "User: Hi", "AI: Hello there", "User: I'm good", "AI: how are you?"
+        *   Corrected: "User: Hi", "AI: Hello there how are you?", "User: I'm good"
+
+Your final output MUST be ONLY the cleaned, correctly formatted, and logically ordered dialogue. Do NOT add any commentary or explanation.
+
+Raw Transcript to Process:
+---
+${preliminaryFormattedTranscript.trim()}
+---
+
+Cleaned and Re-ordered Dialogue:`;
+
+        // --- 2. The S+ Tier Cleaning Carousel ----
         const cleanerProviderSequence = ['gemini', 'gemini', 'gemini', 'groq'];
         const hogwartsHouses = ['Gryffindor', 'Hufflepuff', 'Ravenclaw'];
         let geminiAttempt = 0;

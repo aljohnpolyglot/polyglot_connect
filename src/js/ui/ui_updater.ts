@@ -1085,6 +1085,18 @@ const appendToGroupChatLog = (
         };
 
         console.log("ui/ui_updater.ts: IIFE for actual methods finished, returning all methods.");
+      
+      
+      
+      // ======================= NEW DEBUGGING LOGS =======================
+      console.log(`%c[UI_UPDATER_DEBUG] Final check before returning methods:`, 'color: #fd7e14; font-weight: bold;');
+      console.log(`  - typeof appendToEmbeddedChatLog:`, typeof appendToEmbeddedChatLog);
+      console.log(`  - typeof appendToMessageLogModal:`, typeof appendToMessageLogModal);
+      // ======================= END DEBUGGING LOGS =======================
+      
+      
+      
+      
         return {
             updateVirtualCallingScreen, appendToVoiceChatLog, showImageInVoiceChat, updateVoiceChatHeader,
             clearVoiceChatLog, resetVoiceChatInput, updateVoiceChatTapToSpeakButton, updateDirectCallHeader,
