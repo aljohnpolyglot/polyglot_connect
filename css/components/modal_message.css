@@ -307,4 +307,35 @@ body.dark-mode .messaging-interface-footer {
 
 /* Input field #message-text-input and buttons #message-modal-attach-btn etc.
    will use global styles from forms.css and buttons.css respectively,
-   or can be specialized here if needed for the modal context. */
+   or can be specialized here if needed for the modal context. */.chat-log-empty-placeholder {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    height: 100%;
+    padding: 20px;
+    color: var(--text-color-muted, #6c757d);
+    opacity: 0.8;
+    user-select: none;
+}
+
+.chat-log-empty-placeholder i {
+    font-size: 3rem; /* Larger icon */
+    margin-bottom: var(--spacing-md, 16px);
+}
+
+.chat-log-empty-placeholder p {
+    margin: 0;
+    line-height: 1.5;
+    font-size: 0.95rem;
+}
+
+.chat-log-empty-placeholder p:first-of-type {
+    font-weight: var(--font-weight-medium, 500);
+}
+
+/* Dark Mode Adjustments */
+body.dark-mode .chat-log-empty-placeholder {
+    color: var(--text-color-muted-dark, #adb5bd);
+}
