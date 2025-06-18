@@ -31,7 +31,7 @@ interface SeparationKeywords {
       initialInterjections: ["lol", "lmao", "haha", "omg", "wow", "damn", "bruh", "oof", "yikes", "nice", "cool", "yeah", "yep", "yup", "yes", "true", "right", "no", "nope", "nah", "fr", "ok", "okay", "k", "aight", "hey", "hi", "yo", "sup", "thanks", "ty", "yw", "hmm", "huh", "anyway", "like", "seriously", "honestly", "tbh", "ngl", "wait", "ah", "dude", "bro", "man", "for sure", "i mean"],
       twoPartInterjections: ["no way", "oh my", "for real", "are you", "what the"],
       conjunctionSplits: ["but", "so", "plus", "anyway", "actually", "basically", "then", "also", "or", "because"],
-      noSplitPrefixes: ["a", "an", "the", "in", "on", "at", "to", "for", "of", "with", "from", "by"],
+      noSplitPrefixes: ["a", "an", "the", "in", "on", "at", "to", "for", "of", "with", "from", "by", "about", "and"], 
       conjunctionProbability: 0.7
     },
   
@@ -39,7 +39,7 @@ interface SeparationKeywords {
       initialInterjections: ["lol", "mdr", "ptdr", "wow", "ah", "ah bon", "oui", "ouais", "nan", "non", "si", "hmm", "euh", "bah", "bon", "attends", "attendez", "ok", "d'accord", "bref", "genre", "sérieux", "putain", "carrément", "grave", "franchement"],
       twoPartInterjections: ["ah bon", "c'est pas", "mon dieu", "n'importe quoi"],
       conjunctionSplits: ["mais", "donc", "et puis", "en fait", "du coup", "par contre", "enfin", "aussi", "puis", "alors"],
-      noSplitPrefixes: ["à", "a", "le", "la", "les", "un", "une", "des", "au", "aux", "du", "en", "de", "d'", "par", "pour", "sur","avec"],
+      noSplitPrefixes: ["à", "a", "le", "la", "les", "un", "une", "des", "au", "aux", "du", "en", "de", "d'", "par", "pour", "sur","avec","de","de la" , "du", "et"],
       conjunctionProbability: 0.6
     },
   
@@ -47,7 +47,7 @@ interface SeparationKeywords {
       initialInterjections: ["jaja", "jajaja", "jeje", "dios", "dios mio", "guau", "órale", "ándale", "che", "boludo", "weon", "hostia", "joder", "sí", "claro", "exacto", "eso", "eso sí", "vale", "dale", "ok", "no", "qué va", "hola", "buenas", "gracias", "de nada", "porfa", "hmm", "bueno", "pues", "a ver", "osea", "espera", "hombre", "tío", "venga"],
       twoPartInterjections: ["no me", "qué va", "en serio", "dios mío"],
       conjunctionSplits: ["pero", "así que", "entonces", "y pues", "o sea", "además", "luego", "porque", "es que", "sino"],
-      noSplitPrefixes: ["a", "con", "de", "en", "el", "la", "los", "las", "un", "una", "unos", "unas", "por", "sin", "sobre", "para"],
+      noSplitPrefixes: ["a", "con", "de", "en", "el", "la", "los", "las", "un", "una", "unos", "unas", "por", "sin", "sobre", "para", "de la", "del", "Atletico", "Real", "y"],
       conjunctionProbability: 0.7
     },
   
@@ -55,7 +55,7 @@ interface SeparationKeywords {
       initialInterjections: ["hallo", "moin", "servus", "tach", "tschüß", "ciao", "ja", "nein", "nee", "klar", "sicher", "genau", "echt", "real", "stimmt", "achso", "ups", "oh", "hmm", "also", "gut", "naja", "halt", "eben", "okay", "ok", "wie", "wo", "was", "warum", "quatsch"],
       twoPartInterjections: ["echt jetzt", "mein gott", "auf keinen"],
       conjunctionSplits: ["aber", "sondern", "denn", "also", "deshalb", "trotzdem", "dann", "oder", "weil"],
-      noSplitPrefixes: ["der", "die", "das", "dem", "den", "des", "ein", "eine", "einen", "einem", "eines", "in", "an", "auf", "mit", "von", "zu", "für", "bei", "mit"],
+      noSplitPrefixes: ["der", "die", "das", "dem", "den", "des", "ein", "eine", "einen", "einem", "eines", "in", "an", "auf", "mit", "von", "zu", "für", "bei", "mit", "und", "das", "die ", "der"],
       conjunctionProbability: 0.4
     },
     
@@ -63,7 +63,7 @@ interface SeparationKeywords {
       initialInterjections: ["ahah", "oddio", "cazzo", "dai", "forza", "mamma mia", "wow", "cavolo", "sì", "si", "certo", "esatto", "ok", "va bene", "no", "boh", "ciao", "ciaoo", "grazie", "prego", "tranquillo", "allora", "ecco", "cioè", "praticamente", "aspetta", "guarda", "vero", "giusto"],
       twoPartInterjections: ["ma dai", "mamma mia", "ma che", "non ci"],
       conjunctionSplits: ["ma", "quindi", "però", "infatti", "invece", "allora", "comunque", "anche", "poi"],
-      noSplitPrefixes: ["a", "di", "da", "in", "con", "su", "per", "tra", "fra", "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "un'"],
+      noSplitPrefixes: ["a", "e", "di", "da", "in", "con", "su", "per", "tra", "fra", "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "un", "della","delle","del","dei","degli","della","delle","di","dei","degli","della","delle"],
       conjunctionProbability: 0.3 // <<< Lowered based on our findings
     },
   
@@ -71,7 +71,7 @@ interface SeparationKeywords {
       initialInterjections: ["kkk", "mds", "nossa", "eita", "eitaa", "carro", "slk", "aff", "putz", "sim", "exato", "claro", "verdade", "tá", "ta bom", "ok", "não", "nao", "ué", "ata", "opa", "oi", "olá", "boa noite", "valeu", "entendi", "legal", "legalll", "bom", "hum", "hmm", "tipo", "ah", "mano", "cara", "f"],
       twoPartInterjections: [], // Can be added later
       conjunctionSplits: ["mas", "então", "aí", "daí", "só que", "porque", "por que", "e", "ou", "depois", "também", "inclusive", "aliás"],
-      noSplitPrefixes: ["a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da", "em", "no", "na", "por", "para", "com"],
+      noSplitPrefixes: ["a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da", "em", "no", "na", "por", "para", "com", "dos", "e", "ou", "depois", "também", "inclusive", "aliás"],
       conjunctionProbability: 0.7
     },
   
@@ -79,7 +79,7 @@ interface SeparationKeywords {
       initialInterjections: ["привет", "здравствуй", "пока", "добрый вечер", "да", "нет", "конечно", "точно", "понятно", "ясно", "блин", "черт", "епта", "жиза", "что", "спасибо", "пожалуйста", "пж", "хорошо", "ладно", "ну", "кстати", "слушай", "смотри", "кхм"],
       twoPartInterjections: [],
       conjunctionSplits: ["но", "а", "поэтому", "потому что", "кстати", "и", "или", "тоже", "потом", "зато"],
-      noSplitPrefixes: ["в", "на", "с", "о", "у", "к", "по", "из", "за", "для", "от"],
+      noSplitPrefixes: ["в", "на", "с", "о", "у", "к", "по", "из", "за", "для", "от", "и", "или", "тоже", "потом", "зато"],
       conjunctionProbability: 0.6
     },
   
@@ -97,7 +97,7 @@ interface SeparationKeywords {
       initialInterjections: ["hej", "hejsan", "halloj", "tjena", "tja", "ja", "jo", "nej", "visst", "precis", "exakt", "såklart", "fan", "jävlar", "wow", "ehh", "åh", "oj", "tack", "vsg", "just det", "eller hur", "alltså", "ju", "väl", "liksom", "typ", "okej", "ok", "hmm"],
       twoPartInterjections: [],
       conjunctionSplits: ["men", "så", "fast", "därför", "dessutom", "och", "eller", "också", "sedan", "sen"],
-      noSplitPrefixes: ["en", "ett", "i", "på", "av", "för", "till", "med", "om", "från"],
+      noSplitPrefixes: ["en", "ett", "i", "på", "av", "för", "till", "med", "om", "från", "och", "eller", "också", "sedan", "sen"],
       conjunctionProbability: 0.4
     },
   
