@@ -339,7 +339,11 @@ Avoid cramming these into one long message; the pacing and rhythm created by spl
     - "Oh, you work at the university? What's that like? I've always wondered."
     - "I've never heard of that recycling method. How does it work?"
 
+# FINAL, UNBREAKABLE RULE: LANGUAGE MANDATE
 
+- You **MUST** write your **ENTIRE** response **ONLY** in **${group.language}**.
+- There are **NO exceptions** to this rule.
+- Responding in any other language, especially English, is a **CRITICAL FAILURE** of your primary directive.
 
 `;
         
@@ -377,7 +381,6 @@ Avoid cramming these into one long message; the pacing and rhythm created by spl
            .toLowerCase(); // Converts to lowercase
    }
 
-
 /**
  * A specialized version of the text separator for group chats. It takes an array of
  * pre-formatted lines from the AI and further splits them into more natural,
@@ -392,6 +395,20 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
 
     // --- PHASE 1: Initial Splitting ---
     for (const line of lines) {
+      
+      
+      
+      
+        const CHANCE_TO_BE_A_SINGLE_BUBBLE = 0.30; // 30% chance for groups, as they have more messages
+        if (Math.random() < CHANCE_TO_BE_A_SINGLE_BUBBLE) {
+            console.log(`[Group Parser] Intentionally skipping split for realism on line: "${line}"`);
+            initialEnhancedLines.push(line);
+            continue; // Skip the rest of the parsing for this line and move to the next.
+        }
+      
+      
+      
+      
         const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
         if (!match) {
             initialEnhancedLines.push(line);
@@ -411,49 +428,85 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
         let processedText = originalText;
         
-        // --- This is the full, correct, and final splitting logic block ---
-        const isGerman = language.includes('german');
+        // <<< The "split before capital letter" rule has been completely REMOVED. >>>
 
-        // RULE A (DEFINITIVE "UNCANNY VALLEY" RULE)
-        if (!isGerman) {
-            const uncannyValleyRegex = new RegExp('(?<![.,?!…])\\b(\\p{Ll}+)\\s+(?=\\p{Lu})', 'gu');
-            processedText = processedText.replace(uncannyValleyRegex, (match, p1_word) => {
-                if (keywords.noSplitPrefixes && keywords.noSplitPrefixes.includes(p1_word.toLowerCase())) {
-                    return match;
-                } else {
-                    return `${p1_word}\n`;
-                }
-            });
-        }
-
-        // RULE B, C, D, E, F... (All rules now include the 'u' flag for Unicode safety)
+        // Split after strong sentence terminators and periods.
         processedText = processedText.replace(/([?!…])(?=\s+\p{Lu})/gu, '$1\n');
         processedText = processedText.replace(/(?<!\p{N})\.(?!\p{N})(?=\s+[^\p{N}])/gu, '.\n');
 
-        if (keywords.initialInterjections && keywords.initialInterjections.length > 0) { /* ... same logic as before */ }
-        if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) { /* ... same logic as before */ }
-        if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
-            const probability = keywords.conjunctionProbability ?? 0.5;
-            if (Math.random() < probability) {
-                const conjunctionRegex = new RegExp(`([,.?!…])(\\s*)(\\b(?:${keywords.conjunctionSplits.join('|')})\\b\\s)`, 'giu');
-                processedText = processedText.replace(conjunctionRegex, (match, p1, p2, p3, offset, fullString) => {
-                    const remainingText = fullString.substring(offset + match.length);
-                    const wordCount = remainingText.trim().split(/\s+/).length;
-                    if (wordCount >= 2 || remainingText.length > 15) {
-                        return `${p1}${p2}\n${p3}`;
-                    } else {
-                        return match;
+        // Split initial and two-part interjections.
+        if (keywords.initialInterjections && keywords.initialInterjections.length > 0) {
+            // <<< THIS IS THE NEW PROBABILITY CHECK >>>
+            const interjectionSplitProbability = 0.7; // High chance (85%) to split, but not 100%
+            if (Math.random() < interjectionSplitProbability) {
+            
+                // This regex now specifically looks for an interjection at the start of the line.
+                const interjectionRegex = new RegExp(`^(\\b(?:${keywords.initialInterjections.join('|')})\\b)`, 'iu');
+                const match = processedText.match(interjectionRegex);
+        
+                // We only proceed if we found a match AND there's more text after it.
+                if (match && match[0].length < processedText.length) {
+                    const matchedWord = match[0];
+                    let textAfterWord = processedText.substring(matchedWord.length);
+        
+                    // Check if the characters immediately following the word are a comma and a space.
+                    if (textAfterWord.trim().startsWith(',')) {
+                        // This is the "Ah," or "Oui," case.
+                        
+                        // We will replace the original word and the comma with just the word and a newline.
+                        // First, find the comma and any following spaces.
+                        const commaAndSpacesRegex = /^\s*,\s*/;
+                        const textToReplace = matchedWord + textAfterWord.match(commaAndSpacesRegex)![0];
+                        
+                        // The replacement is just the word and a newline. The comma is gone.
+                        processedText = processedText.replace(textToReplace, `${matchedWord}\n`);
+        
+                    } else if (textAfterWord.trim().startsWith('!') || textAfterWord.trim().startsWith('.')) {
+                        // This handles cases like "Wow!" or "Right."
+                        const punctuationAndSpacesRegex = /^\s*[!.]\s*/;
+                        const textToReplace = matchedWord + textAfterWord.match(punctuationAndSpacesRegex)![0];
+                        processedText = processedText.replace(textToReplace, `${matchedWord}${textAfterWord.trim()[0]}\n`);
                     }
+                }
+            }
+        }
+    
+        if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) {
+            const twoPartRegex = new RegExp(`^(${keywords.twoPartInterjections.join('|')})\\b`, 'iu');
+            const twoPartMatch = processedText.match(twoPartRegex);
+            if (twoPartMatch) {
+                const phrase = twoPartMatch[0];
+                processedText = processedText.replace(phrase, phrase.replace(' ', '\n'));
+            }
+        }
+        
+        // <<< THIS IS THE NEW, SMARTER CONJUNCTION RULE for group chat >>>
+        if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
+            const conjunctionProbability = keywords.conjunctionProbability ?? 0.7; // Default to 70% chance
+            
+            // <<< THIS IS THE PROBABILITY CHECK, NOW RESTORED >>>
+            if (Math.random() < conjunctionProbability) {
+                // This regex finds a comma, optional space, and then one of the conjunction words.
+                // Example Match: ", but", ", so", ", alors"
+                const conjunctionRegex = new RegExp(`,\\s*(\\b(?:${keywords.conjunctionSplits.join('|')})\\b)`, 'giu');
+                
+                processedText = processedText.replace(conjunctionRegex, (match, p1_conjunction, offset, fullString) => {
+                    // Check if the part *after* the conjunction is long enough to be its own bubble.
+                    const remainingText = fullString.substring(offset + match.length);
+                    if (remainingText.trim().split(/\s+/).length >= 2 || remainingText.length > 10) {
+                        // If it is, replace ", but" with "\nbut". The comma is gone.
+                        return `\n${p1_conjunction}`;
+                    }
+                    // Otherwise, don't split, leave the text as is.
+                    return match; 
                 });
             }
         }
-        // --- End of splitting logic block ---
         
         processedText = processedText.replace(/\s*\n\s*/g, '\n').trim();
 
         if (processedText.includes('\n')) {
             wasSplit = true;
-            console.log(`[Group Parser] Split line from ${speakerName}: "${originalText}" -> "${processedText.replace(/\n/g, '\\n')}"`);
             const newSplitLines = processedText.split('\n');
             for (const splitLine of newSplitLines) {
                  if (splitLine.trim()) {
@@ -465,56 +518,16 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         }
     }
 
-    // --- PHASE 2: Final Cleanup and Re-joining ---
+    // --- PHASE 2: Final Cleanup (No changes needed here) ---
     if (!wasSplit) {
         return { enhancedLines: initialEnhancedLines, wasSplit: false };
     }
 
-    const getLineParts = (l: string) => {
-        const m = l.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
-        return m ? { speaker: m[1].trim(), text: m[2].trim() } : null;
-    };
-
     const finalLines: string[] = [];
-    let i = 0;
-    while (i < initialEnhancedLines.length) {
-        let currentLine = initialEnhancedLines[i];
-        let currentParts = getLineParts(currentLine);
-
-        // Keep re-joining as long as the next line is a single, capitalized word from the same speaker.
-        while (i + 1 < initialEnhancedLines.length) {
-            const nextParts = getLineParts(initialEnhancedLines[i + 1]);
-            
-            if (currentParts && nextParts && currentParts.speaker === nextParts.speaker) {
-                // ADD THE 'u' FLAG HERE
-                const isSingleCapitalizedWord = new RegExp('^\\p{Lu}\\p{L}*$', 'u').test(nextParts.text.trim());
-
-                if (isSingleCapitalizedWord) {
-                    console.log(`[Group Parser] Re-joining proper noun part: "${currentParts.text}" + "${nextParts.text}"`);
-                    currentLine += ` ${nextParts.text}`;
-                    currentParts.text = currentLine.substring(currentParts.speaker.length + 3); // Update text part
-                    i++; // Consume the next line
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
+    for (const line of initialEnhancedLines) {
+        if (line.trim()) {
+            finalLines.push(line);
         }
-
-        // Prevent tiny fragments
-        if (currentParts && currentParts.text.length <= 3 && finalLines.length > 0) {
-            const prevParts = getLineParts(finalLines[finalLines.length - 1]);
-            if (prevParts && prevParts.speaker === currentParts.speaker) {
-                finalLines[finalLines.length - 1] += ` ${currentParts.text}`;
-            } else {
-                finalLines.push(currentLine);
-            }
-        } else {
-            finalLines.push(currentLine);
-        }
-        
-        i++;
     }
 
     return { enhancedLines: finalLines, wasSplit };
@@ -609,7 +622,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             currentTypingIndicator = null;
         }
 
-        if (cancellationToken.isCancelled) break;
+        if (cancellationToken.isCancelled) break; // Check for cancellation again after the wait
         
         groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
         groupDataManager.addMessageToCurrentGroupHistory(historyItem);
@@ -664,7 +677,7 @@ async function generateAiTextResponse(
 
 
 
-    const MAX_RECENT_HISTORY = 8; // <<< Let's set a much smaller limit
+    const MAX_RECENT_HISTORY = 25; // <<< Let's set a much smaller limit
 
     const groupHistory = groupDataManager.getLoadedChatHistory();
     

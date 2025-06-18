@@ -47,7 +47,7 @@ interface SeparationKeywords {
       initialInterjections: ["jaja", "jajaja", "jeje", "dios", "dios mio", "guau", "órale", "ándale", "che", "boludo", "weon", "hostia", "joder", "sí", "claro", "exacto", "eso", "eso sí", "vale", "dale", "ok", "no", "qué va", "hola", "buenas", "gracias", "de nada", "porfa", "hmm", "bueno", "pues", "a ver", "osea", "espera", "hombre", "tío", "venga"],
       twoPartInterjections: ["no me", "qué va", "en serio", "dios mío"],
       conjunctionSplits: ["pero", "así que", "entonces", "y pues", "o sea", "además", "luego", "porque", "es que", "sino"],
-      noSplitPrefixes: ["a", "con", "de", "en", "el", "la", "los", "las", "un", "una", "unos", "unas", "por", "sin", "sobre", "para", "de la", "del", "Atletico", "Real", "y"],
+      noSplitPrefixes: ["a", "con", "de", "en", "el", "la", "los", "las", "un", "una", "unos", "unas", "por", "sin", "sobre", "para", "de la", "del", "Real", "y"],
       conjunctionProbability: 0.7
     },
   

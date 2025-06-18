@@ -117,7 +117,6 @@ function initializeActualTextMessageHandler(): void {
 // in src/js/core/text_message_handler.ts
 
 // =================== START: REPLACE THE ENTIRE TMH PARSER FUNCTION ===================
-
 /**
  * Intelligently inserts newline characters into a single string to create
  * a multi-bubble chat effect, using language-specific keywords and contextual patterns.
@@ -131,6 +130,18 @@ function intelligentlySeparateText(
     connector: Connector,
     options: { probability?: number }
 ): string {
+   
+    const CHANCE_TO_BE_A_SINGLE_BUBBLE = 0.25; // 25% chance to do nothing.
+    if (Math.random() < CHANCE_TO_BE_A_SINGLE_BUBBLE) {
+        // Log that we are intentionally skipping the parse for realism.
+        console.log(`[Parser] Intentionally skipping split for realism. Delivering as single bubble.`);
+        return text; // Return the original, untouched text.
+    }
+   
+   
+   
+   
+   
     const { probability = 1.0 } = options; 
 
     // --- Phase 1: Pre-checks and Setup ---
@@ -146,27 +157,10 @@ function intelligentlySeparateText(
     const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
     let processedText = text;
     
-    // --- Phase 2: Apply Splitting Rules (Unicode-Aware V2) ---
-    const isGerman = language.includes('german');
-    const PROTECTED_SPACE = '##SPACE##'; // A unique placeholder
+    // --- Phase 2: Apply Splitting Rules (Unicode-Aware) ---
 
-    // --- NEW RULE 0: Protect Multi-Word Proper Nouns ---
-    // This finds sequences of capitalized words and temporarily joins them
-    // to prevent other rules from splitting them apart.
-    // e.g., "Champions League" -> "Champions##SPACE##League"
-    if (!isGerman) {
-        // It now requires a lowercase letter specifically (not just any word), no preceding punctuation,
-        // a single space, and then an uppercase letter. This is very specific.
-        const uncannyValleyRegex = new RegExp('(?<![.,?!…])\\b(\\p{Ll}+)\\s+(?=\\p{Lu})', 'gu');
-        
-        processedText = processedText.replace(uncannyValleyRegex, (match, p1_wordBeforeCapital) => {
-            if (keywords.noSplitPrefixes && keywords.noSplitPrefixes.includes(p1_wordBeforeCapital.toLowerCase())) {
-                return match;
-            } else {
-                return `${p1_wordBeforeCapital}\n`;
-            }
-        });
-    }
+    // <<< The "split before capital letter" rule has been completely REMOVED. >>>
+
     // RULE B: Split after strong sentence terminators.
     const terminatorRegex = new RegExp('([?!…])(?=\\s+\\p{Lu})', 'gu');
     processedText = processedText.replace(terminatorRegex, '$1\n');
@@ -176,13 +170,42 @@ function intelligentlySeparateText(
     processedText = processedText.replace(periodRegex, '.\n');
 
     // RULE D: Isolate language-specific initial interjections.
-    if (keywords.initialInterjections && keywords.initialInterjections.length > 0) {
-        const interjectionRegex = new RegExp(`^((?:${keywords.initialInterjections.join('|')})[\\s!,.]*)+`, 'iu');
-        const match = processedText.match(interjectionRegex);
-        if (match && match[0].length < processedText.length) {
-            processedText = processedText.replace(interjectionRegex, (matchedStr) => `${matchedStr.trim()}\n`);
+     if (keywords.initialInterjections && keywords.initialInterjections.length > 0) {
+        // <<< THIS IS THE NEW PROBABILITY CHECK >>>
+        const interjectionSplitProbability = 0.85; // High chance (85%) to split, but not 100%
+        if (Math.random() < interjectionSplitProbability) {
+        
+            // This regex now specifically looks for an interjection at the start of the line.
+            const interjectionRegex = new RegExp(`^(\\b(?:${keywords.initialInterjections.join('|')})\\b)`, 'iu');
+            const match = processedText.match(interjectionRegex);
+    
+            // We only proceed if we found a match AND there's more text after it.
+            if (match && match[0].length < processedText.length) {
+                const matchedWord = match[0];
+                let textAfterWord = processedText.substring(matchedWord.length);
+    
+                // Check if the characters immediately following the word are a comma and a space.
+                if (textAfterWord.trim().startsWith(',')) {
+                    // This is the "Ah," or "Oui," case.
+                    
+                    // We will replace the original word and the comma with just the word and a newline.
+                    // First, find the comma and any following spaces.
+                    const commaAndSpacesRegex = /^\s*,\s*/;
+                    const textToReplace = matchedWord + textAfterWord.match(commaAndSpacesRegex)![0];
+                    
+                    // The replacement is just the word and a newline. The comma is gone.
+                    processedText = processedText.replace(textToReplace, `${matchedWord}\n`);
+    
+                } else if (textAfterWord.trim().startsWith('!') || textAfterWord.trim().startsWith('.')) {
+                    // This handles cases like "Wow!" or "Right."
+                    const punctuationAndSpacesRegex = /^\s*[!.]\s*/;
+                    const textToReplace = matchedWord + textAfterWord.match(punctuationAndSpacesRegex)![0];
+                    processedText = processedText.replace(textToReplace, `${matchedWord}${textAfterWord.trim()[0]}\n`);
+                }
+            }
         }
     }
+
 
     // RULE E: Split specific, pre-defined two-part interjections.
     if (keywords.twoPartInterjections && keywords.twoPartInterjections.length > 0) {
@@ -195,26 +218,30 @@ function intelligentlySeparateText(
         }
     }
 
-    // RULE F: Split before a conjunction (with probability and clause-length check).
+    // <<< THIS IS THE NEW, SMARTER CONJUNCTION RULE >>>
+    // It specifically looks for a comma followed by a conjunction, and removes the comma when splitting.
     if (keywords.conjunctionSplits && keywords.conjunctionSplits.length > 0) {
-        const probability = keywords.conjunctionProbability ?? 0.5; // (or 0.75 in TMH)
-        if (Math.random() < probability) {
-            const conjunctionRegex = new RegExp(`([,.?!…])(\\s*)(\\b(?:${keywords.conjunctionSplits.join('|')})\\b\\s)`, 'giu');
-            processedText = processedText.replace(conjunctionRegex, (match, p1, p2, p3, offset, fullString) => {
+        const conjunctionProbability = keywords.conjunctionProbability ?? 0.7; // Default to 70% chance
+        
+        // <<< THIS IS THE PROBABILITY CHECK, NOW RESTORED >>>
+        if (Math.random() < conjunctionProbability) {
+            // This regex finds a comma, optional space, and then one of the conjunction words.
+            // Example Match: ", but", ", so", ", alors"
+            const conjunctionRegex = new RegExp(`,\\s*(\\b(?:${keywords.conjunctionSplits.join('|')})\\b)`, 'giu');
+            
+            processedText = processedText.replace(conjunctionRegex, (match, p1_conjunction, offset, fullString) => {
+                // Check if the part *after* the conjunction is long enough to be its own bubble.
                 const remainingText = fullString.substring(offset + match.length);
-                const wordCountOfRemainder = remainingText.trim().split(/\s+/).length;
-                if (wordCountOfRemainder >= 2 || remainingText.length > 15) {
-                    return `${p1}${p2}\n${p3}`;
-                } else {
-                    return match;
+                if (remainingText.trim().split(/\s+/).length >= 2 || remainingText.length > 10) {
+                    // If it is, replace ", but" with "\nbut". The comma is gone.
+                    return `\n${p1_conjunction}`;
                 }
+                // Otherwise, don't split, leave the text as is.
+                return match; 
             });
         }
     }
     
-    // --- NEW FINAL STEP: Restore the spaces in the protected nouns ---
-    processedText = processedText.replace(new RegExp(PROTECTED_SPACE, 'g'), ' ');
-
     // --- Phase 3: Final Cleanup and Re-joining ---
     if (processedText === text) {
         return text;
@@ -225,41 +252,18 @@ function intelligentlySeparateText(
     const initialLines = processedText.split('\n');
     const finalLines: string[] = [];
 
-    let i = 0;
-    while (i < initialLines.length) {
-        let currentLine = initialLines[i];
-
-        // --- NEW RE-JOINING LOGIC ---
-        // Keep re-joining as long as the next line is a single, capitalized word.
-        // This correctly handles names like "Paolo Rossi" or even "Jean-Claude Van Damme".
-        while (i + 1 < initialLines.length) {
-            const nextLine = initialLines[i + 1];
-            // A proper noun part is a SINGLE capitalized word.
-            const isSingleCapitalizedWord = new RegExp('^\\p{Lu}\\p{L}*$', 'u').test(nextLine.trim());
-
-            if (isSingleCapitalizedWord && !isGerman) {
-                console.log(`[Parser] Re-joining proper noun part: "${currentLine}" + "${nextLine}"`);
-                currentLine += ` ${nextLine}`;
-                i++; // Consume the next line
-            } else {
-                break; // Stop merging if the next line doesn't fit the pattern.
-            }
+    for (const line of initialLines) {
+        // This logic merges very short, leftover fragments into the previous bubble.
+        const isTargetedInterjection = keywords.initialInterjections.includes(line.toLowerCase().replace(/[.,!]/g, ''));
+        if (line.length <= 3 && !isTargetedInterjection && finalLines.length > 0) {
+            finalLines[finalLines.length - 1] += ` ${line}`;
+        } else if (line.trim()) { // Ensure we don't push empty lines
+            finalLines.push(line);
         }
-        
-        // --- Prevent tiny fragments (logic remains the same) ---
-        const isTargetedInterjection = keywords.initialInterjections.includes(currentLine.toLowerCase().replace(/[.,!]/g, ''));
-        if (currentLine.length <= 3 && !isTargetedInterjection && finalLines.length > 0) {
-            finalLines[finalLines.length - 1] += ` ${currentLine}`;
-        } else {
-            finalLines.push(currentLine);
-        }
-        
-        i++;
     }
     
     return finalLines.join('\n');
 }
-
 // ===================  END: REPLACE THE ENTIRE TMH PARSER FUNCTION  ===================
 
 // ===================  END: REPLACE WITH THIS LANGUAGE-AWARE FUNCTION  ===================
@@ -334,7 +338,7 @@ async function playAiResponseScene(
             thinkingMsg.remove();
         }
         
-        // 5. Now it's safe to append the real message.
+        // 5. Now it's safe to append the real message immediately.
         appendToLog?.(text, 'connector', {
             avatarUrl: connector.avatarModern,
             senderName: connector.profileName,

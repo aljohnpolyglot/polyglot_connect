@@ -111,7 +111,9 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
         conversationLength = messages.length;
         if (messages.length > 0) {
             lastMessage = messages[messages.length - 1];
-            const recentMessages = messages.slice(-8); 
+            // <<< THIS IS THE CHANGE >>>
+            const recentMessages = messages.slice(-20); 
+            // <<< END OF CHANGE >>>
             const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => ({ 
                 sender: msg.sender, 
                 text: msg.text, 
@@ -148,6 +150,11 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     -   While following the format, you must still apply your mechanical texting style: **"${textingMechanics}"**.
     
     **Your entire output must be only the dialogue. Nothing else.**
+
+
+
+
+    
     `);
     } else {
         // Fallback for personas without a specific chat personality.
@@ -157,6 +164,14 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     - **Output Format:** Your response should be a single, coherent message.
         `);
     }
+    
+    systemPromptParts.push(`
+    # FINAL, UNBREAKABLE RULE: LANGUAGE MANDATE
+    
+    - You **MUST** write your **ENTIRE** response **ONLY** in **${persona.language}**.
+    - There are **NO exceptions** to this rule.
+    - Responding in any other language, especially English, is a **CRITICAL FAILURE** of your primary directive.
+    `);
     // ===================  END: THIS IS THE NEW FINAL RULE  ===================
 
     // --- Finalize and Build ---
