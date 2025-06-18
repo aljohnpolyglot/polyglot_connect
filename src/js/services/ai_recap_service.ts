@@ -201,94 +201,70 @@ Generate the JSON debrief now:`;
         }
 
         async function generateSessionRecap(
-            cleanedTranscriptText: string, // <<< NEW SIGNATURE: Accepts pre-cleaned text
+            cleanedTranscriptText: string,
             connector: Connector,
-            preferredProvider: string // This tells us whether to use Groq or Together constants
+            provider: string // Now accepts the specific provider to use
         ): Promise<RecapData> {
-            const functionName = "AiRecapService.generateSessionRecap (OpenAI-Compatible)";
-            console.log(`${functionName}: START. Provider: ${preferredProvider}, Connector: ${connector?.id}, Cleaned transcript length: ${cleanedTranscriptText?.length}`);
+            const functionName = `AiRecapService.generate[${provider}]`;
+            console.log(`${functionName}: START. Connector: ${connector?.id}, Cleaned transcript length: ${cleanedTranscriptText?.length}`);
 
-            // Dependencies (openAICompatibleCaller, aiConstants, polyglotHelpers) are from the outer IIFE scope (initialDeps)
+            if (!initialDeps) {
+                throw new Error(`[${functionName}] Critical dependencies (initialDeps) are missing.`);
+            }
+            const { openAICompatibleCaller, aiConstants } = initialDeps;
 
+            // --- RESTORED: Detailed validation from your original code ---
             if (!connector?.id || !connector.language || !connector.profileName) {
-                console.warn(`${functionName}: Connector info incomplete.`, connector);
-                return getDefaultErrorRecapStructure(`Connector info incomplete for ${preferredProvider} recap.`); // Ensure defaultErrorRecapStructure is defined
+                // This will be caught by the main carousel in ai_service.ts
+                throw new Error(`[${functionName}] Connector info incomplete.`);
             }
-
-            // MIN_TRANSCRIPT_TURNS_FOR_RECAP check is now done by the ai_service.ts facade.
-            // This service assumes it receives a transcript deemed sufficient.
-            if (!cleanedTranscriptText || cleanedTranscriptText.trim().length < 50) { // Basic check on cleaned text
-                console.warn(`${functionName}: Cleaned transcript text too short or empty for ${connector.id}.`);
-                return { /* ... minimal RecapData for short/empty cleaned text, similar to Gemini one ... */
-                    conversationSummary: "Cleaned transcript too short for detailed debrief via " + preferredProvider,
-                    keyTopicsDiscussed: ["N/A"], newVocabularyAndPhrases: [], goodUsageHighlights: [],
-                    areasForImprovement: [], suggestedPracticeActivities: [], overallEncouragement: "Please try again.",
-                    sessionId: `short-cleaned-${connector.id}-${Date.now()}`, date: new Date().toLocaleDateString(),
-                    duration: "N/A", startTimeISO: null, connectorId: connector.id, connectorName: connector.profileName
-                };
+            if (!cleanedTranscriptText || cleanedTranscriptText.trim().length < 50) {
+                // Also caught by the carousel, but good to have a specific error
+                throw new Error(`[${functionName}] Cleaned transcript text too short or empty.`);
             }
+            // --- END RESTORED VALIDATION ---
 
-            const prompt = buildRecapPromptForOpenAICompatible(cleanedTranscriptText, connector); // Uses the passed cleaned text
+            const prompt = buildRecapPromptForOpenAICompatible(cleanedTranscriptText, connector);
             const messages = [{ role: "user" as const, content: prompt }];
+            
             let modelToUse: string | undefined;
             let apiKey: string | undefined;
 
-            if (preferredProvider === aiConstants.PROVIDERS.GROQ) {
-                modelToUse = aiConstants.GROQ_MODELS.RECAP; apiKey = window.GROQ_API_KEY;
-            } else if (preferredProvider === aiConstants.PROVIDERS.TOGETHER) {
-                modelToUse = aiConstants.TOGETHER_MODELS.RECAP; apiKey = window.TOGETHER_API_KEY;
+            if (provider === aiConstants.PROVIDERS.GROQ) {
+                modelToUse = aiConstants.GROQ_MODELS.RECAP;
+                apiKey = 'proxied-by-cloudflare-worker';
+            } else if (provider === aiConstants.PROVIDERS.TOGETHER) {
+                modelToUse = aiConstants.TOGETHER_MODELS.RECAP;
+                apiKey = import.meta.env.VITE_TOGETHER_API_KEY;
             } else {
-                console.error(`${functionName}: Unsupported provider for this service: ${preferredProvider}.`);
-                return getDefaultErrorRecapStructure(`Unsupported Provider: ${preferredProvider}`);
+                throw new Error(`[${functionName}] Unsupported provider: ${provider}`);
             }
 
-            if (!apiKey || apiKey.includes("YOUR_") || !modelToUse) {
-                 const errorMsg = `API key or model for ${preferredProvider} (Recap) is invalid/missing.`;
+            // --- RESTORED: Detailed API Key validation ---
+            if ((provider !== aiConstants.PROVIDERS.GROQ && (!apiKey || apiKey.includes("YOUR_"))) || !modelToUse) {
+                 const errorMsg = `API key or model for ${provider} (Recap) is invalid/missing.`;
                  console.error(`${functionName}: ${errorMsg}`);
-                 return getDefaultErrorRecapStructure(errorMsg);
+                 throw new Error(errorMsg);
             }
+            // --- END RESTORED VALIDATION ---
 
-            // console.log(`ARS_DEBUG_PROMPT (${preferredProvider}): Full prompt for ${modelToUse}:\n`, prompt.substring(0, 500) + "...");
-
-            try {
-                const rawResponse = await openAICompatibleCaller(
-                    messages, modelToUse, preferredProvider, apiKey,
-                    { temperature: 0.2, response_format: { "type": "json_object" } }
-                );
-                // parseRecapResponse should return a valid RecapData or a default error structure from *within ai_recap_service.ts*
-                const parsedFromService = parseRecapResponse(rawResponse, preferredProvider);
-
-                // Create a base structure using the local default helper to ensure all keys
-                const baseRecap = getDefaultErrorRecapStructure(preferredProvider);
-
-                // Merge the successfully parsed data. If parseRecapResponse already returned
-                // an error structure, this will effectively be merging an error structure onto another.
-                // The key is that 'parsedFromService' should ideally be the primary source of truth if successful.
-                const finalRecap: RecapData = {
-                    ...baseRecap, // Ensures all RecapData fields are present initially
-                    ...parsedFromService, // Overrides defaults with actual data from the AI
-                    sessionId: parsedFromService.sessionId || `recap-${connector.id}-${Date.now()}-${preferredProvider}`, // Prioritize parsed sessionId
-                    connectorId: connector.id,
-                    connectorName: connector.profileName,
-                    // Ensure date is set, prioritizing parsed, then default, then current
-                    date: parsedFromService.date || baseRecap.date || new Date().toLocaleDateString(),
-                    // duration and startTimeISO are usually not set by the recap AI directly
-                    // They will be part of the SessionData that this RecapData might be merged into.
-                    // If they *are* part of RecapData and AI might return them, handle like 'date':
-                    // duration: parsedFromService.duration || baseRecap.duration,
-                    // startTimeISO: parsedFromService.startTimeISO || baseRecap.startTimeISO,
-                };
-                return finalRecap;
-
-            } catch (error: any) {
-                console.error(`${functionName}: API call error to ${preferredProvider}:`, error.message, error);
-                if (error.providerDetails && error.providerDetails.failed_generation) {
-                    console.error(`ARS_DEBUG_FAILED_GENERATION (${preferredProvider}): Raw problematic output:`, error.providerDetails.failed_generation);
-                }
-                // This call is correct as it uses the locally defined helper
-                return getDefaultErrorRecapStructure(`API Error (${preferredProvider}): ${error.message}`);
+            const rawResponse = await openAICompatibleCaller(
+                messages, modelToUse, provider, apiKey,
+                { temperature: 0.2, response_format: { "type": "json_object" } }
+            );
+            
+            const parsedData = parseRecapResponse(rawResponse, provider);
+            
+            // --- RESTORED: Detailed check on the parsed data itself ---
+            // If the parser itself determined the response was a failure, throw an error.
+            if (!parsedData || !parsedData.conversationSummary || parsedData.conversationSummary.includes("failed")) {
+                const failureDetail = parsedData?.conversationSummary || "malformed response";
+                throw new Error(`[${functionName}] Parsing failed or response was invalid for ${provider}. Detail: ${failureDetail}`);
             }
-        } // End of generateSessionRecap for ai_recap_service.ts
+            // --- END RESTORED CHECK ---
+
+            return parsedData as RecapData;
+        }
 
         console.log("ai_recap_service.ts: IIFE FINISHED.");
         return {

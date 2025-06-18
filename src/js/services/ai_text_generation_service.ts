@@ -96,7 +96,7 @@ function initializeActualAiTextGenerationService(): void {
     }
     console.log("[AI_TEXT_GEN_SVC] #4 CRITICAL_DEPS_PASS: All critical dependencies appear present and are of correct type.");
 
-    const { PROVIDERS, GEMINI_MODELS, GROQ_MODELS, TOGETHER_MODELS, STANDARD_SAFETY_SETTINGS_GEMINI, HUMAN_LIKE_ERROR_MESSAGES } = aiConstants;
+    const { PROVIDERS, GEMINI_MODELS, GROQ_MODELS, OPENROUTER_MODELS, TOGETHER_MODELS, STANDARD_SAFETY_SETTINGS_GEMINI, HUMAN_LIKE_ERROR_MESSAGES } = aiConstants;
 
     console.log("[AI_TEXT_GEN_SVC] #5 BEFORE_IIFE: About to define serviceMethodsFromIIFE.");
 
@@ -157,154 +157,106 @@ function initializeActualAiTextGenerationService(): void {
         connector: Connector,
         existingGeminiHistory: GeminiChatItem[],
         preferredProvider: string = PROVIDERS.GROQ,
-        expectJson: boolean = false,
-        context: 'group-chat' | 'one-on-one' = 'one-on-one' // <<< ADD IT HERE
+        expectJson: boolean = false
     ): Promise<string | null | object> {
-    const Function = "[AI_TextGenSvc][generateTextMessage]";
-    console.log(`${Function}: START. Orchestrating API call carousel for group chat.`);
+        const functionName = "[AI_TextGenSvc][generateTextMessage]";
+        console.groupCollapsed(`%c🚀 [Smart Dispatcher] New Request Started`, 'color: #8a2be2; font-weight: bold; font-size: 14px;');
+        console.log(`Input Text: "${userText.substring(0, 100)}..."`);
 
-    // --- NEW: JUST-IN-TIME CONSTANTS FETCH ---
-    // Fetch the LATEST version of aiConstants from the global scope right when we need it.
-    const currentAiConstants = window.aiApiConstants;
-
-    if (!currentAiConstants || !currentAiConstants.PROVIDERS) {
-        console.error(`${Function}: CRITICAL ERROR - The latest aiConstants or its PROVIDERS object is not available. Aborting.`);
-        return getRandomHumanError();
-    }
-    
-    
-    const sanitizedHistoryForTextModels = (existingGeminiHistory || []).map(turn => {
-        const textParts = turn.parts
-            .filter(part => 'text' in part && typeof part.text === 'string' && part.text.trim() !== "")
-            .map(part => ({ text: (part as { text: string }).text }));
-        if (textParts.length === 0) return null;
-        return { ...turn, parts: textParts };
-    }).filter(turn => turn !== null) as GeminiChatItem[];
-
-    let systemPromptForOpenAI: string | null = null;
-    if (sanitizedHistoryForTextModels.length > 0 && sanitizedHistoryForTextModels[0].role === 'user') {
-        const firstPart = sanitizedHistoryForTextModels[0].parts[0];
-        if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
-            systemPromptForOpenAI = firstPart.text;
-        }
-    }
-    
-    // Prepare the messages payload for OpenAI-compatible providers
-    const openAIMessages = convertGeminiHistoryToOpenAIMessages(
-        systemPromptForOpenAI ? sanitizedHistoryForTextModels.slice(1) : sanitizedHistoryForTextModels,
-        systemPromptForOpenAI
-    );
-    openAIMessages.push({ role: "user", content: userText });
-    console.log("[DEBUG] Checking providers from constants:", currentAiConstants.PROVIDERS);
-    // --- NEW: Hardcoded provider sequence for maximum resilience ---
-  // <<< REPLACE WITH THIS FULL 6-LAYER SEQUENCE >>>
-const providerSequence = [
-    currentAiConstants.PROVIDERS.GROQ,
-    currentAiConstants.PROVIDERS.OPENROUTER,
-    currentAiConstants.PROVIDERS.TOGETHER,
-    // --- NEW: Adding Gemini Layers ---
-    'gemini_main', // We'll use special strings to identify the keys
-    'gemini_alt_1',
-    'gemini_alt_2'
-].filter(p => !!p);
-    console.log(`${Function}: Determined provider sequence for group chat:`, providerSequence);
-
-   // <<< REPLACE THE ENTIRE for...of LOOP WITH THIS >>>
-
-   for (const provider of providerSequence) {
-    let apiKey: string | undefined;
-    let model: string | undefined; // This will now be set dynamically
-
-    console.log(`%c${Function}: --> ATTEMPTING with provider [${provider}]`, 'color: #007acc; font-weight: bold;');
-
-    try {
-        let apiKey: string | undefined;
-        let model: string | undefined;
-    
-        if (provider === currentAiConstants.PROVIDERS.GROQ) {
-            apiKey = import.meta.env.VITE_GROQ_API_KEY;
-            // DYNAMIC MODEL CHOICE
-            model = context === 'group-chat' 
-                ? currentAiConstants.GROQ_MODELS?.TEXT_CHAT 
-                : currentAiConstants.GROQ_MODELS?.ONE_ON_ONE_CHAT;
-        } else if (provider === currentAiConstants.PROVIDERS.OPENROUTER) {
-            apiKey = import.meta.env.VITE_OPEN_ROUTER_API_KEY;
-            // For now, OpenRouter uses the same powerful model for both
-            model = currentAiConstants.OPENROUTER_MODELS?.TEXT_CHAT;
-        } else if (provider === currentAiConstants.PROVIDERS.TOGETHER) {
-            apiKey = import.meta.env.VITE_TOGETHER_API_KEY;
-            // Together also uses the same model for both
-            model = currentAiConstants.TOGETHER_MODELS?.TEXT_CHAT;
-        } else if (provider.startsWith('gemini')) {
-            // This block will handle all three gemini keys.
-            // It uses a different API caller, so we handle it completely and return.
-            console.log(`%c${Function}: --> ATTEMPTING with provider [${provider}]`, 'color: #007acc; font-weight: bold;');
-            
-            const geminiPayload = prepareGeminiPayload(existingGeminiHistory, userText);
-            const geminiModel = currentAiConstants.GEMINI_MODELS?.TEXT || "gemini-1.5-flash-latest";
-    
-            // Select the correct key identifier for the Gemini caller
-            let geminiKeyId = 'main';
-            if (provider === 'gemini_alt_1') geminiKeyId = 'alt';
-            if (provider === 'gemini_alt_2') geminiKeyId = 'alt2';
-    
-            // Call the dedicated Gemini function and return immediately on success
-            const response = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent", geminiKeyId);
-            
-            console.log(`%c${Function}: <-- SUCCESS from [${provider}]. Returning response and stopping carousel.`, 'color: #28a745; font-weight: bold;');
-            return response;
+        // --- 1. The Probabilistic Dispatch ---
+        const dispatchRoll = Math.random();
+        let primaryProvider: 'gemini' | 'groq';
+        
+        if (dispatchRoll < 0.70) { // 70% chance
+            primaryProvider = 'gemini';
+            console.log('%cDispatching to: GEMINI (70% probability)', 'color: #4285F4; font-weight: bold;');
+        } else { // 30% chance
+            primaryProvider = 'groq';
+            console.log('%cDispatching to: GROQ (30% probability)', 'color: #00D09B; font-weight: bold;');
         }
 
-        if (provider.startsWith('gemini')) {
-            // This case should not be reached if the Gemini call succeeds and returns,
-            // but it prevents the code below from executing for a failed Gemini attempt.
-            continue; 
+        // --- 2. Create the Full Failover Sequence based on the dispatch ---
+        const providerSequence = [];
+        if (primaryProvider === 'gemini') {
+            // Try Gemini up to 3 times before failing over
+            providerSequence.push('gemini', 'gemini', 'gemini', PROVIDERS.GROQ, PROVIDERS.OPENROUTER, PROVIDERS.TOGETHER);
+        } else {
+            // Try Groq first, then failover to Gemini up to 3 times
+            providerSequence.push(PROVIDERS.GROQ, 'gemini', 'gemini', 'gemini', PROVIDERS.OPENROUTER, PROVIDERS.TOGETHER);
         }
+        console.log('%cFull Failover Plan:', 'color: #8a2be2; font-weight: bold;', providerSequence.join(' ➔ '));
 
-
-        // --- NEW VALIDATION LOGIC ---
-        if (!model) {
-            throw new Error(`Model for provider [${provider}] is not defined in ai_constants.ts.`);
-        }
+        // --- 3. Prepare Payloads (this is done once) ---
+        const sanitizedHistory = (existingGeminiHistory || []).map(turn => {
+            const textParts = turn.parts.filter(part => 'text' in part && typeof part.text === 'string' && part.text.trim() !== "").map(part => ({ text: (part as { text: string }).text }));
+            if (textParts.length === 0) return null;
+            return { ...turn, parts: textParts };
+        }).filter(turn => turn !== null) as GeminiChatItem[];
     
-        // This check now ONLY applies to non-Groq providers.
-        if (provider !== currentAiConstants.PROVIDERS.GROQ) {
-            if (!apiKey || apiKey.includes('YOUR_') || apiKey.length < 20) {
-                const keyState = !apiKey ? "is missing" : "is a placeholder or too short";
-                throw new Error(`API key for provider [${provider}] ${keyState}.`);
+        let systemPrompt: string | null = null;
+        if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'user') {
+            const firstPart = sanitizedHistory[0].parts[0];
+            if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
+                systemPrompt = firstPart.text;
             }
         }
-        // --- END NEW VALIDATION ---
         
-        // The apiKey variable will be 'proxied-by-cloudflare' for Groq, and the real key for others.
-        const response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined });
-        console.log(`%c${Function}: <-- SUCCESS from [${provider}]. Returning response and stopping carousel.`, 'color: #28a745; font-weight: bold;');
-        return response;
+        const openAIMessages = convertGeminiHistoryToOpenAIMessages(systemPrompt ? sanitizedHistory.slice(1) : sanitizedHistory, systemPrompt);
+        openAIMessages.push({ role: "user", content: userText });
+        const geminiPayload = prepareGeminiPayload(existingGeminiHistory, userText);
 
-    } catch (error: any) {
-        console.warn(`%c${Function}: <-- FAILED. Provider [${provider}] threw an error.`, 'color: #dc3545;');
-        let reason = `Status: [${error.status || 'N/A'}], Message: "${error.message}"`;
-        if (error.status === 413) {
-            reason = `413 - PAYLOAD TOO LARGE. The prompt + history was too big for this model's limit. Full error: "${error.message}"`;
-        } else if (error.status === 429) {
-            reason = `429 - RATE LIMIT. Too many requests or tokens per minute. Full error: "${error.message}"`;
+        // --- 4. Run the Carousel ---
+        for (const provider of providerSequence) {
+            console.log(`%c--> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+            try {
+                if (provider === 'gemini') {
+                    const geminiModel = GEMINI_MODELS?.TEXT || "gemini-2.0-flash-live";
+                    const response = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent");
+                    console.log(`%c<-- SUCCESS from [${provider}].`, 'color: #28a745; font-weight: bold;');
+                    if (provider === 'gemini') {
+                        const geminiModel = GEMINI_MODELS?.TEXT || "gemini-2.0-flash-live";
+                        // The caller now returns an object: { response: string, nickname: string }
+                        const geminiResult = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent");
+                        
+                        console.log(`%c<-- SUCCESS from [gemini].`, 'color: #28a745; font-weight: bold;');
+                        console.log(`%c...with the assist from: ${geminiResult.nickname}!`, 'color: #34A853;');
+                        console.groupEnd();
+                        return geminiResult.response; // Return only the text response to the caller
+                    }
+                    console.groupEnd();
+                    return response;
+                } else { // Groq, OpenRouter, or Together
+                    let apiKey: string | undefined;
+                    let model: string | undefined;
+                    
+                    if (provider === PROVIDERS.GROQ) {
+                        model = GROQ_MODELS?.TEXT_CHAT;
+                        apiKey = 'proxied-by-cloudflare-worker';
+                    } else if (provider === PROVIDERS.OPENROUTER) {
+                        apiKey = import.meta.env.VITE_OPEN_ROUTER_API_KEY;
+                        model = OPENROUTER_MODELS?.TEXT_CHAT;
+                    } else if (provider === PROVIDERS.TOGETHER) {
+                        apiKey = import.meta.env.VITE_TOGETHER_API_KEY;
+                        model = TOGETHER_MODELS?.TEXT_CHAT;
+                    }
+
+                    if (!model) { throw new Error(`Model for provider [${provider}] not defined.`); }
+                    
+                    const response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined });
+                    console.log(`%c<-- SUCCESS from [${provider}].`, 'color: #28a745; font-weight: bold;');
+                    console.groupEnd();
+                    return response;
+                }
+            } catch (error: any) {
+                console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+                console.log(`Error Details:`, error.message);
+            }
         }
-        console.error(`[PROVIDER_ERROR] Provider: [${provider}], Reason: ${reason}`);
-        if (provider === currentAiConstants.PROVIDERS.GROQ && error.status === 429) {
-            // Specifically for Groq rate limits
-            const retryMessage = error.providerDetails?.message || error.message || "No details.";
-            console.warn(`[GROQ_RATE_LIMIT] Reason: 429 - Too Many Requests. Full error: "${retryMessage}"`);
-        } else {
-            // For all other errors
-            console.error(`[PROVIDER_ERROR] Provider: [${provider}], Status: [${error.status || 'N/A'}], Message: "${error.message}"`);
-        }
+        
+        console.error(`FINAL ERROR. All providers in the sequence failed.`);
+        console.groupEnd();
+        return getRandomHumanError();
     }
-}
-    
-    // This part is only reached if the entire loop completes without a successful return.
-    console.error(`${Function}: FINAL ERROR. All providers in the sequence [Groq, OpenRouter, Together] failed. Returning a random human error.`);
-    return getRandomHumanError();
-}
 
         async function generateTextFromImageAndTextOpenAI(
             base64ImageString: string, mimeType: string, connector: Connector,

@@ -176,88 +176,102 @@ function initializeActualAiService(): void {
         });
 
       // REPLACE WITH THIS BLOCK
-async function cleanAndReconstructTranscriptLLM_internal(
-    rawTranscript: TranscriptTurn[],
-    connector: Connector,
-    userName: string = "User"
-): Promise<string> {
-    const functionName = "[AI_Facade][cleanAndReconstructTranscriptLLM]";
-    console.log(`${functionName}: START. Cleaning ${rawTranscript?.length} transcript turns.`);
+      async function cleanAndReconstructTranscriptLLM_internal(
+        rawTranscript: TranscriptTurn[],
+        connector: Connector,
+        userName: string = "User"
+    ): Promise<string> {
+        const functionName = "[AI_Facade][cleanAndReconstructTranscriptLLM]";
+        console.groupCollapsed(`%c🧹 [Transcript Cleaner] S+ Request Started`, 'color: #6f42c1; font-weight: bold; font-size: 14px;');
 
-    const currentDeps = getDeps();
-    const geminiCaller = currentDeps._geminiInternalApiCaller;
-    const currentAiConstants = currentDeps._aiApiConstants;
+        const currentDeps = getDeps();
+        if (!rawTranscript || rawTranscript.length === 0) {
+            console.log(`${functionName}: No conversation turns to clean.`);
+            console.groupEnd();
+            return "No conversation to clean.";
+        }
 
-    // --- ADDED LOGGING for dependency check ---
-    if (!geminiCaller || !currentAiConstants?.GEMINI_MODELS?.UTILITY || !currentAiConstants?.STANDARD_SAFETY_SETTINGS_GEMINI) {
-        console.warn(`${functionName}: Dependencies for LLM cleaning are missing. geminiCaller: ${!!geminiCaller}, UTILITY_MODEL: ${!!currentAiConstants?.GEMINI_MODELS?.UTILITY}.`);
+        // --- 1. Basic Formatting (Done Once) ---
+        let preliminaryFormattedTranscript = "";
+        rawTranscript.forEach(turn => {
+            // ... (This part of the code remains the same)
+            if (!turn || typeof turn.text !== 'string' || turn.text.trim() === "") return;
+            let speakerLabel = userName;
+            const personaName = connector.profileName || "Partner";
+            if (['connector', 'model', 'connector-spoken-output', 'connector-greeting-intent', personaName].includes(turn.sender)) {
+                speakerLabel = personaName;
+            } else if (['user-audio-transcript', 'user-typed', 'user', userName].includes(turn.sender)) {
+                speakerLabel = userName;
+            } else {
+                speakerLabel = `Unknown (${turn.sender})`;
+            }
+            let textContent = turn.text.trim().replace(/\((?:En|In)\s+[\w\s]+\)\s*:?/gi, '').trim().replace(/\s\s+/g, ' ');
+            if (textContent) preliminaryFormattedTranscript += `${speakerLabel}: ${textContent}\n`;
+        });
+
+        if (!preliminaryFormattedTranscript.trim()) {
+            console.log(`${functionName}: No meaningful content after initial formatting.`);
+            console.groupEnd();
+            return "No meaningful content after initial formatting.";
+        }
+
+        const cleaningPrompt = `You are an expert text processor. Your task is to clean and reconstruct a raw voice call transcript...`; // The long prompt remains the same
+
+        // --- 2. The S+ Tier Cleaning Carousel ---
+        const cleanerProviderSequence = ['gemini', 'gemini', 'gemini', 'groq'];
+        const hogwartsHouses = ['Gryffindor', 'Hufflepuff', 'Ravenclaw'];
+        let geminiAttempt = 0;
+
+        console.log('%cCleaner Provider Plan:', 'color: #6f42c1; font-weight: bold;', cleanerProviderSequence.join(' ➔ '));
+
+        for (const provider of cleanerProviderSequence) {
+            let attemptLog = `--> ATTEMPTING cleaner [${provider}]`;
+            if (provider === 'gemini') {
+                attemptLog += ` (House: ${hogwartsHouses[geminiAttempt] || 'Durmstrang'})`;
+                geminiAttempt++;
+            }
+            console.log(`%c${attemptLog}`, 'color: #007acc; font-weight: bold;');
+
+            try {
+                let cleanedTranscript: string | null | object = null;
+
+                if (provider === 'gemini' && currentDeps._geminiInternalApiCaller) {
+                    const geminiModel = currentDeps._aiApiConstants?.GEMINI_MODELS.RECAP || "gemini-1.5-flash-latest";
+                    const payload = {
+                        contents: [{ role: "user", parts: [{ text: cleaningPrompt }] }],
+                        generationConfig: { temperature: 0.1, maxOutputTokens: 3000 },
+                        safetySettings: currentDeps._aiApiConstants?.STANDARD_SAFETY_SETTINGS_GEMINI,
+                    };
+                    cleanedTranscript = await currentDeps._geminiInternalApiCaller(payload, geminiModel, "generateContent");
+
+                } else if (provider === 'groq' && currentDeps._openaiCompatibleApiCaller) {
+                    const groqModel = currentDeps._aiApiConstants?.GROQ_MODELS.TEXT_CHAT || "llama3-8b-8192";
+                    const messages = [{ role: "user" as const, content: cleaningPrompt }];
+                    cleanedTranscript = await currentDeps._openaiCompatibleApiCaller(messages, groqModel, 'groq', 'proxied-by-cloudflare-worker', { temperature: 0.1 });
+                }
+
+                if (typeof cleanedTranscript === 'string' && cleanedTranscript.trim()) {
+                    console.log(`%c<-- SUCCESS from cleaner [${provider}].`, 'color: #28a745; font-weight: bold;');
+                    console.groupEnd();
+                    return cleanedTranscript.trim();
+                }
+                throw new Error(`Cleaner [${provider}] returned empty or invalid response.`);
+
+            } catch (error: any) {
+                console.warn(`%c<-- FAILED. Cleaner [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+                console.log(`Error Details:`, error.message);
+            }
+        }
+
+        // --- 3. Final Fallback ---
+        console.error(`${functionName}: FINAL FALLBACK. All cleaner attempts failed. Returning basic formatted transcript.`);
+        console.groupEnd();
         const { polyglotHelpers } = currentDeps;
         if (polyglotHelpers?.formatTranscriptForLLM) {
-            console.log(`${functionName}: FALLBACK to basic 'polyglotHelpers.formatTranscriptForLLM'.`);
             return polyglotHelpers.formatTranscriptForLLM(rawTranscript, connector.profileName || "Partner", userName);
         }
-        console.error(`${functionName}: CRITICAL FALLBACK. No LLM or polyglot helper available. Using raw mapping.`);
-        return rawTranscript.map(t => `${t.sender}: ${t.text?.trim() || ""}`).join('\n');
-    }
-
-    if (!rawTranscript || rawTranscript.length === 0) {
-        console.log(`${functionName}: No conversation turns to clean. Exiting.`);
-        return "No conversation to clean.";
-    }
-
-    let preliminaryFormattedTranscript = "";
-    rawTranscript.forEach(turn => {
-        if (!turn || typeof turn.text !== 'string' || turn.text.trim() === "") return;
-        let speakerLabel = userName;
-        const personaName = connector.profileName || "Partner";
-        if (['connector', 'model', 'connector-spoken-output', 'connector-greeting-intent', personaName].includes(turn.sender)) {
-            speakerLabel = personaName;
-        } else if (['user-audio-transcript', 'user-typed', 'user', userName].includes(turn.sender)) {
-            speakerLabel = userName;
-        } else if (['system-activity', 'system-message', 'system-call-event'].includes(turn.sender)) {
-            speakerLabel = "System";
-        } else {
-            speakerLabel = `Unknown (${turn.sender})`;
-        }
-        let textContent = turn.text.trim().replace(/\((?:En|In)\s+[\w\s]+\)\s*:?/gi, '').trim().replace(/\s\s+/g, ' ');
-        if (textContent) preliminaryFormattedTranscript += `${speakerLabel}: ${textContent}\n`;
-    });
-
-    if (!preliminaryFormattedTranscript.trim()) {
-        console.log(`${functionName}: No meaningful content after initial formatting. Exiting.`);
-        return "No meaningful content after initial formatting.";
-    }
-
-    const cleaningModel = currentAiConstants.GEMINI_MODELS.UTILITY;
-    const promptForCleaning = `You are an expert text processor. Your task is to clean and reconstruct a raw voice call transcript. The transcript may contain fragmented words and incorrect spacing due to real-time transcription. The dialogue is between "${userName}" and "${connector.profileName}" (who primarily speaks ${connector.language}). Please rewrite the following raw transcript into a clean, coherent, and readable dialogue format. Combine fragmented words into whole words. Ensure correct spacing and punctuation. Maintain the original speaker turns and the language used by each speaker as much as possible. Do NOT add any commentary or explanation. ONLY output the cleaned dialogue. Raw Transcript: --- ${preliminaryFormattedTranscript.trim()} --- Cleaned Dialogue:`;
-    const payload = {
-        contents: [{ role: "user", parts: [{ text: promptForCleaning }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 3000 },
-        safetySettings: currentAiConstants.STANDARD_SAFETY_SETTINGS_GEMINI,
-    };
-
-    try {
-        // --- ADDED LOGGING for the API call ---
-        console.log(`${functionName}: ATTEMPTING call to Gemini LLM with model [${cleaningModel}].`);
-        const cleanedTranscriptResponse = await geminiCaller(payload, cleaningModel, "generateContent");
-        if (typeof cleanedTranscriptResponse === 'string' && cleanedTranscriptResponse.trim()) {
-            console.log(`${functionName}: SUCCESS from Gemini LLM.`);
-            return cleanedTranscriptResponse.trim();
-        }
-        throw new Error("LLM cleaning returned non-string or empty response.");
-    } catch (error: any) {
-        // --- ADDED LOGGING for the failure and fallback ---
-        console.error(`${functionName}: ERROR during Gemini LLM call: ${error.message || error}.`);
-        const { polyglotHelpers } = currentDeps;
-        if (polyglotHelpers?.formatTranscriptForLLM) {
-            console.log(`${functionName}: FALLBACK to basic 'polyglotHelpers.formatTranscriptForLLM'.`);
-            return polyglotHelpers.formatTranscriptForLLM(rawTranscript, connector.profileName || "Partner", userName);
-        }
-        console.error(`${functionName}: CRITICAL FALLBACK. Returning preliminary formatted transcript as last resort.`);
         return preliminaryFormattedTranscript.trim();
     }
-}
-
         function base64ToBlob(base64: string, mimeType: string = 'application/octet-stream'): Blob {
             try {
                 const byteCharacters = atob(base64);
@@ -314,84 +328,76 @@ async function cleanAndReconstructTranscriptLLM_internal(
                 }
             },
 
-            generateTextFromImageAndText: async (base64Data, mimeType, connector, history, prompt, preferredProvider = safeProviders.TOGETHER ) => {
-                console.log(`AI Facade (TS): generateTextFromImageAndText. Preferred: ${preferredProvider}. Attempting Together AI.`); // Modified log
+            generateTextFromImageAndText: async (base64Data, mimeType, connector, history, prompt) => {
+                const functionName = "[AI_Facade][ImageToText]";
+                console.groupCollapsed(`%c🖼️ [Image Carousel] S+ Request Started`, 'color: #4caf50; font-weight: bold; font-size: 14px;');
+
                 const currentDeps = getDeps();
                 const mmService = currentDeps.geminiMultimodalService;
-                // Cast to include the specific OpenAI method
-                const openAiVisionService = currentDeps.aiTextGenerationService as (GeminiTextGenerationService & { generateTextFromImageAndTextOpenAI?: Function });
+                const openAiVisionService = currentDeps.aiTextGenerationService;
 
+                const imageProviderSequence = [
+                    'together',
+                    'gemini', // Try Gemini up to 3 times as a backup
+                    'gemini',
+                    'gemini'
+                ];
+                console.log('%cImage Provider Plan:', 'color: #4caf50; font-weight: bold;', imageProviderSequence.join(' ➔ '));
 
-                console.log("AI Facade (TS) - TOGETHER CHECK: Inspecting currentDeps.aiTextGenerationService:");
-                console.log(currentDeps.aiTextGenerationService); 
-                if (currentDeps.aiTextGenerationService) {
-                    console.log(`AI Facade (TS) - TOGETHER CHECK: Method 'generateTextFromImageAndTextOpenAI' on currentDeps.aiTextGenerationService is: ${typeof (currentDeps.aiTextGenerationService as any).generateTextFromImageAndTextOpenAI}`);
-                }
-                // >>> THIS IS THE CRITICAL DECISION POINT <<<
-                try {
-                    // Check if the Together AI path is viable
-                    if (preferredProvider === safeProviders.TOGETHER && 
-                        openAiVisionService?.generateTextFromImageAndTextOpenAI && // Is the method present on the service?
-                        window.TOGETHER_API_KEY && !window.TOGETHER_API_KEY.includes("YOUR_") && // Is the API key configured?
-                        currentDeps._aiApiConstants?.TOGETHER_MODELS?.VISION // Is the vision model ID configured?
-                        ) {
-                        console.log(`AI Facade (TS): Conditions met for Together AI vision. Calling openAiVisionService.generateTextFromImageAndTextOpenAI.`);
-                        return await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, safeProviders.TOGETHER);
-                    }
-                    
-                    // If conditions for Together AI not met, log why and prepare for fallback
-                    console.warn(`AI Facade (TS): Conditions for Together AI vision not met. 
-                        Preferred: ${preferredProvider === safeProviders.TOGETHER}, 
-                        Method Exists: ${!!openAiVisionService?.generateTextFromImageAndTextOpenAI},
-                        API Key OK: ${!!(window.TOGETHER_API_KEY && !window.TOGETHER_API_KEY.includes("YOUR_"))},
-                        Vision Model Configured: ${!!currentDeps._aiApiConstants?.TOGETHER_MODELS?.VISION}. 
-                        Falling back.`);
-
-                    // Fallback to Gemini
-                    if (mmService?.generateTextFromImageAndText) {
-                       console.log(`AI Facade (TS): Falling back to Gemini multimodal service for image to text.`);
-                       return await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt);
-                    }
-                    
-                    // If neither path is available
-                    throw new Error("No suitable image processing service available (Neither Together AI conditions met nor Gemini fallback).");
-
-                } catch (error: any) {
-                    console.error(`AI Facade (TS): Image processing failed. Provider attempted: ${preferredProvider}. Error: ${error.message}`, error);
-                    // If the error came from a specific provider call, it might have already fallen back,
-                    // or we might attempt a final fallback here if the initial preferred provider failed.
-                    if (preferredProvider === safeProviders.TOGETHER && mmService?.generateTextFromImageAndText) {
-                        console.warn(`AI Facade (TS): Together AI vision failed. Attempting final fallback to Gemini multimodal.`);
-                        try {
-                            return await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt);
-                        } catch (geminiError: any) {
-                            console.error(`AI Facade (TS): Gemini multimodal fallback also failed after Together AI error. Gemini Error: ${geminiError.message}`);
-                            return getRandomHumanError(); // Final error
+                for (const provider of imageProviderSequence) {
+                    console.log(`%c--> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+                    try {
+                        let response: string | null | object = null;
+                        
+                        if (provider === 'together' && openAiVisionService?.generateTextFromImageAndTextOpenAI) {
+                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together');
+                        } else if (provider === 'gemini' && mmService?.generateTextFromImageAndText) {
+                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt);
                         }
+
+                        if (typeof response === 'string' && response.trim() !== "" && !response.includes("An unexpected AI error")) {
+                            console.log(`%c<-- SUCCESS from [${provider}]. Stopping carousel.`, 'color: #28a745; font-weight: bold;');
+                            console.groupEnd();
+                            return response;
+                        }
+                        throw new Error(`Provider [${provider}] returned null or an error message.`);
+
+                    } catch (error: any)
+                    {
+                        console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+                        console.log(`Error Details:`, error.message);
                     }
-                    return getRandomHumanError(); // General error if no fallback path taken
                 }
+                
+                console.error(`${functionName}: FINAL ERROR. All image providers failed.`);
+                console.groupEnd();
+                return getRandomHumanError();
             },
             
           // src/js/services/ai_service.ts
 
 // <<< START OF REPLACEMENT FUNCTION >>>
+// in src/js/services/ai_service.
 generateSessionRecap: async (
     fullCallTranscript: TranscriptTurn[],
-    connector: Connector,
-    preferredProvider = safeProviders.GROQ
+    connector: Connector
 ): Promise<RecapData> => {
     const functionName = "[AI_Facade][generateSessionRecap]";
-    console.log(`${functionName}: START. Preferred: [${preferredProvider}], Transcript turns: ${fullCallTranscript?.length}`);
-    const currentDeps = getDeps();
+    console.groupCollapsed(`%c📝 [Smart Recap Router] Request Started`, 'color: #007bff; font-weight: bold; font-size: 14px;');
 
-    // 1. --- LOGGING: Validate dependencies and input ---
+    const currentDeps = getDeps();
+    const minTurns = localMinTurnsForRecap;
+
+    // --- 1. Initial validation ---
     if (!currentDeps.aiRecapService?.generateSessionRecap || !currentDeps.geminiRecapService?.generateSessionRecap || !connector?.id) {
-        console.error(`${functionName}: ABORT. Critical sub-service (aiRecapService, geminiRecapService) or connector data is missing.`);
+        console.error(`${functionName}: ABORT. Critical sub-service missing.`);
+        console.groupEnd();
         return defaultRecapStructure("Internal Service Configuration Error");
     }
-    if (!fullCallTranscript || fullCallTranscript.length < localMinTurnsForRecap) {
+    if (!fullCallTranscript || fullCallTranscript.length < minTurns) {
         console.warn(`${functionName}: Transcript too short. Returning minimal structure.`);
+        console.groupEnd();
+        // This is the correct place to return your minimal structure for short calls
         return {
             conversationSummary: "The conversation was too short to generate a detailed summary.",
             keyTopicsDiscussed: ["N/A - Short conversation"],
@@ -404,122 +410,140 @@ generateSessionRecap: async (
         };
     }
 
-     // 2. --- LOGGING: Clean the transcript ONCE ---
+    // --- 2. Clean the transcript once ---
     let cleanedTranscriptText: string;
     try {
-        console.log(`${functionName}: STEP 1 - Cleaning transcript using LLM.`);
+        console.log(`${functionName}: STEP 1 - Cleaning transcript...`);
         cleanedTranscriptText = await cleanAndReconstructTranscriptLLM_internal(fullCallTranscript, connector, "User");
-        console.log(`${functionName}: STEP 1 - Transcript cleaning SUCCEEDED.`);
+        console.log(`%cCleaned Transcript Preview:`, 'color: #6c757d;', `"${cleanedTranscriptText.substring(0, 150)}..."`);
     } catch (cleanError: any) {
-        console.warn(`${functionName}: STEP 1 - LLM Transcript cleaning FAILED: ${cleanError.message}. Using basic helper as fallback.`);
+        console.warn(`${functionName}: LLM cleaning failed. Using basic formatter.`);
         cleanedTranscriptText = currentDeps.polyglotHelpers?.formatTranscriptForLLM(fullCallTranscript, connector.profileName || "Partner", "User") || "Transcript formatting failed.";
     }
 
-    // 3. --- LOGGING: Define provider sequence and iterate with fallbacks ---
-    const providerSequence = [...new Set([preferredProvider, safeProviders.GROQ, safeProviders.TOGETHER, safeProviders.GEMINI])];
-    console.log(`${functionName}: STEP 2 - Starting recap generation with provider sequence:`, providerSequence);
-    
-    let recapResult: RecapData | null = null;
-    let providerUsed: string | null = null;
+    // --- 3. The CORRECT "Gemini x3 First" Provider Sequence ---
+    let providerSequence: string[];
+                const turnCount = fullCallTranscript.length;
 
+                if (turnCount <= 10) { // If the conversation is short (<= 10 turns)
+                    console.log(`%cROUTING: Short conversation (${turnCount} turns). Prioritizing Groq for speed.`, 'color: #00D09B; font-weight: bold;');
+                    // Try Groq first, but have a full 3-key Gemini fleet as backup.
+                    providerSequence = [safeProviders.GROQ, 'gemini', 'gemini', 'gemini', 'gemini'];
+                } else { // For longer, more detailed conversations
+                    console.log(`%cROUTING: Long conversation (${turnCount} turns). Prioritizing Gemini for quality.`, 'color: #4285F4; font-weight: bold;');
+                    // Try the full Gemini fleet first, then failover to the other big models.
+                    providerSequence = ['gemini', 'gemini', 'gemini', safeProviders.TOGETHER, safeProviders.GROQ];
+                }
+                
+                console.log('%cFull Recap Provider Plan:', 'color: #007bff; font-weight: bold;', providerSequence.join(' ➔ '));
+    
+    // --- 4. Run the Carousel ---
     for (const provider of providerSequence) {
-        console.log(`${functionName}: --> ATTEMPTING recap with provider: [${provider}]`);
+        console.log(`%c--> ATTEMPTING recap with [${provider}]`, 'color: #17a2b8; font-weight: bold;');
         try {
-            if (provider === safeProviders.GEMINI) {
-                recapResult = await currentDeps.geminiRecapService.generateSessionRecap(cleanedTranscriptText, connector);
-            } else { // Groq or Together
+            let recapResult: RecapData | null = null;
+
+            if (provider === 'gemini') {
+                // This service now returns { recapData, nickname }
+                const geminiResult = await currentDeps.geminiRecapService.generateSessionRecap(cleanedTranscriptText, connector);
+                recapResult = geminiResult.recapData; // Assign the data to recapResult
+                
+                // Log the success with the nickname
+                console.log(`%c...recap analysis by: ${geminiResult.nickname}!`, 'color: #34A853;');
+            }
+            
+            
+            else {
                 recapResult = await currentDeps.aiRecapService.generateSessionRecap(cleanedTranscriptText, connector, provider);
             }
 
-            if (recapResult && recapResult.conversationSummary && !recapResult.conversationSummary.includes("failed")) {
-                providerUsed = provider;
-                console.log(`${functionName}: <-- SUCCESS! Recap generated with [${providerUsed}].`);
-                break; // Success, exit the loop
+            if (recapResult && recapResult.conversationSummary) {
+                console.log(`%c<-- SUCCESS! Recap generated with [${provider}].`, 'color: #28a745; font-weight: bold;');
+                if (provider === 'gemini') {
+                    const lastUsedKeyIndex = ((window as any).currentGeminiKeyIndex === 0) ? (window as any).GEMINI_API_KEYS.length - 1 : (window as any).currentGeminiKeyIndex - 1;
+                    const successNickname = ((window as any).GEMINI_KEY_NICKNAMES || [])[lastUsedKeyIndex] || 'The Rookie';
+                    console.log(`%c...recap analysis by: ${successNickname}!`, 'color: #34A853;');
+                }
+           
+                console.groupEnd();
+                // This is the correct place to return the final, complete object
+                return {
+                    ...defaultRecapStructure(provider),
+                    ...recapResult,
+                    sessionId: `recap-${connector.id}-${Date.now()}`,
+                    connectorId: connector.id,
+                    connectorName: connector.profileName,
+                    date: new Date().toLocaleDateString()
+                };
             }
-            console.warn(`${functionName}: <-- FAILED. Provider [${provider}] returned a failed or malformed recap. Trying next provider.`);
-            recapResult = null; // Reset for next attempt
+            throw new Error(`Provider [${provider}] returned a null or invalid recap.`);
+
         } catch (error: any) {
-            console.error(`${functionName}: <-- ERROR. Provider [${provider}] threw an exception: ${error.message}. Trying next provider.`);
-            recapResult = null; // Ensure reset on error
+            console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+            console.log(`Error Details:`, error.message);
         }
     }
 
-   // 4. --- LOGGING: Finalize and return the result ---
-   if (recapResult && providerUsed) {
-    console.log(`${functionName}: FINAL RESULT - Successfully returning recap from [${providerUsed}].`);
-    return {
-        ...defaultRecapStructure(providerUsed),
-        ...recapResult,
-        sessionId: `recap-${connector.id}-${Date.now()}`,
-        connectorId: connector.id,
-        connectorName: connector.profileName,
-    };
-} else {
-    console.error(`${functionName}: FINAL RESULT - All recap provider attempts failed. Returning default error structure.`);
+    // --- 5. This part is only reached if ALL providers fail ---
+    console.error(`${functionName}: FINAL ERROR. All recap provider attempts failed.`);
+    console.groupEnd();
     return defaultRecapStructure("All Recap Services");
-}
 },
 // <<< END OF REPLACEMENT FUNCTION >>>
 
 
         // REPLACE WITH THIS BLOCK
-transcribeAudioToText: async (base64Audio, mimeType, langHint, preferredProvider = safeProviders.GROQ) => {
-    const functionName = "[AI_Facade][transcribeAudioToText]";
-    console.log(`${functionName}: START. Preferred provider: [${preferredProvider}]. Lang hint: ${langHint || 'none'}.`);
 
-    const currentDeps = getDeps();
-    const mmService = currentDeps.geminiMultimodalService;
-    const groqCaller = currentDeps._groqSttApiCaller;
-    const localConstants = currentDeps._aiApiConstants || constants;
+        transcribeAudioToText: async (base64Audio, mimeType, langHint) => {
+            const functionName = "[AI_Facade][transcribeAudioToText]";
+            console.groupCollapsed(`%c🎙️ [STT Carousel] S+ Request Started`, 'color: #fd7e14; font-weight: bold; font-size: 14px;');
 
-    if (!groqCaller && !mmService?.transcribeAudioToText) {
-        console.error(`${functionName}: ABORT. No STT services (Groq or Gemini) are available.`);
-        return getRandomHumanError();
-    }
-    
-    // --- MODIFIED LOGIC & LOGGING for clarity ---
-    try {
-        // 1. Attempt Preferred Provider: Groq
-        if (preferredProvider === safeProviders.GROQ && groqCaller) {
-            console.log(`${functionName}: Checking conditions for preferred provider [${safeProviders.GROQ}]...`);
-            const groqApiKey = window.GROQ_API_KEY;
-            const groqSttModel = localConstants.GROQ_MODELS?.STT;
-            const isKeyConfigured = groqApiKey && !groqApiKey.includes("YOUR_");
-            const isModelConfigured = !!groqSttModel;
+            const currentDeps = getDeps();
+            const mmService = currentDeps.geminiMultimodalService;
+            const groqCaller = currentDeps._groqSttApiCaller;
 
-            if (isKeyConfigured && isModelConfigured) {
-                 // This inner try-catch handles the specific failure of the preferred provider
+            const sttProviderSequence = [
+                'groq',
+                'gemini', // Try Gemini up to 3 times as a backup
+                'gemini',
+                'gemini'
+            ];
+            console.log('%cSTT Provider Plan:', 'color: #fd7e14; font-weight: bold;', sttProviderSequence.join(' ➔ '));
+            
+            for (const provider of sttProviderSequence) {
+                console.log(`%c--> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
                 try {
-                    console.log(`${functionName}: Conditions MET. ATTEMPTING call to [Groq STT] with model [${groqSttModel}].`);
-                    const audioBlob = base64ToBlob(base64Audio, mimeType);
-                    if (audioBlob.size === 0) {
-                        console.warn(`${functionName}: Groq call skipped; base64-to-blob conversion resulted in an empty blob.`);
-                    } else {
-                         return await groqCaller(audioBlob, groqSttModel, groqApiKey, langHint);
+                    let transcript: string | null = null;
+
+                    if (provider === 'groq' && groqCaller) {
+                        const audioBlob = base64ToBlob(base64Audio, mimeType);
+                        if (audioBlob.size > 0) {
+                            // For Groq, the key is handled by the worker, so we pass a dummy.
+                            transcript = await groqCaller(audioBlob, "whisper-large-v3", "dummy-key-for-worker", langHint);
+                        } else {
+                            throw new Error("Audio blob for Groq was empty.");
+                        }
+                    } else if (provider === 'gemini' && mmService?.transcribeAudioToText) {
+                        transcript = await mmService.transcribeAudioToText(base64Audio, mimeType, langHint);
                     }
-                } catch (groqError: any) {
-                    console.error(`${functionName}: ERROR during [Groq STT] call: ${groqError.message}. Proceeding to fallback.`);
+
+                    if (typeof transcript === 'string') { // Also accept empty string as a valid (but silent) transcript
+                        console.log(`%c<-- SUCCESS from [${provider}]. Stopping carousel.`, 'color: #28a745; font-weight: bold;');
+                        console.groupEnd();
+                        return transcript;
+                    }
+                    throw new Error(`Provider [${provider}] returned null.`);
+
+                } catch (error: any) {
+                    console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+                    console.log(`Error Details:`, error.message);
                 }
-            } else {
-                console.warn(`${functionName}: Conditions NOT MET for [${safeProviders.GROQ}]. Key: ${isKeyConfigured}, Model: ${isModelConfigured}.`);
             }
-        }
 
-        // 2. Fallback Provider: Gemini
-        console.log(`${functionName}: FALLBACK. Checking conditions for [${safeProviders.GEMINI}]...`);
-        if (mmService?.transcribeAudioToText) {
-            console.log(`${functionName}: Conditions MET. ATTEMPTING call to [Gemini STT].`);
-            return await mmService.transcribeAudioToText(base64Audio, mimeType, langHint);
-        }
-
-        // 3. If no providers were successful or available
-        throw new Error("No suitable STT service was available or all attempts failed.");
-
-    } catch (error: any) {
-        console.error(`${functionName}: FINAL ERROR. All STT attempts failed. Error: ${error.message}`);
-        return getRandomHumanError();
-    }
-},
+            console.error(`${functionName}: FINAL ERROR. All STT providers failed.`);
+            console.groupEnd();
+            return getRandomHumanError();
+        },
 
             getTTSAudio: async (textToSpeak, languageCode, voiceName, stylePrompt = null) => {
                 const currentDeps = getDeps();

@@ -36,6 +36,43 @@ export interface GeminiLiveApiServiceModule {
 
 window.geminiLiveApiService = {} as GeminiLiveApiServiceModule;
 
+
+// ADD THIS HELPER FUNCTION
+function getLiveCallApiKey(): string | null {
+    const potentialKeys: (string | undefined)[] = [
+        import.meta.env.VITE_GEMINI_API_KEY,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_2,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_3,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_4,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_5,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_6,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_7,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_8,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_9,
+        import.meta.env.VITE_GEMINI_API_KEY_ALT_10,
+    ];
+    
+    const validKeys = potentialKeys.filter(key => 
+        key && typeof key === 'string' && !key.includes("YOUR_") && key.length > 20
+    ) as string[];
+
+    if (validKeys.length === 0) {
+        console.error("Gemini Live API Service: No valid Gemini keys found for live call.");
+        return null;
+    }
+
+    const randomIndex = Math.floor(Math.random() * validKeys.length);
+    const randomKey = validKeys[randomIndex];
+    
+    console.log(`%c📞 Live Call: Randomly selecting key #${randomIndex + 1} for connection.`, 'color: #ff8c00; font-weight: bold;');
+    
+    return randomKey;
+}
+
+
+
+
 function initializeActualGeminiLiveApiService(): void {
     console.log("gemini_live_api_service.ts: initializeActualGeminiLiveApiService called (Manual WebSocket Approach).");
 
@@ -75,12 +112,12 @@ function initializeActualGeminiLiveApiService(): void {
                 await closeConnection("New connection requested"); 
             }
 
-            const apiKey = window.GEMINI_API_KEY;
-            if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-                const errorMsg = `GeminiLiveService (${funcName}): API Key from window.GEMINI_API_KEY is invalid.`;
-                console.error(errorMsg);
-                currentFacadeCallbacks?.onError?.(new Error(errorMsg));
-                return false;
+            const apiKey = getLiveCallApiKey();
+            if (!apiKey) {
+                console.error("Live Call Connect: Failed to get a valid API key. Aborting connection.");
+                // We can't call callbacks.onError yet, so we throw an error that the
+                // live_call_handler will catch and handle appropriately.
+                throw new Error("No valid API key available for live call.");
             }
 
             const fullModelName = modelName.startsWith("models/") ? modelName : `models/${modelName}`;

@@ -96,8 +96,8 @@ function initializeActualGeminiMultimodalService(): void {
             
             try {
                 // console.log(`GeminiMultimodalService (TS): Calling Gemini for STT with model ${modelToUse}.`);
-                const transcription = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
-                
+                const { response: transcription, nickname } = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+                console.log(`%c...transcription by: ${nickname}!`, 'color: #34A853;');
                 if (typeof transcription === 'string') {
                     // console.log("GeminiMultimodalService (TS): Transcription successful. Length:", transcription.length);
                     return transcription;
@@ -151,7 +151,8 @@ function initializeActualGeminiMultimodalService(): void {
             const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT || "gemini-1.5-flash-latest";
             try {
                 // console.log(`GeminiMultimodalService (TS): Calling Gemini for call modal audio-to-text with model ${modelToUse}.`);
-                const response = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+                const { response, nickname } = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+                console.log(`%c...image analysis by: ${nickname}!`, 'color: #34A853;');
                 if (typeof response !== 'string') {
                      throw new Error("Response from audio processing (call modal) was not text.");
                 }
@@ -203,7 +204,8 @@ function initializeActualGeminiMultimodalService(): void {
             // ... rest of the try/catch
 
             try {
-                const response = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+                const { response, nickname } = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+                console.log(`%c...call modal response by: ${nickname}!`, 'color: #34A853;');
                 
                 if (typeof response === 'string' && response.trim() !== "") {
                     return response;

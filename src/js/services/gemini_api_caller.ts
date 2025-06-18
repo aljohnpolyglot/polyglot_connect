@@ -11,6 +11,13 @@ console.log("gemini_api_caller.ts: Script execution STARTED (TS Version).");
     // The critical check is that it exists when _ensureAiConstantsCache is first called.
     
     const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
+
+    const GEMINI_KEY_NICKNAMES = [
+        'JOKIC', 'LUKA', 'SGA', 'EMBIID', 'TATUM',
+        'ANT', 'HALIBURTON', 'BOOKER', 'WEMBY', 'BRUNSON', 'SABONIS'
+    ];
+
+
     let CACHED_STANDARD_SAFETY_SETTINGS: any[] | null = null; 
     
     const GEMINI_API_KEYS: string[] = [];
@@ -32,52 +39,51 @@ console.log("gemini_api_caller.ts: Script execution STARTED (TS Version).");
     }
 
     function _populateGeminiApiKeys(): void {
-        const key1 = window.GEMINI_API_KEY;
-        const key2 = window.GEMINI_API_KEY_ALT;
-        const key3 = window.GEMINI_API_KEY_ALT_2;
-
-        // Prevent unnecessary repopulation if keys haven't changed on window
-        // This is a basic check; more robust would involve comparing array contents if order matters.
-        const currentWindowKeys = [key1, key2, key3].filter(k => k && typeof k === 'string' && k.trim() !== '' && !k.includes("YOUR_") && k.length > 20);
-        if (GEMINI_API_KEYS.length === currentWindowKeys.length && GEMINI_API_KEYS.every((val, index) => val === currentWindowKeys[index])) {
-            if (GEMINI_API_KEYS.length > 0 && CACHED_STANDARD_SAFETY_SETTINGS) { // Also ensure constants are cached if keys are already good
-                 // console.debug("Gemini API Caller (TS): Keys and safety cache appear up-to-date.");
-                return;
-            }
-        }
-        
-        GEMINI_API_KEYS.length = 0; 
-        const potentialKeys: (string | undefined)[] = [key1, key2, key3];
+        GEMINI_API_KEYS.length = 0;
+        const potentialKeys: (string | undefined)[] = [
+            import.meta.env.VITE_GEMINI_API_KEY,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_2,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_3,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_4,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_5,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_6,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_7,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_8,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_9,
+            import.meta.env.VITE_GEMINI_API_KEY_ALT_10,
+        ];
         
         potentialKeys.forEach((key) => {
             if (key && typeof key === 'string' && key.trim() !== '' && !key.includes("YOUR_") && key.length > 20) {
                 GEMINI_API_KEYS.push(key);
             }
         });
-
+    
         if (GEMINI_API_KEYS.length > 0) {
             keyFailureCounts = new Array(GEMINI_API_KEYS.length).fill(0);
             currentGeminiKeyIndex = 0;
-            // console.log(`Gemini API Caller (TS): API Keys populated/re-checked. Found ${GEMINI_API_KEYS.length} valid key(s).`);
+            console.log(`Gemini API Caller (TS): API Keys populated. Found ${GEMINI_API_KEYS.length} valid key(s).`);
         }
-        _ensureAiConstantsCache(); // Attempt to cache constants after populating keys
+        _ensureAiConstantsCache();
     }
-
-    function getNextGeminiApiKey(): { key: string; index: number } | null {
-        _populateGeminiApiKeys(); // Always try to refresh from window, as app.ts might set them late
-
+    function getNextGeminiApiKey(): { key: string; index: number; nickname: string } | null {
         if (GEMINI_API_KEYS.length === 0) {
-            // This log is critical if no keys are found when an API call is attempted
-            console.error("Gemini API Caller (TS - getNextGeminiApiKey): No valid Gemini API Keys are configured. Cannot select a key.");
-            return null;
+            _populateGeminiApiKeys();
+            if (GEMINI_API_KEYS.length === 0) {
+                console.error("Gemini API Caller (TS): No valid Gemini API Keys are configured.");
+                return null;
+            }
         }
         
-        const keyToUse = GEMINI_API_KEYS[currentGeminiKeyIndex];
-        const keyIndexThatWasUsed = currentGeminiKeyIndex;
-        currentGeminiKeyIndex = (currentGeminiKeyIndex + 1) % GEMINI_API_KEYS.length;
-        return { key: keyToUse, index: keyIndexThatWasUsed };
+        const randomIndex = Math.floor(Math.random() * GEMINI_API_KEYS.length);
+        const randomKey = GEMINI_API_KEYS[randomIndex];
+        const nickname = GEMINI_KEY_NICKNAMES[randomIndex] || `Rookie #${randomIndex + 1}`;
+        
+        console.log(`%cDrafting Gemini Key: ${nickname}`, 'color: #4285F4; font-weight: bold;');
+        
+        return { key: randomKey, index: randomIndex, nickname: nickname };
     }
-
     function reportKeyFailure(keyIndex: number): void {
         if (keyIndex >= 0 && keyIndex < keyFailureCounts.length && keyIndex < GEMINI_API_KEYS.length) {
             keyFailureCounts[keyIndex]++;
@@ -122,89 +128,58 @@ async function callWithRetry<T>(
         payload: any, 
         modelIdentifier: string, 
         requestType: string = "generateContent"
-    ): Promise<any> {
-        if (!_ensureAiConstantsCache()) {
-            // If constants (especially safety settings) couldn't be cached, it's risky to proceed for generateContent
-            if (requestType.startsWith("generateContent")) {
-                 console.error("_geminiInternalApiCaller (TS): AI Constants (specifically safety settings) not cached. Aborting generateContent call for safety.");
-                 throw new Error("Critical AI constants not available for Gemini call.");
-            }
-            // For synthesizeSpeech, safety settings might not be applied by this client, but the call might still proceed if that's intended.
-        }
-
+    ): Promise<{ response: any; nickname: string }> { // <<< NOW RETURNS AN OBJECT
         const apiKeyData = getNextGeminiApiKey();
         if (!apiKeyData) {
-            const errorMsg = "_geminiInternalApiCaller (TS - Rotating): No valid Gemini API Keys. Cannot call API.";
-            console.error(errorMsg, { payload, modelIdentifier, requestType });
-            throw new Error(errorMsg);
+            throw new Error("_geminiInternalApiCaller: No valid Gemini API Keys. Cannot call API.");
         }
-        const { key: apiKeyToUse, index: keyIndexUsed } = apiKeyData;
+        const { key: apiKeyToUse, nickname } = apiKeyData; // Get the nickname here
 
-        let endpointAction = (requestType === "synthesizeSpeech") ? ":synthesizeSpeech" : ":generateContent";
+        const endpointAction = (requestType.startsWith("generateContent")) ? ":generateContent" : `:${requestType}`;
         const fullApiUrl = `${API_URL_BASE}${modelIdentifier}${endpointAction}?key=${apiKeyToUse}`;
         
         let finalPayload = { ...payload };
-        if ((requestType === "generateContent" || requestType === "generateContentAudio") && CACHED_STANDARD_SAFETY_SETTINGS) {
-            if (!finalPayload.safetySettings) {
-                 finalPayload.safetySettings = CACHED_STANDARD_SAFETY_SETTINGS;
-            }
-        }
-        if ((requestType === "generateContent" || requestType === "generateContentAudio") && !finalPayload.generationConfig) {
-            finalPayload.generationConfig = { temperature: 0.7 }; 
+        if ((requestType.startsWith("generateContent")) && CACHED_STANDARD_SAFETY_SETTINGS) {
+            finalPayload.safetySettings = CACHED_STANDARD_SAFETY_SETTINGS;
         }
 
         try {
-            const apiFetchFn = async () => {
-                const response = await fetch(fullApiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(finalPayload),
-                });
-                const responseData = await response.json();
-        
-                if (!response.ok) {
-                    reportKeyFailure(keyIndexUsed);
-                    const errorDetails = responseData.error || { message: `API request failed with status ${response.status}` };
-                    const errorMessage = errorDetails.message || `Gemini API Error: ${response.status}`;
-                    console.error(`Gemini API Error (TS - Model: ${modelIdentifier}, Status: ${response.status}, Key ...${apiKeyToUse.slice(-4)}, Index: ${keyIndexUsed}):`, errorMessage, errorDetails);
-                    
-                    const err = new Error(errorMessage) as any;
-                    err.status = response.status;
-                    err.providerDetails = errorDetails;
-                    throw err;
-                }
-                return responseData; // Return the parsed JSON data on success
-            };
-        
-            const responseData = await callWithRetry(apiFetchFn);
-        
-            // Process the successful response data
-            if (keyIndexUsed >= 0 && keyIndexUsed < keyFailureCounts.length) {
-                keyFailureCounts[keyIndexUsed] = 0;
+            const response = await fetch(fullApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(finalPayload),
+            });
+            const responseData = await response.json();
+    
+            if (!response.ok) {
+                // If the request fails, we throw an error for the carousel to catch.
+                const errorDetails = responseData.error || { message: `API request failed with status ${response.status}` };
+                const errorMessage = errorDetails.message || `Gemini API Error: ${response.status}`;
+                const err = new Error(errorMessage) as any;
+                err.status = response.status;
+                throw err;
             }
-        
+            
+            // --- THIS IS THE NEW SUCCESS LOGGING BLOCK ---
+            console.log(`%c...and the score from: ${nickname}!`, 'color: #34A853; font-weight: bold;');
+            // ---------------------------------------------
+
+            // Now, we process and return the data as before
             if (requestType === "generateContent") {
                 const candidate = responseData.candidates?.[0];
+                let textPart = "";
                 if (!candidate) {
-                    if (responseData.promptFeedback?.blockReason) {
-                        return `(My response was blocked: ${responseData.promptFeedback.blockReason})`; 
-                    }
-                    throw new Error(`API call to ${modelIdentifier} returned no candidates.`);
+                    textPart = `(My response was blocked: ${responseData.promptFeedback?.blockReason || 'Unknown Reason'})`;
+                } else {
+                    textPart = candidate.content?.parts?.find((part: any) => part.text !== undefined)?.text || "";
                 }
-                const textPart = candidate.content?.parts?.find((part: any) => part.text !== undefined)?.text;
-                if (textPart !== undefined) return textPart;
-                if (candidate.finishReason === "STOP" && textPart === undefined) return "";
-                if (candidate.finishReason && candidate.finishReason !== "STOP") {
-                    return `(My response was altered. Reason: ${candidate.finishReason})`;
-                }
-                throw new Error(`API call to ${modelIdentifier} candidate with no text. Reason: ${candidate.finishReason || 'Unknown'}.`);
+                return { response: textPart, nickname: nickname };
             } else {
-                 // Handle other request types like TTS if needed, otherwise this is sufficient for chat
-                 throw new Error(`Unknown request type for Gemini response processing: ${requestType}`);
+                 return { response: responseData, nickname: nickname };
             }
-        
+    
         } catch (error: any) {
-            console.error(`Catch Block in _geminiInternalApiCaller (TS - Model: ${modelIdentifier}, Key ...${apiKeyToUse?.slice(-4) || 'N/A'}):`, error.message);
+            console.error(`Catch Block in _geminiInternalApiCaller (Player: ${nickname})`, error.message);
             throw error; 
         }
     };

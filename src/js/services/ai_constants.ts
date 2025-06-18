@@ -36,9 +36,9 @@ export const LIVE_API_SETUP_TIMEOUT_MS = 15000;
             VISION: "openai/gpt-4o"
         },
         TOGETHER_MODELS: {
-            TEXT_CHAT: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", // <<< CORRECTED (Capital 'M')
+            TEXT_CHAT: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
             RECAP: "meta-llama/Llama-3.1-70B-Instruct-Turbo",  
-            VISION: "meta-llama/Llama-4-Scout-17B-16E-Instruct" // <<< NEW RECOMMENDED MODEL
+            VISION: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
         },
         STANDARD_SAFETY_SETTINGS_GEMINI: [ // Renamed from STANDARD_SAFETY_SETTINGS for clarity if it was Gemini specific
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },

@@ -1,6 +1,9 @@
 // src/js/services/openai_compatible_api_caller.ts
 import type { AIApiConstants } from '../types/global.d.ts';
-
+const GROQ_NICKNAMES = [
+    'CURRY', 'KOBE', 'JORDAN', 'LEBRON', 'AI', 
+    'SHAQ', 'LUKA', 'DUNCAN', 'GIANNIS', 'WEMBY'
+];
 console.log("openai_compatible_api_caller.ts: Script execution STARTED (TS Version).");
 
 // Define expected message structure for OpenAI-compatible APIs
@@ -149,7 +152,15 @@ if (!Array.isArray(messages) || messages.length === 0) {
     // --- 4. Execute API Call with Retry Logic ---
     try {
         const apiFetchFn = async () => {
-            console.log(`${functionName}: Preparing to fetch from URL: ${fetchUrl}`); // <<< ADD THIS LINE
+            console.log(`${functionName}: Preparing to fetch from URL: ${fetchUrl}`);
+
+            // --- THIS IS THE "FAKE IT" LOGIC ---
+            let groqNickname: string | null = null;
+            if (provider === 'groq') {
+                groqNickname = GROQ_NICKNAMES[Math.floor(Math.random() * GROQ_NICKNAMES.length)];
+                console.log(`%cGroq drafting player: ${groqNickname}...`, 'color: #00D09B; font-weight: bold;');
+            }
+            // --- END OF LOGIC ---
           
             const response = await fetch(fetchUrl, {
                 method: 'POST',
@@ -157,7 +168,16 @@ if (!Array.isArray(messages) || messages.length === 0) {
                 body: JSON.stringify(requestBody)
             });
 
-            if (!response.ok) {
+            // Now, we use our "faked" nickname for the success/fail logs
+            if (response.ok) {
+                if (groqNickname) {
+                    console.log(`%c...with the assist from Groq's: ${groqNickname}!`, 'color: #00D09B;');
+                }
+            } else {
+                if (groqNickname) {
+                    console.log(`%cGroq player ${groqNickname} was blocked!`, 'color: #dc3545;');
+                }
+
                 let errorResponseMessage = `Request to ${provider} API (${modelIdentifier}) failed: ${response.status} ${response.statusText}.`;
                 try {
                     const errorData = await response.json();

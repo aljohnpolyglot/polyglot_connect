@@ -6029,7 +6029,7 @@ keyLifeEvents: [
     id: "jhoven_jesus_tambay",
     profileName: "Jhoven",
     name: "Jhoven Jesus",
-    birthday: "2006-07-23",
+    birthday: "2007-07-23",
     city: "Quezon City",
     country: "Philippines",
     language: "Tagalog",

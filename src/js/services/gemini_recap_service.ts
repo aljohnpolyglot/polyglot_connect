@@ -47,18 +47,22 @@ function initializeActualGeminiRecapService(): void {
             return null;
         }
         if (!deps.aiService || typeof deps.aiService.cleanAndReconstructTranscriptLLM !== 'function') {
-            console.warn("GeminiRecapService: window.aiService.cleanAndReconstructTranscriptLLM not available. LLM transcript cleaning will be skipped for Gemini recaps; will use basic formatting.");
-            // Not returning null here, as the service can still function with basic formatting
+            console.warn("GeminiRecapService: window.aiService.cleanAndReconstructTranscriptLLM not available. LLM transcript cleaning will be skipped; will use basic formatting.");
         }
+        
+        // This line will now always be hit, satisfying TypeScript
         return deps as { 
             geminiInternalApiCaller: (payload: any, modelIdentifier: string, requestType?: string) => Promise<any>;
             aiConstants: AIApiConstants; 
             polyglotHelpers: PolyglotHelpersOnWindow;
-            aiService?: { cleanAndReconstructTranscriptLLM: Function }; // Be more specific if AiServiceModule is imported
+            aiService?: { cleanAndReconstructTranscriptLLM: Function };
         };
     };
     
     const initialDeps = getSafeDeps();
+
+
+    
 
     if (!initialDeps || !initialDeps.geminiInternalApiCaller || !initialDeps.aiConstants || !initialDeps.polyglotHelpers) { // Check core non-optional deps
         console.error("Gemini Recap Service (TS): CRITICAL - Core API utilities or constants missing. Service non-functional.");
@@ -107,32 +111,30 @@ function initializeActualGeminiRecapService(): void {
         }
 
         async function generateSessionRecap(
-            cleanedTranscriptText: string, // <<< NEW SIGNATURE: Accepts pre-cleaned text
+            cleanedTranscriptText: string,
             connector: Connector
-        ): Promise<RecapData> {
+        ): Promise<{ recapData: RecapData, nickname: string }> {
             const functionName = "GeminiRecapService.generateSessionRecap";
             console.log(`${functionName}: START. Connector: ${connector?.id}. Cleaned transcript length: ${cleanedTranscriptText?.length}`);
 
             // Dependencies (geminiInternalApiCaller, aiConstants, polyglotHelpers) are from the outer IIFE scope (initialDeps)
 
-            if (!connector?.id || !connector.language || !connector.profileName) {
-                console.warn(`${functionName}: Connector info incomplete.`, connector);
-                return defaultErrorRecapStructure("Connector information incomplete for Gemini recap."); // Ensure defaultErrorRecapStructure is defined in this file's IIFE
+          // --- DEPENDENCY AND INPUT VALIDATION (Corrected) ---
+                 // --- DEPENDENCY AND INPUT VALIDATION (Corrected) ---
+            if (!geminiInternalApiCaller || !aiConstants) {
+                console.error(`[${functionName}] Critical dependencies are missing.`);
+                const errorRecap = defaultErrorRecapStructure("Internal service error.");
+                return { recapData: errorRecap, nickname: "System" };
             }
-
+            if (!connector?.id || !cleanedTranscriptText) {
+                console.error(`[${functionName}] Missing connector or transcript text.`);
+                const errorRecap = defaultErrorRecapStructure("Missing required data for recap."); // <<< CORRECTED
+                return { recapData: errorRecap, nickname: "System" };
+            }
             // The MIN_TRANSCRIPT_TURNS_FOR_RECAP check is now handled by the ai_service.ts facade.
             // This service assumes it receives a transcript deemed sufficient for processing.
             // However, a basic check on cleanedTranscriptText is still good.
-            if (!cleanedTranscriptText || cleanedTranscriptText.trim().length < 50) { // Arbitrary short length check for cleaned text
-                console.warn(`${functionName}: Cleaned transcript text too short or empty for ${connector.id}.`);
-                return {
-                    conversationSummary: "The conversation was too short or content insufficient for a detailed Gemini debrief.",
-                    keyTopicsDiscussed: ["N/A"], newVocabularyAndPhrases: [], goodUsageHighlights: [],
-                    areasForImprovement: [], suggestedPracticeActivities: [], overallEncouragement: "Please try a longer conversation.",
-                    sessionId: `gemini-short-${connector.id}-${Date.now()}`, date: new Date().toLocaleDateString(),
-                    duration: "N/A", startTimeISO: null, connectorId: connector.id, connectorName: connector.profileName
-                };
-            }
+         
 
             // Prompt construction using the pre-cleaned transcriptText
             const recapPromptInstructions = `
@@ -140,10 +142,10 @@ You are an expert, friendly, and encouraging language learning coach for a user 
 Analyze the following conversation transcript between the "User" and an "AI Partner" (named ${connector.profileName || connector.name}, who was speaking primarily in ${connector.language}).
 Your entire output MUST BE a single, valid JSON object. Do NOT include any text before or after the JSON object itself. Do not use markdown code blocks like \`\`\`json.
 The JSON object MUST strictly adhere to the following structure with ALL specified top-level keys:
-- "conversationSummary": (string) A brief 2-3 sentence overview of the main flow, purpose, and overall feel of the conversation.
+- "conversationSummary": (string) A brief 2-4 sentence overview of the main flow, purpose, and overall feel of the conversation.
 - "keyTopicsDiscussed": (array of strings) List 3-5 main subjects or themes talked about.
-- "newVocabularyAndPhrases": (array of objects) Identify 1-3 useful vocabulary items or short phrases in ${connector.language} that the User encountered or that were introduced. For each: { "term": "term/phrase in ${connector.language}", "translation": "concise English translation", "exampleSentence": "example from transcript or new one" }.
-- "goodUsageHighlights": (array of strings) Point out 1-2 specific instances where the User showed good use of ${connector.language}.
+- "newVocabularyAndPhrases": (array of objects) Identify 3-20 useful vocabulary items or short phrases in ${connector.language} that the User encountered or that were introduced. For each: { "term": "term/phrase in ${connector.language}", "translation": "concise English translation", "exampleSentence": "example from transcript or new one" }.
+- "goodUsageHighlights": (array of strings) Point out 1-20 specific instances where the User showed good use of ${connector.language}.
 - "areasForImprovement": (array of objects) Identify 1-2 specific areas for User's improvement. For each: { "areaType": "category (e.g., Grammar, Vocabulary, Fluency)", "userInputExample": "User's phrase, or null.", "coachSuggestion": "Corrected/better phrase in ${connector.language}.", "explanation": "Why it's better.", "exampleWithSuggestion": "Full corrected sentence." }.
 - "suggestedPracticeActivities": (array of strings) 1-2 brief, actionable suggestions.
 - "overallEncouragement": (string) A short, positive, encouraging closing remark (1-2 sentences).
@@ -167,7 +169,7 @@ If a section has no relevant items, provide an empty array [] or null for userIn
 
             try {
                 console.log(`${functionName}: Requesting recap from Gemini. Model: '${modelForRecap}'. Prompt based on cleaned transcript.`);
-                const rawResponse = await geminiInternalApiCaller(payload, modelForRecap, "generateContent"); // geminiInternalApiCaller from outer scope
+                const { response: rawResponse, nickname } = await geminiInternalApiCaller(payload, modelForRecap, "generateContent");// geminiInternalApiCaller from outer scope
 
                 if (!rawResponse) throw new Error("Gemini API returned an empty response for recap.");
 
@@ -191,33 +193,46 @@ If a section has no relevant items, provide an empty array [] or null for userIn
                 }
 
                 // Validate essential fields from parsedResponse
-                if (typeof parsedResponse.conversationSummary !== 'string' || !Array.isArray(parsedResponse.keyTopicsDiscussed)) {
-                     console.warn(`${functionName}: Parsed Gemini JSON missing essential fields or has incorrect types.`);
-                     return defaultErrorRecapStructure("Gemini (Malformed Structure)");
-                }
+                              // Validate essential fields from parsedResponse
+                              if (typeof parsedResponse.conversationSummary !== 'string' || !Array.isArray(parsedResponse.keyTopicsDiscussed)) {
+                                console.warn(`${functionName}: Parsed Gemini JSON missing essential fields or has incorrect types.`);
+                                // ADD THE RETURN STATEMENT HERE
+                                const malformedRecap = defaultErrorRecapStructure("Gemini (Malformed Structure)");
+                                return { recapData: malformedRecap, nickname: nickname || "System" };
+                           }
 
                 // Construct a full RecapData object, ensuring all keys are present by merging with defaults
-                return {
-                    ...defaultErrorRecapStructure("Gemini"), // Base to ensure all keys
-                    ...parsedResponse,                       // Override with AI's response
-                    sessionId: `gemini-recap-${connector.id}-${Date.now()}`, // Specific session ID for this attempt
+                const finalRecap: RecapData = {
+                    ...defaultErrorRecapStructure("Gemini"),
+                    ...parsedResponse,
+                    sessionId: `gemini-recap-${connector.id}-${Date.now()}`,
                     connectorId: connector.id,
                     connectorName: connector.profileName,
                     date: new Date().toLocaleDateString(),
-                    // duration & startTimeISO are usually set by session_state_manager for the SessionData
                 };
+                
+                return { recapData: finalRecap, nickname: nickname };
 
             } catch (error: any) {
                 console.error(`${functionName}: Error for ${connector.profileName}: ${error.message}`, error);
-                return defaultErrorRecapStructure(`Gemini Recap API Error: ${error.message}`);
+                const errorRecap = defaultErrorRecapStructure(`Gemini Recap API Error: ${error.message}`);
+                return { recapData: errorRecap, nickname: "System" };
             }
         } // End of generateSessionRecap for Gemini
 
         console.log("gemini_recap_service.ts: IIFE (TS Version) finished.");
+     
+        // FIX: Return an object that conforms to the GeminiRecapServiceModule interface
         return {
-            generateSessionRecap
+            generateSessionRecap: async (cleanedTranscriptText, connector) => {
+                // Call the internal implementation which returns both data and a nickname
+                const { recapData } = await generateSessionRecap(cleanedTranscriptText, connector);
+                // Return only the recapData to match the public interface's contract
+                return recapData;
+            }
         };
-    })(); 
+
+    })();
 
     if (window.geminiRecapService && typeof window.geminiRecapService.generateSessionRecap === 'function') {
         console.log("gemini_recap_service.ts: SUCCESSFULLY assigned and method verified.");
