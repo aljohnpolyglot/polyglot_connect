@@ -492,20 +492,42 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
 
 } // End of initializeActualSessionStateManager
 
-const dependenciesForSSM: string[] = ['polyglotHelpersReady'];
+const dependenciesForSSM: string[] = [
+    'polyglotHelpersReady',
+    'uiUpdaterReady',
+    'sessionHistoryManagerReady',
+    'conversationManagerReady',
+    'aiServiceReady' 
+];
 const ssmMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForSSM.forEach(dep => ssmMetDependenciesLog[dep] = false);
 let ssmDepsMetCount = 0;
-
 function checkAndInitSSM(receivedEventName?: string): void {
     if (receivedEventName) {
         console.log(`SSM_EVENT (TS): Listener for '${receivedEventName}' was triggered.`);
         let verified = false;
         switch(receivedEventName) {
             case 'polyglotHelpersReady': 
-                verified = !!(window.polyglotHelpers && typeof window.polyglotHelpers.generateUUID === 'function'); 
+                verified = !!(window.polyglotHelpers?.generateUUID); 
                 break;
-            default: console.warn(`SSM_EVENT (TS): Unknown event ${receivedEventName}`); return;
+            case 'uiUpdaterReady': // <<< ADDED
+                verified = !!(window.uiUpdater?.populateRecapModal);
+                break;
+            case 'sessionHistoryManagerReady': // <<< ADDED
+                verified = !!(window.sessionHistoryManager?.addCompletedSession);
+                break;
+            case 'conversationManagerReady': // <<< ADDED
+                verified = !!(window.conversationManager?.addSystemMessageToConversation);
+                break;
+            case 'aiServiceReady': // <<< ADDED
+                verified = !!(window.aiService?.generateSessionRecap);
+                break;
+            case 'aiApiConstantsReady': // <<< ADDED
+                verified = !!(window.aiApiConstants?.PROVIDERS);
+                break;
+            default: 
+                console.warn(`SSM_EVENT (TS): Unknown event ${receivedEventName}`); 
+                return;
         }
 
         if (verified && !ssmMetDependenciesLog[receivedEventName]) {
@@ -526,7 +548,6 @@ console.log('SSM_SETUP (TS): Starting initial dependency pre-check.');
 ssmDepsMetCount = 0; 
 Object.keys(ssmMetDependenciesLog).forEach(k=>ssmMetDependenciesLog[k]=false);
 let ssmAllPreloadedAndVerified = true;
-
 dependenciesForSSM.forEach((eventName: string) => {
     let isReadyNow = false;
     let isVerifiedNow = false;
@@ -535,7 +556,29 @@ dependenciesForSSM.forEach((eventName: string) => {
             isReadyNow = !!window.polyglotHelpers; 
             isVerifiedNow = isReadyNow && !!window.polyglotHelpers?.generateUUID; 
             break;
-        default: isVerifiedNow = false; break;
+        case 'uiUpdaterReady': // <<< ADDED
+            isReadyNow = !!window.uiUpdater;
+            isVerifiedNow = isReadyNow && !!window.uiUpdater?.populateRecapModal;
+            break;
+        case 'sessionHistoryManagerReady': // <<< ADDED
+            isReadyNow = !!window.sessionHistoryManager;
+            isVerifiedNow = isReadyNow && !!window.sessionHistoryManager?.addCompletedSession;
+            break;
+        case 'conversationManagerReady': // <<< ADDED
+            isReadyNow = !!window.conversationManager;
+            isVerifiedNow = isReadyNow && !!window.conversationManager?.addSystemMessageToConversation;
+            break;
+        case 'aiServiceReady': // <<< ADDED
+            isReadyNow = !!window.aiService;
+            isVerifiedNow = isReadyNow && !!window.aiService?.generateSessionRecap;
+            break;
+        case 'aiApiConstantsReady': // <<< ADDED
+            isReadyNow = !!window.aiApiConstants;
+            isVerifiedNow = isReadyNow && !!window.aiApiConstants?.PROVIDERS;
+            break;
+        default: 
+            isVerifiedNow = false; 
+            break;
     }
     console.log(`SSM_PRECHECK (TS): For '${eventName}': Exists? ${isReadyNow}, Verified? ${isVerifiedNow}`);
     if (isVerifiedNow) {

@@ -200,7 +200,7 @@ function initialize(): void {
 
 async function openConversationInEmbeddedView(connectorOrId: Connector | string): Promise<void> {
     const targetIdForLock = typeof connectorOrId === 'string' ? connectorOrId : connectorOrId?.id;
-    console.error("CSH_DEBUG_ENTRY: openConversationInEmbeddedView CALLED FOR:", targetIdForLock, "Stack:", new Error().stack); // <<< ADD THIS
+    console.log(`CSH_DEBUG_ENTRY: openConversationInEmbeddedView CALLED FOR: ${targetIdForLock}`);
    
     if (!targetIdForLock) {
         console.error("CSH_TS: openConversationInEmbeddedView - Invalid connectorOrId, cannot acquire lock.", connectorOrId);
@@ -396,7 +396,7 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
     }
 
     async function openMessageModalForConnector(connector: Connector): Promise<void> {
-        console.error("CSH_DEBUG_ENTRY: openMessageModalForConnector CALLED FOR:", connector?.id, "Stack:", new Error().stack); // <<< ADD THIS
+        console.log(`CSH_DEBUG_ENTRY: openMessageModalForConnector CALLED FOR: ${connector?.id}`);
         if (!connector?.id) { 
             console.error("CSH_TS: Invalid connector for modal. Cannot acquire lock or proceed."); 
             return; 

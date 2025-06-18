@@ -114,72 +114,83 @@ function initializeActualCardRenderer(): void {
             const isActive = connector.isActive !== undefined ? connector.isActive : (currentActivityManager.isConnectorActive ? currentActivityManager.isConnectorActive(connector) : false);
             let languageDisplayHtml = '';
 
-            if (connector.languageRoles && connector.language) {
-                const primaryLangName = connector.language;
-                const primaryRoles = connector.languageRoles[primaryLangName] as string[] | undefined;
-                if (primaryRoles && primaryRoles.length > 0) {
-                    const langSpecific = connector.languageSpecificCodes?.[primaryLangName];
-                    const primaryFlagCode = connector.flagCode || langSpecific?.flagCode || primaryLangName.substring(0, 2).toLowerCase();
-                    const roleText = primaryRoles.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('/');
-                    languageDisplayHtml += `
-                        <span class="language-tag primary-role">
-                            <img src="${currentFlagLoader.getFlagUrl(primaryFlagCode, null)}"
-                                 alt="${primaryLangName}" class="lang-flag lang-flag-xs"
-                                 onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
-                            ${currentHelpers.sanitizeTextForDisplay(primaryLangName)} (${currentHelpers.sanitizeTextForDisplay(roleText)})
-                        </span>`;
-                }
-                let otherLangCount = 0;
+                    // ================== START: UNIFIED LANGUAGE LOGIC (Mirrors Modal Handler) ==================
+            // This new logic ensures flags are handled identically on cards and in modals.
+            
+            interface CardDisplayLanguage {
+                lang: string;
+                levelTag: string;
+                flagCode: string;
+                type: string;
+            }
+
+            const unifiedLanguages: CardDisplayLanguage[] = [];
+
+            // 1. Prioritize data from nativeLanguages and practiceLanguages arrays, as they contain reliable flag codes.
+            if (connector.nativeLanguages) {
+                connector.nativeLanguages.forEach(lang => unifiedLanguages.push({ ...lang, type: 'native' }));
+            }
+            if (connector.practiceLanguages) {
+                connector.practiceLanguages.forEach(lang => unifiedLanguages.push({ ...lang, type: 'practice' }));
+            }
+
+            // 2. Create a set of already added languages for quick lookup, preventing duplicates.
+            const addedLangs = new Set(unifiedLanguages.map(l => l.lang));
+
+            // 3. Use languageRoles as a fallback for any languages not in the primary arrays.
+            if (connector.languageRoles) {
                 for (const langName in connector.languageRoles) {
-                    if (langName === primaryLangName || otherLangCount >= 1) continue;
-                    const otherRoles = connector.languageRoles[langName] as string[] | undefined;
-                    if (otherRoles && otherRoles.length > 0) {
-                        const langSpecificOther = connector.languageSpecificCodes?.[langName];
-                        let otherFlagCode = langSpecificOther?.flagCode || langName.substring(0,2).toLowerCase();
-                        const langDef = (currentFilterLanguages || []).find(l => l.name === langName || l.value === langName);
-                        const displayFlagCode = (langDef?.flagCode) ? langDef.flagCode : otherFlagCode;
-                        const roleText = otherRoles.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('/');
-                        const significantRole = otherRoles.some(r => ['native', 'tutor', 'learner', 'fluent'].includes(r.toLowerCase()));
-                        if(significantRole){
-                            languageDisplayHtml += `
-                            <span class="language-tag other-role">
-                                <img src="${currentFlagLoader.getFlagUrl(displayFlagCode, null)}"
-                                     alt="${langName}" class="lang-flag lang-flag-xs"
-                                     onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
-                                ${currentHelpers.sanitizeTextForDisplay(langName)} (${currentHelpers.sanitizeTextForDisplay(roleText)})
-                            </span>`;
-                            otherLangCount++;
-                        }
+                    if (!addedLangs.has(langName)) {
+                        // This language was missing from the arrays, so we must find its data.
+                        const roles = connector.languageRoles[langName] as string[];
+                        const langSpecific = connector.languageSpecificCodes?.[langName];
+                        const langDef = (currentFilterLanguages || []).find(l => 
+                            (l.name?.toLowerCase() === langName.toLowerCase()) || 
+                            (l.value?.toLowerCase() === langName.toLowerCase())
+                        );
+
+                        unifiedLanguages.push({
+                            lang: langName,
+                            levelTag: connector.learningLevels?.[langName] || (roles.includes('native') ? 'native' : 'fluent'),
+                            flagCode: langDef?.flagCode || langSpecific?.flagCode || '',
+                            type: roles.includes('tutor') ? 'tutor' : 'practice'
+                        });
                     }
                 }
-            } else { 
-                if (connector.nativeLanguages && connector.nativeLanguages.length > 0) {
-                    connector.nativeLanguages.forEach(lang => {
-                        if (lang.flagCode) {
-                            languageDisplayHtml += `
-                                <span class="language-tag native">
-                                    <img src="${currentFlagLoader.getFlagUrl(lang.flagCode, null)}"
-                                         alt="${lang.lang}" class="lang-flag lang-flag-xs"
-                                         onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
-                                    ${currentHelpers.sanitizeTextForDisplay(lang.lang)} (Native)
-                                </span>`;
-                        }
-                    });
-                }
-                if (connector.practiceLanguages && connector.practiceLanguages.length > 0) {
-                    connector.practiceLanguages.forEach(lang => {
-                        if (lang.flagCode) {
-                            languageDisplayHtml += `
-                                <span class="language-tag practice">
-                                    <img src="${currentFlagLoader.getFlagUrl(lang.flagCode, null)}"
-                                         alt="${lang.lang}" class="lang-flag lang-flag-xs"
-                                         onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
-                                    ${currentHelpers.sanitizeTextForDisplay(lang.lang)} (${currentHelpers.sanitizeTextForDisplay(lang.levelTag || 'Practicing')})
-                                </span>`;
-                        }
-                    });
-                }
             }
+
+            // 4. Now, render the HTML from the unified, correct list of languages.
+            const primaryLangName = connector.language;
+            const primaryLangData = unifiedLanguages.find(l => l.lang === primaryLangName);
+            const otherLanguages = unifiedLanguages.filter(l => l.lang !== primaryLangName);
+
+            // Render the primary language
+            if (primaryLangData) {
+                const roleText = (connector.languageRoles?.[primaryLangData.lang] || [])
+                    .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('/');
+                languageDisplayHtml += `
+                    <span class="language-tag primary-role">
+                        <img src="${currentFlagLoader.getFlagUrl(primaryLangData.flagCode, null)}"
+                             alt="${primaryLangData.lang}" class="lang-flag lang-flag-xs"
+                             onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
+                        ${currentHelpers.sanitizeTextForDisplay(primaryLangData.lang)} (${currentHelpers.sanitizeTextForDisplay(roleText)})
+                    </span>`;
+            }
+
+            // Render the first "other" significant language
+            if (otherLanguages.length > 0) {
+                const otherLangData = otherLanguages[0];
+                const roleText = (connector.languageRoles?.[otherLangData.lang] || [])
+                    .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('/');
+                languageDisplayHtml += `
+                    <span class="language-tag other-role">
+                        <img src="${currentFlagLoader.getFlagUrl(otherLangData.flagCode, null)}"
+                             alt="${otherLangData.lang}" class="lang-flag lang-flag-xs"
+                             onerror="this.onerror=null; this.src='${currentFlagLoader.getFlagUrl('', null)}'">
+                        ${currentHelpers.sanitizeTextForDisplay(otherLangData.lang)} (${currentHelpers.sanitizeTextForDisplay(roleText)})
+                    </span>`;
+            }
+            // ==================  END: UNIFIED LANGUAGE LOGIC  ==================
 
           const effectiveBaseUrl = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
 const safeBaseUrl = effectiveBaseUrl.endsWith('/') ? effectiveBaseUrl : effectiveBaseUrl + '/';

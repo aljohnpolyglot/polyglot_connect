@@ -453,33 +453,42 @@ function endLiveCall(generateRecap: boolean = true): void {
          console.log(`LCH Facade (${functionName}): Activity requested - ${game.title} with ${imgInfo.file}`);
     }
 
-    function handleLiveApiSessionOpen(): void {
-        const functionName = "handleLiveApiSessionOpen (TS)";
-        console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Call session FULLY OPEN.`);
-        const deps = getDeps(functionName);
+   
+function handleLiveApiSessionOpen(): void {
+    const functionName = "handleLiveApiSessionOpen (TS)";
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Call session FULLY OPEN.`);
+    const deps = getDeps(functionName);
 
-        if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-            console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
-        }
-        if (!deps.sessionStateManager?.markSessionAsStarted()) {
-             console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.markSessionAsStarted FAILED!`);
-             handleLiveApiError(new Error("Failed to mark session as started."));
-             return;
-        }
-        console.log(`LCH Facade (${functionName}): Session marked as started.`);
-        initializeCallUI(currentConnector, currentSessionType);
-        console.log(`LCH Facade (${functionName}): Call UI initialized.`);
+    // 1. Close the "Calling..." screen
+    if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
+        deps.modalHandler.close(deps.domElements.virtualCallingScreen);
+        console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
+    }
 
-        if (deps.liveApiMicInput?.startCapture) {
-            deps.liveApiMicInput.startCapture(handleLiveApiError);
-        } else {
-            console.error(`LCH Facade (${functionName}): CRITICAL! liveApiMicInput.startCapture missing.`);
-            handleLiveApiError(new Error("Mic module 'startCapture' missing."));
-            return;
-        }
+    // 2. Mark the session as officially started (for timers, etc.)
+    if (!deps.sessionStateManager?.markSessionAsStarted()) {
+         console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.markSessionAsStarted FAILED!`);
+         handleLiveApiError(new Error("Failed to mark session as started."));
+         return;
+    }
+    console.log(`LCH Facade (${functionName}): Session marked as started.`);
 
-         // REMOVED: Proactive greeting logic. The AI should wait for the user to speak first.
+    // 3. Show the actual call interface
+    initializeCallUI(currentConnector, currentSessionType);
+    console.log(`LCH Facade (${functionName}): Call UI initialized.`);
+
+    // 4. Start capturing the user's microphone
+    if (deps.liveApiMicInput?.startCapture) {
+        deps.liveApiMicInput.startCapture(handleLiveApiError);
+    } else {
+        console.error(`LCH Facade (${functionName}): CRITICAL! liveApiMicInput.startCapture missing.`);
+        handleLiveApiError(new Error("Mic module 'startCapture' missing."));
+        return;
+    }
+
+    // 5. DO NOTHING ELSE. Wait for the user to speak.
+    // The following comment from your own code confirms this is the correct design:
+    // REMOVED: Proactive greeting logic. The AI should wait for the user to speak first.
     // This prevents the AI's own greeting from polluting the chat history and causing confusion.
 
     console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks.`);

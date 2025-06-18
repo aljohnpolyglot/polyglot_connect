@@ -116,10 +116,21 @@ function initializeActualPersonaModalManager(): void {
             
             modalHandler.renderLanguageSection(connector);
 
-            if (domElements.personaModalInterestsUl && connector.interests) {
-                domElements.personaModalInterestsUl.innerHTML = connector.interests.map(interest =>
+            if (domElements.personaModalInterestsUl && connector.interests && connector.interests.length > 0) {
+                const MAX_INTERESTS_VISIBLE = 6;
+                const interestsToShow = connector.interests.slice(0, MAX_INTERESTS_VISIBLE);
+                
+                let interestsHtml = interestsToShow.map(interest =>
                     `<li>${polyglotHelpers.sanitizeTextForDisplay(interest)}</li>`
                 ).join('');
+
+                if (connector.interests.length > MAX_INTERESTS_VISIBLE) {
+                    const remainingCount = connector.interests.length - MAX_INTERESTS_VISIBLE;
+                    interestsHtml += `<li class="interest-more-indicator">… and ${remainingCount} more</li>`;
+                }
+                
+                domElements.personaModalInterestsUl.innerHTML = interestsHtml;
+
             } else if (domElements.personaModalInterestsUl) {
                 domElements.personaModalInterestsUl.innerHTML = '<li>No interests listed.</li>';
             }

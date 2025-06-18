@@ -479,7 +479,7 @@ if (isFirstMessageInLog) {
             messageDiv.appendChild(transcriptSpan);
         }
     
-        messageDiv.innerHTML = contentHtml; // The bubble content is ready.
+      
 
     // Create and append the avatar as a proper DOM element.
     // This allows the logic from Step 1 to find and remove it later.
@@ -1142,14 +1142,13 @@ const appendToGroupChatLog = (
 
 // ui_updater.ts - at the bottom in the dependency checking section
 
-const dependenciesForUiUpdater = ['domElementsReady', 'polyglotHelpersReady', 'polyglotDataReady', 'groupManagerReady', 'sessionManagerReady'];
+const dependenciesForUiUpdater = ['domElementsReady', 'polyglotHelpersReady', 'polyglotDataReady', 'groupManagerReady'];
 let uiUpdaterDepsMetCount = 0;
 const uiUpdaterMetDependenciesLog: { [key: string]: boolean } = {
     'domElementsReady': false,
     'polyglotHelpersReady': false,
     'polyglotDataReady': false,
-    'groupManagerReady': false,
-    'sessionManagerReady': false
+    'groupManagerReady': false
 };
 
 function checkAndInitUiUpdater(receivedEventName?: string) {
@@ -1202,10 +1201,7 @@ dependenciesForUiUpdater.forEach(eventName => {
             isReadyNow = !!window.groupManager;
             isVerifiedNow = !!(isReadyNow && typeof window.groupManager?.initialize === 'function');
             break;
-        case 'sessionManagerReady':
-            isReadyNow = !!window.sessionManager;
-            isVerifiedNow = !!(isReadyNow && typeof window.sessionManager?.initialize === 'function');
-            break;
+      
         default:
             console.warn(`UI_UPDATER_PRECHECK: Unknown dependency event name: ${eventName}`);
     }
