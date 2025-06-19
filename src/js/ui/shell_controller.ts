@@ -72,6 +72,10 @@ function initializeActualShellController(): void {
             groupManager: window.groupManager as GroupManager | undefined,
             sessionManager: window.sessionManager as SessionManager | undefined,
             polyglotSharedContent: window.polyglotSharedContent as SharedContent | undefined,
+            chatOrchestrator: window.chatOrchestrator as ChatOrchestrator | undefined, // <<< ADD THIS
+            sessionHistoryManager: window.sessionHistoryManager as import('../types/global').SessionHistoryManager | undefined, // <<< ADD THIS
+           
+           
             chatActiveTargetManager: window.chatActiveTargetManager as import('../types/global').ChatActiveTargetManager | undefined // <<< ADDED
         });
 
@@ -123,6 +127,11 @@ function initializeActualShellController(): void {
 
         function setupShellEventListeners(): void {
             const { domElements, modalHandler, groupManager, chatManager } = getDeps();
+           
+           
+           
+           
+           
             if (!domElements || !modalHandler) {
                 console.warn("ShellController: Missing domElements or modalHandler for event listeners.");
                 return;
@@ -150,6 +159,47 @@ function initializeActualShellController(): void {
                     }
                 });
             }
+            // Add this inside setupShellEventListeners
+   // AFTER
+if (domElements.connectorHubGrid) {
+    domElements.connectorHubGrid.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        const button = target.closest('button');
+        
+        if (!button) return;
+
+        const connectorId = button.dataset.connectorId;
+        if (!connectorId) return;
+
+        const connector = (window.polyglotConnectors || []).find(c => c.id === connectorId);
+        if (!connector) {
+            console.error(`ShellController: Connector with ID ${connectorId} not found.`);
+            return;
+        }
+
+        // Handle "View Chat" button (NOW LOOKS FOR THE CORRECT CLASS)
+        if (button.classList.contains('group-card-view-chat-btn')) {
+            e.preventDefault();
+            console.log(`View Chat clicked for ${connector.profileName}`);
+            if (window.chatSessionHandler?.openConversationInEmbeddedView) {
+                switchView('messages');
+                window.chatSessionHandler.openConversationInEmbeddedView(connector);
+            }
+        }
+        
+        // Handle "View Info" and "View Profile" buttons (NOW LOOKS FOR THE CORRECT CLASSES)
+        if (button.classList.contains('group-card-info-btn') || button.classList.contains('view-profile-btn')) {
+            e.preventDefault();
+            console.log(`View Info/Profile clicked for ${connector.profileName}`);
+            if (window.personaModalManager?.openDetailedPersonaModal) {
+                window.personaModalManager.openDetailedPersonaModal(connector);
+            }
+        }
+    });
+}
+
+
+
             // Ensure personaModalVoiceChatBtn exists on domElements interface if used
             const personaModalVoiceChatBtn = (domElements as any).personaModalVoiceChatBtn as HTMLButtonElement | null;
 
@@ -160,6 +210,59 @@ function initializeActualShellController(): void {
             if (domElements.applyFiltersBtn) domElements.applyFiltersBtn.addEventListener('click', applyFindFilters);
             if (domElements.applyGroupFiltersBtn) domElements.applyGroupFiltersBtn.addEventListener('click', applyGroupFilters);
             
+       
+          
+    // ===================================================================
+    // ==   ADD THIS ENTIRE BLOCK FOR SIDEBAR SEARCH LISTENERS          ==
+    // ===================================================================
+    const { polyglotHelpers, chatOrchestrator, sessionHistoryManager } = getDeps();
+
+    if (domElements.searchActiveChatsInput && polyglotHelpers?.debounce && chatOrchestrator?.renderCombinedActiveChatsList) {
+        domElements.searchActiveChatsInput.addEventListener('input', 
+            polyglotHelpers.debounce(chatOrchestrator.renderCombinedActiveChatsList, 300)
+        );
+        console.log("ShellController: Event listener for Active Chats search bar attached.");
+    } else {
+        console.warn("ShellController: Could not attach listener for Active Chats search. Dependencies missing.");
+    }
+
+    if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessionHistoryManager?.updateSummaryListUI) {
+        domElements.searchSessionHistoryInput.addEventListener('input', 
+            polyglotHelpers.debounce(sessionHistoryManager.updateSummaryListUI, 300)
+        );
+        console.log("ShellController: Event listener for Session History search bar attached.");
+    } else {
+        console.warn("ShellController: Could not attach listener for Session History search. Dependencies missing.");
+    }
+       
+       
+       // ===================================================================
+// ==   LIVE SEARCH LISTENERS FOR SIDEBAR LISTS                     ==
+// ===================================================================
+
+
+// Listener for the "Active Chats" search bar
+if (domElements.searchActiveChatsInput && polyglotHelpers?.debounce && chatOrchestrator?.renderCombinedActiveChatsList) {
+    domElements.searchActiveChatsInput.addEventListener('input', 
+        // Debounce waits for the user to stop typing for 300ms before filtering
+        polyglotHelpers.debounce(chatOrchestrator.renderCombinedActiveChatsList, 300)
+    );
+    console.log("ShellController: Event listener for Active Chats search bar attached.");
+}
+
+// Listener for the "Session History" search bar
+if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessionHistoryManager?.updateSummaryListUI) {
+    domElements.searchSessionHistoryInput.addEventListener('input', 
+        // Debounce waits for the user to stop typing for 300ms before filtering
+        polyglotHelpers.debounce(sessionHistoryManager.updateSummaryListUI, 300)
+    );
+    console.log("ShellController: Event listener for Session History search bar attached.");
+}
+// ===================================================================
+// ==   END OF NEW BLOCK                                            ==
+// ===================================================================
+       
+       
             if (domElements.sendGroupMessageBtn && domElements.groupChatInput) {
                 domElements.sendGroupMessageBtn.addEventListener('click', handleSendGroupMessage);
                 domElements.groupChatInput.addEventListener('keypress', (e: KeyboardEvent) => { // Typed event
@@ -257,10 +360,11 @@ if (domElements.rightSidebarPanels && domElements.appShell) { // Added appShell 
             console.log("ShellController.switchView: 'groups' tab, no group active. Showing groupsFiltersPanel.");
             panelIdToShow = 'groupsFiltersPanel';
         }
-    } else if (targetTab === 'find') {
-        console.log("ShellController.switchView: 'find' tab. Showing findFiltersPanel.");
-        panelIdToShow = 'findFiltersPanel';
+    } else if (targetTab === 'friends') { // <<< THIS IS THE FIX
+        console.log("ShellController.switchView: 'friends' tab. Showing friendsFiltersPanel.");
+        panelIdToShow = 'friendsFiltersPanel'; // <<< THIS IS THE FIX
     } else if (targetTab === 'messages') {
+
         console.log("ShellController.switchView: 'messages' tab. Showing messagesChatListPanel.");
         panelIdToShow = 'messagesChatListPanel';
     } else if (targetTab === 'summary') {
@@ -314,9 +418,9 @@ if (domElements.rightSidebarPanels && domElements.appShell) { // Added appShell 
 
     // --- END: Right Sidebar Panel Logic ---
     console.log(`ShellController: switchView - Performing tab-specific content actions for tab: '${targetTab}'`);
-    if (targetTab === 'find') {
-        console.log("ShellController: switchView - Calling applyFindFilters() for 'find' tab.");
-        applyFindFilters();
+    if (targetTab === 'friends') { // <<< THIS IS THE FIX
+        console.log("ShellController: switchView - Calling applyFindFilters() for 'friends' tab.");
+        applyFindFilters(); // applyFindFilters is now smart enough to handle the sub-tabs
     } else if (targetTab === 'groups') {
         console.log("ShellController: switchView - Handling content for 'groups' tab.");
         const currentGroupData = groupManager?.getCurrentGroupData?.();

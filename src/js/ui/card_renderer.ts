@@ -12,10 +12,10 @@ import type {
 
 console.log('card_renderer.ts: Script loaded, waiting for core dependencies.');
 
+// AFTER
 interface CardRendererModule {
-    renderCards: (connectorsToDisplay: Connector[]) => void;
+    renderCards: (connectorsToDisplay: Connector[], activeFriendsView: 'my-friends' | 'discover') => void;
 }
-
 // ADD THIS BLOCK FOR STRUCTURAL READY:
 window.cardRenderer = {
     renderCards: () => console.warn("CardRenderer structural: renderCards called before full init.")
@@ -91,7 +91,8 @@ function initializeActualCardRenderer(): void {
             return _hubGridElement;
         };
 
-        function renderSingleCard(connector: Connector): HTMLElement | null {
+     // AFTER
+function renderSingleCard(connector: Connector, activeFriendsView: 'my-friends' | 'discover'): HTMLElement | null {
             const { 
                 polyglotHelpers: currentHelpers, flagLoader: currentFlagLoader, 
                 activityManager: currentActivityManager, personaModalManager: currentPersonaModalManager, 
@@ -111,6 +112,11 @@ function initializeActualCardRenderer(): void {
             const card = document.createElement('div');
             card.className = 'connector-card';
             card.dataset.connectorId = connector.id;
+            
+// This is the new part: Add a special class for the taller cards
+if (activeFriendsView === 'my-friends') {
+    card.classList.add('is-friend-card');
+}
             const isActive = connector.isActive !== undefined ? connector.isActive : (currentActivityManager.isConnectorActive ? currentActivityManager.isConnectorActive(connector) : false);
             let languageDisplayHtml = '';
 
@@ -192,33 +198,53 @@ function initializeActualCardRenderer(): void {
             }
             // ==================  END: UNIFIED LANGUAGE LOGIC  ==================
 
-          const effectiveBaseUrl = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
+// --- Button Logic (Defines which buttons to show) ---
+let actionsHtml = '';
+if (activeFriendsView === 'my-friends') {
+    actionsHtml = `
+        <button class="group-card-view-chat-btn action-btn-sm" data-connector-id="${connector.id}">
+            <i class="fas fa-comment-dots"></i> View Chat
+        </button>
+        <button class="group-card-info-btn action-btn-sm subtle-btn" data-connector-id="${connector.id}">
+            <i class="fas fa-info-circle"></i> Info
+        </button>
+    `;
+} else { 
+    // Button for the "Discover" tab
+    actionsHtml = `
+        <button class="view-profile-btn action-btn primary-btn" data-connector-id="${connector.id}">
+            <i class="fas fa-user-circle"></i> View Profile & Connect
+        </button>
+    `;
+}
+
+// --- Card HTML Construction (Uses the buttons defined above) ---
+const effectiveBaseUrl = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
 const safeBaseUrl = effectiveBaseUrl.endsWith('/') ? effectiveBaseUrl : effectiveBaseUrl + '/';
-const placeholderAvatar = (currentDomElements.appShell?.querySelector('#embedded-chat-header-avatar') as HTMLImageElement)?.src || `${safeBaseUrl}images/placeholder_avatar.png`;
-            card.innerHTML = `
-                <div class="connector-card-bg"></div>
-                <img src="${connector.avatarModern || placeholderAvatar}"
-                     alt="${currentHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Avatar')}"
-                     class="connector-avatar"
-                     onerror="this.onerror=null; this.src='${placeholderAvatar}'">
-                <div class="connector-status ${isActive ? 'active' : ''}"
-                     title="${isActive ? 'Active now' : 'Currently inactive'}"></div>
-                <h3 class="connector-name">
-                    ${currentHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Unnamed Connector')}
-                </h3>
-                <div class="connector-languages-summary">
-                    ${languageDisplayHtml || '<span class="language-tag">Languages N/A</span>'}
-                </div>
-                <p class="connector-bio">
-                    ${currentHelpers.sanitizeTextForDisplay((connector.bioModern || 'No bio available.').substring(0, 75))}
-                    ${(connector.bioModern && connector.bioModern.length > 75) ? '...' : ''}
-                </p>
-                <div class="connector-actions">
-                    <button class="view-profile-btn action-btn primary-btn" data-connector-id="${connector.id}">
-                        <i class="fas fa-user-circle"></i> View Profile & Connect
-                    </button>
-                </div>
-            `;
+const placeholderAvatar = `${safeBaseUrl}images/placeholder_avatar.png`;
+
+card.innerHTML = `
+    <div class="connector-card-bg"></div>
+    <img src="${connector.avatarModern || placeholderAvatar}"
+         alt="${currentHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Avatar')}"
+         class="connector-avatar"
+         onerror="this.onerror=null; this.src='${placeholderAvatar}'">
+    <div class="connector-status ${isActive ? 'active' : ''}"
+         title="${isActive ? 'Active now' : 'Currently inactive'}"></div>
+    <h3 class="connector-name">
+        ${currentHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Unnamed Connector')}
+    </h3>
+    <div class="connector-languages-summary">
+        ${languageDisplayHtml || '<span class="language-tag">Languages N/A</span>'}
+    </div>
+    <p class="connector-bio">
+        ${currentHelpers.sanitizeTextForDisplay((connector.bioModern || 'No bio available.').substring(0, 75))}
+        ${(connector.bioModern && connector.bioModern.length > 75) ? '...' : ''}
+    </p>
+    <div class="connector-actions">
+        ${actionsHtml}
+    </div>
+`;
 
             const viewProfileButton = card.querySelector('.view-profile-btn') as HTMLButtonElement | null;
             if (viewProfileButton) {
@@ -239,36 +265,50 @@ const placeholderAvatar = (currentDomElements.appShell?.querySelector('#embedded
             return card;
         }
 
-        function renderCards(connectorsToDisplay: Connector[]): void {
-            const grid = getHubGridElement();
-            if (!grid) {
-                console.error("cardRenderer.renderCards: Connector hub grid element not found.");
-                const findViewElement = getDeps().domElements.findView;
-                if (findViewElement) {
-                     findViewElement.innerHTML = "<p class='error-message'>Error: UI element for connectors missing.</p>";
-                }
-                return;
-            }
-            grid.innerHTML = '';
+     // AFTER (The new, simplified version)
+     function renderCards(connectorsToDisplay: Connector[], activeFriendsView: 'my-friends' | 'discover'): void {
+    const grid = getHubGridElement();
+    
+    // Safety check for the grid element
+    if (!grid) {
+        console.error("cardRenderer.renderCards: Connector hub grid element not found. Cannot render cards.");
+        return;
+    }
+    
+    // Always clear the grid first
+    grid.innerHTML = '';
 
-            if (!connectorsToDisplay || connectorsToDisplay.length === 0) {
-                grid.innerHTML = "<p class='loading-message'>No AI connectors match your criteria or are available.</p>";
-                return;
-            }
-
-            const fragment = document.createDocumentFragment();
-            connectorsToDisplay.forEach(connector => {
-                if (!connector) {
-                    console.warn("CardRenderer: renderCards - Skipping undefined connector.");
-                    return;
-                }
-                const cardElement = renderSingleCard(connector);
-                if (cardElement) {
-                    fragment.appendChild(cardElement);
-                }
-            });
-            grid.appendChild(fragment);
+    // Handle the case where there are no connectors to display
+    if (!connectorsToDisplay || connectorsToDisplay.length === 0) {
+        // The loading message element is already inside the grid from the HTML.
+        const loadingMsg = grid.querySelector('.loading-message') as HTMLElement | null;
+        if (loadingMsg) {
+            loadingMsg.textContent = "No one matches your criteria.";
+            loadingMsg.style.display = 'block';
         }
+        return;
+    }
+
+    // Hide the loading/empty message if we have cards to render
+    const loadingMsg = grid.querySelector('.loading-message') as HTMLElement | null;
+    if (loadingMsg) {
+        loadingMsg.style.display = 'none';
+    }
+
+    // Create and append the cards
+    const fragment = document.createDocumentFragment();
+    connectorsToDisplay.forEach(connector => {
+        if (!connector) {
+            console.warn("CardRenderer: renderCards - Skipping undefined connector.");
+            return;
+        }
+        const cardElement = renderSingleCard(connector, activeFriendsView);
+        if (cardElement) {
+            fragment.appendChild(cardElement);
+        }
+    });
+    grid.appendChild(fragment);
+}
 
         console.log("ui/card_renderer.ts: IIFE for actual methods finished, returning exports.");
         return {

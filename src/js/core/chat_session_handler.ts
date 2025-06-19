@@ -334,67 +334,72 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
     }
 }
 
-   async function handleMessagesTabBecameActive(): Promise<void> {
+async function handleMessagesTabBecameActive(): Promise<void> {
     console.log("CSH_TS: handleMessagesTabBecameActive() - START.");
     
-    let currentEmbeddedId = chatActiveTargetManager.getEmbeddedChatTargetId();
-    console.log("CSH_TS: Current active target from CATM (at start of handleMessagesTabBecameActive):", currentEmbeddedId);
-    let chatToOpenId: string | null = currentEmbeddedId;
+    // Get the currently set target ID. This might have been set by a "View Chat" click moments ago.
+    const currentTargetId = chatActiveTargetManager.getEmbeddedChatTargetId();
+    console.log("CSH_TS: Current active target from CATM (at start of handleMessagesTabBecameActive):", currentTargetId);
+    
+    // --- THIS IS THE FIX ---
+    // If a target is already set, it means another process (like a "View Chat" click)
+    // is already handling the chat opening. In this case, this function should do nothing
+    // and let the other process finish.
+    if (currentTargetId) {
+        console.log(`CSH_TS: A chat target ('${currentTargetId}') is already set. Aborting restore-from-memory logic.`);
+        
+        // As a safety check, ensure the view is actually visible if a target is set.
+        if (domElements.embeddedChatContainer && domElements.embeddedChatContainer.style.display === 'none') {
+             const connector = (window.polyglotConnectors || []).find(c => c.id === currentTargetId);
+             if(connector) {
+                console.warn("CSH_TS: Target was set, but view was hidden. Forcing it open.");
+                await openConversationInEmbeddedView(connector);
+             }
+        }
+        return; // Exit the function
+    }
+    // --- END OF FIX ---
+    
+    // If we reach here, it means no chat target was set, so it's safe to restore from memory.
+    console.log("CSH_TS: No current active target. Proceeding to restore a chat from memory.");
+    let chatToOpenId: string | null = null;
+    
+    try {
+        const storedId = localStorage.getItem(LAST_EMBEDDED_CHAT_ID_KEY);
+        if (storedId && polyglotConnectors.some(c => c.id === storedId)) {
+            chatToOpenId = storedId;
+        }
+    } catch (e) { 
+        console.warn("CSH_TS: Error reading last embedded chat ID from localStorage", e);
+    }
+    
+    console.log("CSH_TS: Effective chatToOpenId to restore from memory:", chatToOpenId);
 
-    if (!chatToOpenId) {
-        console.log("CSH_TS: No current active target, checking localStorage for LAST_EMBEDDED_CHAT_ID_KEY...");
-        try {
-            const storedId = localStorage.getItem(LAST_EMBEDDED_CHAT_ID_KEY);
-            console.log("CSH_TS: Value from localStorage for LAST_EMBEDDED_CHAT_ID_KEY:", storedId); 
-            if (storedId) {
-                console.log("CSH_TS: Available polyglotConnectors for validation:", JSON.parse(JSON.stringify(polyglotConnectors || [])));
-                if (polyglotConnectors.some((c: Connector) => c.id === storedId)) {
-                    console.log("CSH_TS: Stored ID", storedId, "is VALID and found in polyglotConnectors.");
-                    chatToOpenId = storedId;
-                } else {
-                    console.warn("CSH_TS: Stored chat ID", storedId, "no longer exists in polyglotConnectors. Clearing from localStorage.");
-                    localStorage.removeItem(LAST_EMBEDDED_CHAT_ID_KEY);
-                }
-            } else {
-                console.log("CSH_TS: No ID found in localStorage for LAST_EMBEDDED_CHAT_ID_KEY.");
-            }
-        } catch (e) { 
-            console.warn("CSH_TS: Error reading last embedded chat ID from localStorage", e);
+    if (chatToOpenId) {
+        const { conversation: convo } = await conversationManager.ensureConversationRecord(chatToOpenId);
+        const connectorToOpen = convo?.connector;
+        if (connectorToOpen) {
+            await openConversationInEmbeddedView(connectorToOpen); 
+        } else {
+            chatUiManager.hideEmbeddedChatInterface();
+        }
+    } else {
+        // If no last chat, open the most recent conversation instead
+        const allConversations = conversationManager.getActiveConversations(); 
+        const convosWithMessages = allConversations.filter(c => c.messages?.length > 0 && c.connector && !c.isGroup);
+        if (convosWithMessages.length > 0) {
+            convosWithMessages.sort((a, b) => (Number(b.lastActivity) || 0) - (Number(a.lastActivity) || 0));
+            await openConversationInEmbeddedView(convosWithMessages[0].connector);
+        } else {
+            // No chats at all, hide the interface
+            chatUiManager.hideEmbeddedChatInterface();
         }
     }
     
-    console.log("CSH_TS: Effective chatToOpenId after localStorage check:", chatToOpenId);
-         let listNeedsExplicitRefresh = true;
-
-         if (chatToOpenId) {
-             const { conversation: convo } = await conversationManager.ensureConversationRecord(chatToOpenId);
-             const connectorToOpen = convo?.connector;
-
-             if (connectorToOpen) {
-                 await openConversationInEmbeddedView(connectorToOpen); 
-                 listNeedsExplicitRefresh = false; 
-             } else {
-                 chatActiveTargetManager.clearEmbeddedChatTargetId(); 
-                 chatUiManager.hideEmbeddedChatInterface();
-             }
-         } else {
-             const allConversations = conversationManager.getActiveConversations(); 
-             const convosWithMessages = allConversations.filter(c => c.messages?.length > 0 && c.connector && !c.isGroup);
-             if (convosWithMessages.length > 0) {
-                 convosWithMessages.sort((a, b) => (Number(b.lastActivity) || 0) - (Number(a.lastActivity) || 0));
-                 await openConversationInEmbeddedView(convosWithMessages[0].connector);
-                 listNeedsExplicitRefresh = false; 
-             } else {
-                 chatUiManager.hideEmbeddedChatInterface();
-             }
-         }
-         if (listNeedsExplicitRefresh) {
-            console.log("CSH_TS: handleMessagesTabBecameActive() - Explicit list refresh needed."); 
-             chatOrchestrator.renderCombinedActiveChatsList();
-         }
-         console.log("CSH_TS: handleMessagesTabBecameActive() - FINISHED.");
-    }
-
+    // The list of active chats on the right sidebar should always be fresh.
+    chatOrchestrator.renderCombinedActiveChatsList();
+    console.log("CSH_TS: handleMessagesTabBecameActive() - FINISHED.");
+}
     async function openMessageModalForConnector(connector: Connector): Promise<void> {
         console.log(`CSH_DEBUG_ENTRY: openMessageModalForConnector CALLED FOR: ${connector?.id}`);
         if (!connector?.id) { 
@@ -430,68 +435,69 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
                 if (!isModalVisible) console.log(`  Reason: Modal is NOT visible.`);
             }
 
-            chatActiveTargetManager.setModalMessageTargetConnector(connector);
-            const { conversation: convo } = await conversationManager.ensureConversationRecord(connector.id, connector);
+                     // --- START OF FIX: Defer conversation creation to avoid premature history entries ---
+                     chatActiveTargetManager.setModalMessageTargetConnector(connector);
 
-            if (!convo || !convo.connector) {
-                console.error(`CSH_TS: Failed to get convo or connector for modal for '${connector.id}'.`);
-                chatActiveTargetManager.clearModalMessageTargetConnector(); 
-                return; 
-            }
-            console.log("CSH_DEBUG: Calling uiUpdater.updateMessageModalHeader with connector:", JSON.parse(JSON.stringify(convo.connector || {})));
-            uiUpdater.updateMessageModalHeader(convo.connector);
-           
+                     // Update the modal header immediately using the provided connector data.
+                     uiUpdater.updateMessageModalHeader(connector);
          
-            
-                      // Clear the log right before we decide what to put in it.
-            uiUpdater.clearMessageModalLog?.();
-
-            if (Array.isArray(convo.messages) && convo.messages.length > 0) {
-                // If there is history, loop through and add each message.
-                console.log(`CSH_TS: Populating ${convo.messages.length} messages into modal for ${connector.id}.`);
-                convo.messages.forEach((msg: MessageInStore) => {
-                    if (!msg) return;
-                  
-                    const senderClass = msg.sender === 'user' ? 'user' : 'connector';
-                    const msgOptions: ChatMessageOptions = {
-                        timestamp: msg.timestamp,
-                        messageId: msg.id,
-                        type: msg.type,
-                        eventType: msg.eventType,
-                        duration: msg.duration,
-                        callSessionId: msg.callSessionId,
-                        connectorIdForButton: msg.connectorIdForButton,
-                        connectorNameForDisplay: msg.connectorNameForDisplay,
-                        isVoiceMemo: msg.isVoiceMemo,
-                        audioSrc: msg.audioBlobDataUrl || undefined,
-                        imageUrl: msg.content_url || undefined,
-                        avatarUrl: convo.connector?.avatarModern,
-                        senderName: convo.connector?.profileName,
-                        connectorId: convo.connector?.id
-                    };
-            
-                    uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
-                });
-            } else {
-                // --- THIS IS THE RESTORED LOGIC ---
-                // This is a new conversation. Manually add the placeholder.
-                console.log(`CSH_TS: New modal conversation with ${convo.connector!.profileName}. Manually inserting placeholder.`);
-                if (domElements.messageChatLog && polyglotHelpers && convo.connector) {
-                     domElements.messageChatLog.innerHTML = 
-                        `<div class="chat-log-empty-placeholder">
-                            <i class="far fa-comments"></i>
-                            <p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(convo.connector.profileName)}.</p>
-                            <p>Send a message to start!</p>
-                        </div>`;
-                }
-                // --- END OF RESTORED LOGIC ---
-            }
-            uiUpdater.scrollMessageModalToBottom?.();
-            uiUpdater.resetMessageModalInput?.();
-            if (domElements.messagingInterface) modalHandler.open(domElements.messagingInterface);
-            if (domElements.messageTextInput) domElements.messageTextInput.focus();
-            chatOrchestrator.renderCombinedActiveChatsList();
-            console.log("CSH_TS: openMessageModalForConnector() - FINISHED for", connector.id);
+                     // Check if a conversation already exists WITHOUT creating a new one.
+                     const existingConvo = conversationManager.getConversationById(connector.id);
+         
+                     // Always clear the log before rendering new content.
+                     uiUpdater.clearMessageModalLog?.();
+         
+                     if (existingConvo && Array.isArray(existingConvo.messages) && existingConvo.messages.length > 0) {
+                         // A conversation with messages already exists. Render the history.
+                         console.log(`CSH: Populating ${existingConvo.messages.length} messages from existing conversation for ${connector.id}.`);
+                         existingConvo.messages.forEach((msg: MessageInStore) => {
+                             if (!msg) return;
+         
+                             const senderClass = msg.sender === 'user' ? 'user' : 'connector';
+                             const msgOptions: ChatMessageOptions = {
+                                 timestamp: msg.timestamp,
+                                 messageId: msg.id,
+                                 type: msg.type,
+                                 eventType: msg.eventType,
+                                 duration: msg.duration,
+                                 callSessionId: msg.callSessionId,
+                                 connectorIdForButton: msg.connectorIdForButton,
+                                 connectorNameForDisplay: msg.connectorNameForDisplay,
+                                 isVoiceMemo: msg.isVoiceMemo,
+                                 audioSrc: msg.audioBlobDataUrl || undefined,
+                                 imageUrl: msg.content_url || undefined,
+                                 avatarUrl: existingConvo.connector?.avatarModern, // Use avatar from the stored conversation
+                                 senderName: existingConvo.connector?.profileName,
+                                 connectorId: existingConvo.connector?.id
+                             };
+                             uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
+                         });
+                         
+                         // Since this chat already exists, ensure it's rendered in the active chats list.
+                         chatOrchestrator.renderCombinedActiveChatsList();
+                     } else {
+                         // This is a new conversation, or an existing one with no messages. 
+                         // Show a placeholder without creating a record or adding it to the chat list.
+                         console.log(`CSH: New/empty modal conversation with ${connector.profileName}. Displaying placeholder.`);
+                         if (domElements.messageChatLog && polyglotHelpers) {
+                             domElements.messageChatLog.innerHTML =
+                                 `<div class="chat-log-empty-placeholder">
+                                     <i class="far fa-comments"></i>
+                                     <p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(connector.profileName)}.</p>
+                                     <p>Send a message to start the conversation!</p>
+                                 </div>`;
+                         }
+                         // DO NOT call renderCombinedActiveChatsList() here.
+                     }
+         
+                     // Open the modal, set focus, and prepare the input field.
+                     uiUpdater.scrollMessageModalToBottom?.();
+                     uiUpdater.resetMessageModalInput?.();
+                     if (domElements.messagingInterface) modalHandler.open(domElements.messagingInterface);
+                     if (domElements.messageTextInput) domElements.messageTextInput.focus();
+         
+                     console.log("CSH_TS: openMessageModalForConnector() - FINISHED for", connector.id);
+                     // --- END OF FIX ---
        
         } finally {
             if (openingModalOperationId === operationKey) {

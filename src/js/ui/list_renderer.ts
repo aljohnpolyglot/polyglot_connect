@@ -262,11 +262,17 @@ function initializeActualListRenderer(): void {
                     let descPreview = `${group.language || 'N/A'} - ${group.description ? group.description.substring(0, 70) + (group.description.length > 70 ? '...' : '') : 'Chat away!'}`;
                     subTextOutput = `<p class="group-card-subtext">${polyglotHelpers.sanitizeTextForDisplay(descPreview)}</p>`;
                     
+                    let ctaButtonHtml: string;
                     if (group.isJoined) {
-                        statusOrActionHtml = `<button class="group-card-view-chat-btn action-btn-sm secondary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(group.id || '')}"><i class="fas fa-comment-dots"></i> View Chat</button>`;
+                        ctaButtonHtml = `<button class="group-card-view-chat-btn action-btn-sm secondary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(group.id || '')}"><i class="fas fa-comment-dots"></i> View Chat</button>`;
                     } else {
-                        statusOrActionHtml = `<button class="group-card-join-btn action-btn-sm primary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(group.id || '')}"><i class="fas fa-plus-circle"></i> Join Group</button>`;
+                        ctaButtonHtml = `<button class="group-card-join-btn action-btn-sm primary-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(group.id || '')}"><i class="fas fa-plus-circle"></i> Join Group</button>`;
                     }
+    
+                    statusOrActionHtml = `
+                        ${ctaButtonHtml}
+                        <button class="group-card-info-btn action-btn-sm subtle-btn" data-group-id="${polyglotHelpers.sanitizeTextForDisplay(group.id || '')}"><i class="fas fa-info-circle"></i> Info</button>
+                    `;
                 }
             } catch (error: any) {
                 console.error(`LR_ERROR: createListItemHTML for '${itemTypeContext}', ID '${(itemData as any)?.id || 'unknown'}':`, error, "ItemData:", JSON.parse(JSON.stringify(itemData || {})));
@@ -362,38 +368,55 @@ function renderList(
         const generatedItemHtml = createListItemHTML(item, itemTypeContext);
 
         if (itemTypeContext === 'groupDiscovery') {
-            li.className = 'group-discovery-list-item'; // Card class on LI for main groups page
+            li.className = 'group-discovery-list-item';
             const group = item as Group;
+           
+           
+            li.classList.toggle('state-not-joined', !group.isJoined);
+            // ===== END: ADD THIS LINE =====
+
+       
+
+           
             if (group.id) {
-                // Ensure polyglotHelpers is available if not already destructured from getDeps() at function start
                 li.dataset.groupId = polyglotHelpers.sanitizeTextForDisplay(group.id);
             }
-            li.innerHTML = generatedItemHtml; // generatedItemHtml is the inner content (avatar, info, buttons)
+            li.innerHTML = generatedItemHtml;
 
-            // Event listeners for buttons INSIDE the groupDiscovery card (<li>)
+            // --- Find all three buttons inside the newly created card ---
             const joinBtn = li.querySelector('.group-card-join-btn') as HTMLButtonElement | null;
             const viewChatBtn = li.querySelector('.group-card-view-chat-btn') as HTMLButtonElement | null;
+            const infoBtn = li.querySelector('.group-card-info-btn') as HTMLButtonElement | null;
 
+            // --- Attach listener for "Join Group" button ---
             if (joinBtn) {
                 joinBtn.addEventListener('click', (e: MouseEvent) => {
-                    e.stopPropagation();
+                    e.stopPropagation(); // Prevent the whole card from being clicked
                     console.log(`LR_DEBUG: "Join Group" button clicked for group ID: ${group.id}`);
-                    if (typeof itemClickHandler === 'function') {
-                        itemClickHandler(group);
-                    } else {
-                        console.error("LR_ERROR: itemClickHandler not function for Join Group btn.");
-                    }
+                    itemClickHandler(group); // This calls groupManager.joinGroup
                 });
             }
 
+            // --- Attach listener for "View Chat" button ---
             if (viewChatBtn) {
                 viewChatBtn.addEventListener('click', (e: MouseEvent) => {
                     e.stopPropagation();
                     console.log(`LR_DEBUG: "View Chat" button clicked for group ID: ${group.id}`);
-                    if (typeof itemClickHandler === 'function') {
-                        itemClickHandler(group);
+                    itemClickHandler(group); // This also calls groupManager.joinGroup
+                });
+            }
+
+            // --- Attach listener for our NEW "Info" button ---
+            if (infoBtn) {
+                infoBtn.addEventListener('click', (e: MouseEvent) => {
+                    e.stopPropagation();
+                    console.log(`LR_DEBUG: "Info" button clicked for group ID: ${group.id}`);
+                    const guh = window.groupUiHandler;
+                    // This calls the specific function to open the info modal
+                    if (guh?.openGroupInfoModal) { 
+                        guh.openGroupInfoModal(group);
                     } else {
-                        console.error("LR_ERROR: itemClickHandler not function for View Chat btn.");
+                        console.error("LR_ERROR: groupUiHandler.openGroupInfoModal is not available.");
                     }
                 });
             }

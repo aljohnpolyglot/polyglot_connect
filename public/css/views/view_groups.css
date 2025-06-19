@@ -121,6 +121,11 @@ body.dark-mode #groups-view {
     transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
     justify-content: space-between; overflow: hidden;
 }
+
+#groups-view .group-discovery-list-item.state-not-joined {
+    justify-content: flex-start; /* This stops it from stretching vertically */
+}
+
 #groups-view .group-discovery-list-item:hover {
     transform: translateY(-4px); box-shadow: var(--view-groups-shadow-card-hover);
 }
@@ -148,19 +153,31 @@ body.dark-mode #groups-view {
     font-size: 0.9em; color: var(--view-groups-text-secondary); line-height: 1.4;
     width: 90%; height: calc(1.4em * 2); overflow: hidden; margin: top 5px; margin-bottom: -10px;
 }
-#groups-view .group-discovery-list-item .group-card-join-btn,
-#groups-view .group-discovery-list-item .group-card-view-chat-btn {
-    padding: var(--spacing-sm, 10px) var(--spacing-lg, 20px); border-radius: var(--view-groups-border-radius-button);
-    font-weight: var(--font-weight-medium, 500); font-size: 0.9em; cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s, transform 0.15s ease-out;
-    display: inline-flex; align-items: center; justify-content: center;
-    flex-shrink: 0; border: 1px solid; text-decoration: none; min-width: 150px;
-    width: auto; max-width: 95%; line-height: 1.5; margin-top: auto;
+#groups-view .group-discovery-list-item .group-card-actions {
+    display: flex;
+    flex-direction: column; /* This stacks the buttons vertically */
+    gap: var(--spacing-xs, 8px); /* This adds space between the buttons */
+    width: 100%; /* Make the container take full width */
+    margin-top: auto; /* Pushes the button block to the bottom of the card */
 }
-#groups-view .group-discovery-list-item .group-card-join-btn:hover,
-#groups-view .group-discovery-list-item .group-card-view-chat-btn:hover {
-    transform: translateY(-2px); box-shadow: var(--view-groups-shadow-soft);
+
+/* Add a new rule for the "Info" button specifically to style it */
+
+#groups-view .group-discovery-list-item .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--view-groups-text-primary);
 }
+
+/* Dark Mode hover for Info button */
+body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn {
+    color: var(--view-groups-text-muted);
+    border-color: var(--view-groups-border-light);
+}
+body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-strong);
+    color: var(--view-groups-text-primary);
+}
+
 #groups-view .group-discovery-list-item .group-card-join-btn {
     background-color: var(--view-groups-accent-primary); color: var(--view-groups-text-on-accent);
     border-color: var(--view-groups-accent-primary);
@@ -168,10 +185,7 @@ body.dark-mode #groups-view {
 #groups-view .group-discovery-list-item .group-card-join-btn:hover {
     background-color: var(--view-groups-accent-primary-hover); border-color: var(--view-groups-accent-primary-hover);
 }
-#groups-view .group-discovery-list-item .group-card-view-chat-btn {
-    background-color: var(--view-groups-info-color); color: var(--view-groups-text-on-accent);
-    border-color: var(--view-groups-info-color);
-}
+
 #groups-view .group-discovery-list-item .group-card-view-chat-btn:hover {
     background-color: var(--view-groups-info-color-hover); border-color: var(--view-groups-info-color-hover);
 }
@@ -179,7 +193,11 @@ body.dark-mode #groups-view {
 #groups-view .group-discovery-list-item .group-card-view-chat-btn i {
     font-size: 1em; line-height: 1;
 }
-
+#groups-view .group-discovery-list-item .group-card-info-btn i {
+    font-size: 0.7em; /* Makes the info icon slightly smaller */
+    line-height: 1;
+    margin-right: 5px;
+}
 /* In css/views/view_groups.css */
 
 /* ... other styles for #groups-view, .view-header, .view-content, etc. ... */
@@ -411,4 +429,177 @@ body.dark-mode #groups-view {
     #groups-view #group-chat-interface #leave-group-btn { font-size: 0.8em; padding: 6px 8px; }
     #groups-view #group-chat-interface #leave-group-btn .button-text { display: none; }
     #groups-view #group-chat-interface #leave-group-btn i { margin-right: 0; }
+}/* ===== START: ADD THIS ENTIRE CSS BLOCK ===== */
+
+/* --- Group View Toggle Tabs --- */
+.group-view-toggle-container {
+    display: flex;
+    gap: var(--spacing-sm, 8px);
+    margin-bottom: var(--spacing-md, 16px);
+    flex-shrink: 0;
+    border-bottom: 2px solid var(--view-groups-border-light);
+    padding: 0 var(--spacing-sm);
+}
+
+.group-view-toggle-btn {
+    padding: var(--spacing-sm, 10px) var(--spacing-md, 16px);
+    font-size: 0.95em;
+    font-weight: var(--font-weight-medium);
+    color: var(--view-groups-text-muted);
+    background-color: transparent;
+    border: none;
+    border-bottom: 3px solid transparent; /* Placeholder for active state */
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    margin-bottom: -2px; /* Pulls the bottom border up to overlap the container's border */
+    border-radius: 4px 4px 0 0;
+}
+
+.group-view-toggle-btn:hover {
+    color: var(--view-groups-text-primary);
+    background-color: var(--group-card-bg);
+}
+
+.group-view-toggle-btn.active {
+    color: var(--view-groups-accent-primary);
+    font-weight: var(--font-weight-semibold);
+    border-bottom-color: var(--view-groups-accent-primary);
+}
+
+body.dark-mode .group-view-toggle-btn.active {
+    color: var(--view-groups-info-color);
+    border-bottom-color: var(--view-groups-info-color);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+    .group-view-toggle-container {
+        gap: 0;
+        padding: 0;
+        border-bottom: 1px solid var(--view-groups-border-light);
+    }
+    .group-view-toggle-btn {
+        flex-grow: 1; /* Make buttons take up equal space */
+        text-align: center;
+        border-radius: 0;
+    }
+}/* --- ADD THIS TO view_groups.css --- */
+
+/* When #groups-view is in chat mode... */
+#groups-view.in-chat-mode .group-view-toggle-container {
+    display: none; /* ...hide the tabs. */
+}
+/* ========================================================== */
+/* ==   ADDITIONAL MEDIA QUERIES FOR GROUP CARD PROPORTIONS  == */
+/* ========================================================== */
+
+/* --- On Tablets and Smaller (Improves spacing and text size) --- */
+@media (max-width: 992px) {
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        width: 70px;
+        height: 70px;
+    }
+    #groups-view .group-discovery-list-item .group-card-name {
+        font-size: 1.05em;
+    }
+    #groups-view .group-discovery-list-item .group-card-subtext {
+        font-size: 0.85em;
+    }
+}
+
+
+/* --- On Mobile Phones (Larger avatar, better spacing, single column) --- */
+@media (max-width: 768px) {
+    /* Make the grid have slightly less space between cards */
+    #groups-view #available-groups-ul {
+        gap: 1.25rem;
+    }
+
+    /* Make the avatar significantly larger relative to the card */
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 1rem;
+    }
+
+    /* Give the text area more room to breathe */
+    #groups-view .group-discovery-list-item .group-card-info {
+        margin-bottom: 1.25rem;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-name {
+        font-size: 1.1em; /* Make the title pop more */
+    }
+}
+
+
+/* --- On Very Small Screens (Force single column layout) --- */
+@media (max-width: 480px) {
+    #groups-view #available-groups-ul {
+        /* Switch to a single column for a better scrolling experience */
+        grid-template-columns: 1fr;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        /* Slightly smaller avatar for the very narrow layout */
+        width: 75px;
+        height: 75px;
+    }
+}
+
+/* ===== END: ADD THIS ENTIRE CSS BLOCK ===== */
+/* ========================================================== */
+/* ==   MOBILE PROPORTIONS: Smaller Content, More Padding  == */
+/* ========================================================== */
+
+/* --- For Tablets and Large Phones --- */
+@media (max-width: 768px) {
+    #groups-view .group-discovery-list-item {
+        /* More padding inside the card */
+        padding: 1.5rem; /* ~24px */
+    }
+
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        /* Slightly smaller avatar */
+        width: 70px;
+        height: 70px;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-name {
+        /* Smaller title text */
+        font-size: 1.05em;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-subtext {
+        /* Smaller subtitle text */
+        font-size: 0.85em;
+    }
+}
+
+
+/* --- For Smaller Mobile Phones --- */
+@media (max-width: 480px) {
+    #groups-view #available-groups-ul {
+        /* Switch to a single column for a better scrolling experience */
+        grid-template-columns: 1fr;
+    }
+
+    #groups-view .group-discovery-list-item {
+        /* Keep the generous padding */
+        padding: 1.5rem 1.25rem;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-avatar {
+        /* Even smaller avatar for narrow screens */
+        width: 65px;
+        height: 65px;
+    }
+
+    #groups-view .group-discovery-list-item .group-card-name {
+        font-size: 1em; /* Further reduce title size */
+    }
+
+    #groups-view .group-discovery-list-item .group-card-subtext {
+        font-size: 0.8em; /* Further reduce subtitle size */
+    }
 }

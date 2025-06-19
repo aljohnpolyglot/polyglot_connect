@@ -105,8 +105,8 @@ function handleTabSwitched(event: Event): void {
 
     let rightPanelIdToShow: keyof YourDomElements | null = null; // Use the specific key type
 
-    if (newTab === 'find') {
-        rightPanelIdToShow = 'findFiltersPanel';
+    if (newTab === 'friends') { // <<< UPDATED FROM 'find'
+        rightPanelIdToShow = 'friendsFiltersPanel'; // <<< UPDATED ID
     } else if (newTab === 'groups') {
         console.log("SPM: Handling 'groups' tab.");
         if (!groupManager || typeof groupManager.getCurrentGroupData !== 'function') {

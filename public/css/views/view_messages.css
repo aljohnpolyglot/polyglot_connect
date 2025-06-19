@@ -28,29 +28,28 @@
 /* --- Embedded 1-on-1 Chat UI Styling --- */
 .embedded-chat-ui { /* Main container for the 1-on-1 chat interface */
     display: flex;
-    flex-direction: column;
-    height: 100%;
+    flex-direction: column; /* Lays out header, log, footer vertically */
+    height: 100%;           /* CRUCIAL: Takes full height of its parent */
+    overflow: hidden;       /* CRUCIAL: Prevents this whole container from scrolling */
     border-radius: var(--border-radius-md, 6px);
     background-color: var(--bg-chat-embedded-light, #ffffff);
-    overflow: hidden; /* Contains header/footer/log */
     border: 1px solid var(--border-chat-embedded-light, #dee2e6);
-    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05)); /* Subtle shadow */
-    position: relative; /* For sticky header/footer */
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05));
 }
 
 /* Header for Embedded Chat */
 .embedded-chat-main-header {
+    flex-shrink: 0; /* CRUCIAL: Prevents the header from shrinking or being scrolled away */
+    z-index: 10;
+    margin-bottom: 0; /* Override generic .view-header margin */
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
     border-bottom: 1px solid var(--border-chat-header-light, #e9ecef);
     background-color: var(--bg-chat-header-light, #f8f9fa);
-    flex-shrink: 0;
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
+
 .embedded-chat-main-header .partner-info {
     display: flex;
     align-items: center;
@@ -92,15 +91,14 @@
 
 /* Chat Log Area for Embedded Chat */
 #embedded-chat-log {
-    flex-grow: 1;
-    overflow-y: auto;
+    flex-grow: 1;           /* CRUCIAL: Takes up all available space between header and footer */
+    overflow-y: auto;       /* CRUCIAL: Makes ONLY this element scrollable vertically */
     padding: var(--spacing-lg, 16px);
     background-color: var(--bg-chat-log-light, #ffffff);
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 10px); /* Space between message wrappers */
+    gap: var(--spacing-sm, 10px);
 }
-
 /* Optional Activity Area Styling (if used) */
 #embedded-message-activity-area {
     border-top: 1px solid var(--border-subtle-light, #e9ecef);
@@ -111,6 +109,7 @@
 }
 
 /* Footer for Embedded Chat Input */
+/* Footer for Embedded Chat Input */
 .embedded-chat-footer {
     padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
     border-top: 1px solid var(--border-chat-footer-light, #e9ecef);
@@ -119,8 +118,6 @@
     align-items: center;
     gap: var(--spacing-sm, 8px);
     flex-shrink: 0;
-    position: sticky;
-    bottom: 0;
     z-index: 10;
 }
 /* Input field and action buttons (attach, mic, send) */
@@ -424,4 +421,82 @@ body.dark-mode #chat-list-ul .list-item-base.group-chat-list-item .list-item-ava
     color: var(--view-groups-text-primary);
     font-size: var(--font-size-md);
     padding: var(--spacing-md, 16px);
+}
+/* ========================================================== */
+/* ==   RESPONSIVE & EMPTY STATE FIXES FOR EMBEDDED CHAT   == */
+/* ========================================================== */
+
+/* --- On All Screen Sizes: Define a Minimum Height for the Chat Log --- */
+/* This is the key fix for the empty chat collapsing issue. */
+#embedded-chat-log {
+    min-height: 200px; /* Or a value that looks good, e.g., 40vh */
+}
+
+/* 
+  This rule targets the placeholder paragraph *only when the chat log is empty*.
+  It centers the placeholder text within the min-height area.
+*/
+#embedded-chat-log:empty + footer {
+    /* Optional: slightly different style when log is empty */
+}
+#embedded-chat-log:empty::before {
+    content: "No messages yet. Send one to start the conversation!";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-color-muted);
+    font-size: 0.9em;
+    box-sizing: border-box;
+}
+
+/* --- On Tablets and Smaller --- */
+@media (max-width: 992px) {
+    .embedded-chat-main-header,
+    .embedded-chat-footer {
+        /* Reduce padding slightly on tablets */
+        padding: 10px 14px;
+    }
+
+    .embedded-chat-main-header #embedded-chat-header-name {
+        font-size: 1.05em;
+    }
+
+    .embedded-chat-main-header .chat-header-avatar {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* --- On Mobile Phones (Most significant changes) --- */
+@media (max-width: 768px) {
+    /* Make the entire chat UI use the full height of its container */
+    .embedded-chat-ui {
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    
+    .embedded-chat-main-header {
+        /* Reduce padding and font size for a more compact header */
+        padding: 8px 12px;
+        height: 55px; /* Give it a fixed height */
+    }
+    
+    .embedded-chat-main-header #embedded-chat-header-name {
+        font-size: 1em;
+    }
+    
+    .embedded-chat-footer {
+        /* Reduce padding for a more compact footer */
+        padding: 8px 12px;
+    }
+
+    #embedded-message-text-input {
+        /* Slightly smaller text in the input field */
+        font-size: 0.95em;
+    }
 }

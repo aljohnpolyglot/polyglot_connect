@@ -32,8 +32,8 @@ interface GroupManagerModule {
             skipUiAppend?: boolean;
             imageFile?: File | null;
             captionText?: string | null;
-            messageId?: string;    // From chat_event_listeners
-            timestamp?: number;    // From chat_event_listeners
+            messageId?: string;
+            timestamp?: number;
         }
     ) => void;
     userIsTyping: () => void;
@@ -41,6 +41,7 @@ interface GroupManagerModule {
     getAllGroupDataWithLastActivity: () => ActiveGroupListItem[];
     isGroupJoined: (groupId: string) => boolean;
     getFullCurrentGroupMembers: () => Connector[];
+    getMembersForGroup: (groupDef: Group) => Connector[]; // ===== ADD THIS LINE =====
 }
 const dependenciesForGroupManager = [
     'domElementsReady', 
@@ -57,6 +58,16 @@ const dependenciesForGroupManager = [
 const groupManagerMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForGroupManager.forEach(dep => groupManagerMetDependenciesLog[dep] = false);
 let groupManagerDepsMetCount = 0;
+
+
+
+
+
+
+
+
+
+
 
 function initializeActualGroupManager(): void {
     console.log('group_manager.ts: initializeActualGroupManager() for FULL method population called.');
@@ -126,21 +137,131 @@ function initializeActualGroupManager(): void {
         function loadAvailableGroups(
             languageFilter: string | null = null,
             categoryFilter: string | null = null,
-            nameSearch: string | null = null // Ensure this is the third parameter
+            nameSearch: string | null = null,
+            options: { viewType: 'my-groups' | 'discover' } = { viewType: 'my-groups' }
         ): void {
-            // Corrected log to include all parameters
-            console.log("group_manager.ts: loadAvailableGroups() - START. Language:", languageFilter, "Category:", categoryFilter, "Name:", nameSearch);
+            console.log(`GM: loadAvailableGroups() - View: ${options.viewType}, Lang: ${languageFilter}, Cat: ${categoryFilter}, Name: ${nameSearch}`);
+            const { groupUiHandler, groupDataManager } = getDeps();
 
-            // The call to groupUiHandler.displayAvailableGroups needs to pass all these,
-            // AND the joinGroup callback as the FOURTH argument.
-            getDeps().groupUiHandler?.displayAvailableGroups(
-                languageFilter,
-                categoryFilter,
-                nameSearch, // This is the name search string (or null)
-                joinGroup   // This is the callback function
+            if (!groupUiHandler || !groupDataManager) {
+                console.error("GM: Missing GUH or GDM in loadAvailableGroups");
+                return;
+            }
+
+            // 1. Get all definitions from the data manager, which includes the isJoined flag
+            let allGroups = groupDataManager.getAllGroupDefinitions(languageFilter, categoryFilter, nameSearch);
+            let groupsToDisplay: Group[];
+
+            // 2. Filter based on the active tab
+            if (options.viewType === 'my-groups') {
+                groupsToDisplay = allGroups.filter(g => g.isJoined);
+            } else { // 'discover'
+                // ===== START: ADD THIS LOGIC =====
+                // Show only groups that the user has NOT joined
+                groupsToDisplay = allGroups.filter(g => !g.isJoined);
+                // ===== END: ADD THIS LOGIC =====
+            }
+
+            // 3. Send the final, filtered list to the UI handler for rendering
+            groupUiHandler.displayAvailableGroups(
+                groupsToDisplay, // Pass the pre-filtered array
+                joinGroup
             );
-            console.log("group_manager.ts: loadAvailableGroups() - FINISHED.");
+            
+            console.log(`GM: loadAvailableGroups() - Finished. Displaying ${groupsToDisplay.length} groups.`);
         }
+
+
+        function getMembersForGroup(groupDef: Group): Connector[] {
+            const { polyglotConnectors } = getDeps();
+            if (!groupDef || !polyglotConnectors) return [];
+    
+            const host = polyglotConnectors.find(c => c.id === groupDef.tutorId);
+            if (!host) {
+                console.error(`GroupManager Helper: Host/Tutor with ID '${groupDef.tutorId}' not found for group '${groupDef.name}'.`);
+                return [];
+            }
+    
+            let members = [host];
+            let potentialAdditionalMembers = [...polyglotConnectors].filter(p => p.id !== host!.id);
+    
+            const criteria = groupDef.memberSelectionCriteria;
+            const groupLanguage = groupDef.language;
+    
+            if (criteria) {
+                const targetLang = criteria.language || groupLanguage;
+                if (targetLang) {
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        p.language === targetLang ||
+                        p.nativeLanguages?.some(nl => nl.lang === targetLang) ||
+                        p.practiceLanguages?.some(pl => pl.lang === targetLang) ||
+                        (p.languageRoles && Object.keys(p.languageRoles).includes(targetLang))
+                    );
+                }
+                if (criteria.role && targetLang) {
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        p.languageRoles?.[targetLang]?.includes(criteria.role!)
+                    );
+                } else if (criteria.role && !criteria.language) {
+                     potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        Object.values(p.languageRoles || {}).some(rolesArray => rolesArray.includes(criteria.role!))
+                    );
+                }
+                if (criteria.country) {
+                    const allowedCountries = (Array.isArray(criteria.country) ? criteria.country : [criteria.country]).map(c => c.toLowerCase());
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        p.country && allowedCountries.includes(p.country.toLowerCase())
+                    );
+                }
+                if (criteria.city) {
+                    const allowedCities = (Array.isArray(criteria.city) ? criteria.city : [criteria.city]).map(c => c.toLowerCase());
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        p.city && allowedCities.includes(p.city.toLowerCase())
+                    );
+                }
+                if (criteria.interestsInclude) {
+                    const requiredInterests = (Array.isArray(criteria.interestsInclude) ? criteria.interestsInclude : [criteria.interestsInclude]).map(i => i.toLowerCase());
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        p.interests?.some(interest => requiredInterests.includes(interest.toLowerCase()))
+                    );
+                }
+                if (criteria.interestsAll && criteria.interestsAll.length > 0) {
+                    const requiredInterests = criteria.interestsAll.map(i => i.toLowerCase());
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                        requiredInterests.every(reqInterest =>
+                            p.interests?.some(pInterest => pInterest.toLowerCase() === reqInterest)
+                        )
+                    );
+                }
+                if (criteria.excludeIds && criteria.excludeIds.length > 0) {
+                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p => !criteria.excludeIds?.includes(p.id));
+                }
+            } else {
+                console.warn(`GroupManager Helper: No memberSelectionCriteria for group '${groupDef.name}'. Falling back to selecting 'learner' role for group language '${groupLanguage}'.`);
+                potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
+                    p.languageRoles?.[groupLanguage]?.includes("learner") &&
+                    !p.languageRoles?.[groupLanguage]?.includes("tutor")
+                );
+            }
+    
+            const shuffledAdditionalMembers = potentialAdditionalMembers.sort(() => 0.5 - Math.random());
+            const neededAdditionalCount = Math.max(0, groupDef.maxLearners || 0);
+            const selectedAdditionalMembers = shuffledAdditionalMembers.slice(0, neededAdditionalCount);
+            
+            members.push(...selectedAdditionalMembers);
+    
+            if (selectedAdditionalMembers.length < neededAdditionalCount) {
+                console.warn(`GroupManager Helper: Could only find ${selectedAdditionalMembers.length} of ${neededAdditionalCount} needed members for group '${groupDef.name}'.`);
+            }
+            return members;
+        }
+
+
+
+
+
+
+
 
       function joinGroup(groupOrGroupId: string | Group): void {
             console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
@@ -186,109 +307,20 @@ function initializeActualGroupManager(): void {
             }
 
             console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
+        
+        
+        
+        
             groupDataManager.setCurrentGroupContext(groupId, groupDef);
 
-            // 1. Select the Host/Tutor
-            currentGroupTutorObject = polyglotConnectors.find(c => c.id === groupDef.tutorId);
-            if (!currentGroupTutorObject) {
-                console.error(`GroupManager: CRITICAL - Host/Tutor persona with ID '${groupDef.tutorId}' not found in window.polyglotConnectors for group '${groupDef.name}'. Cannot proceed.`);
-                alert(`Error: Host for group "${groupDef.name}" (ID: ${groupDef.tutorId}) is missing from available personas. Please check configuration.`);
-                groupDataManager.setCurrentGroupContext(null, null);
-                resetGroupState();
-                return;
-            }
-            console.log(`GroupManager: Host for group '${groupDef.name}' is '${currentGroupTutorObject.profileName}' (ID: ${currentGroupTutorObject.id})`);
-            currentGroupMembersArray = [currentGroupTutorObject]; // Host is always the first member
-
-            // 2. Select Additional Members based on Criteria or Fallback
-            let potentialAdditionalMembers = [...polyglotConnectors].filter(p => p.id !== currentGroupTutorObject!.id); // Exclude host
-
-            const criteria = groupDef.memberSelectionCriteria;
-            const groupLanguage = groupDef.language;
-
-            if (criteria) {
-                console.log(`GroupManager: Applying member selection criteria for group '${groupDef.name}':`, JSON.parse(JSON.stringify(criteria)));
-
-                const targetLang = criteria.language || groupLanguage;
-                if (targetLang) {
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        p.language === targetLang ||
-                        p.nativeLanguages?.some(nl => nl.lang === targetLang) ||
-                        p.practiceLanguages?.some(pl => pl.lang === targetLang) ||
-                        (p.languageRoles && Object.keys(p.languageRoles).includes(targetLang))
-                    );
-                    // console.log(`GM Criteria: After language filter ('${targetLang}'): ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.role && targetLang) {
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        p.languageRoles?.[targetLang]?.includes(criteria.role!)
-                    );
-                    // console.log(`GM Criteria: After role ('${criteria.role}') in '${targetLang}': ${potentialAdditionalMembers.length} potential.`);
-                } else if (criteria.role && !criteria.language) { // Role across any language
-                     potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        Object.values(p.languageRoles || {}).some(rolesArray => rolesArray.includes(criteria.role!))
-                    );
-                    // console.log(`GM Criteria: After general role ('${criteria.role}'): ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.country) {
-                    const allowedCountries = (Array.isArray(criteria.country) ? criteria.country : [criteria.country]).map(c => c.toLowerCase());
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        p.country && allowedCountries.includes(p.country.toLowerCase())
-                    );
-                    // console.log(`GM Criteria: After country filter: ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.city) {
-                    const allowedCities = (Array.isArray(criteria.city) ? criteria.city : [criteria.city]).map(c => c.toLowerCase());
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        p.city && allowedCities.includes(p.city.toLowerCase())
-                    );
-                    // console.log(`GM Criteria: After city filter: ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.interestsInclude) {
-                    const requiredInterests = (Array.isArray(criteria.interestsInclude) ? criteria.interestsInclude : [criteria.interestsInclude]).map(i => i.toLowerCase());
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        p.interests?.some(interest => requiredInterests.includes(interest.toLowerCase()))
-                    );
-                    // console.log(`GM Criteria: After interestsInclude filter: ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.interestsAll && criteria.interestsAll.length > 0) {
-                    const requiredInterests = criteria.interestsAll.map(i => i.toLowerCase());
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                        requiredInterests.every(reqInterest =>
-                            p.interests?.some(pInterest => pInterest.toLowerCase() === reqInterest)
-                        )
-                    );
-                    // console.log(`GM Criteria: After interestsAll filter: ${potentialAdditionalMembers.length} potential.`);
-                }
-
-                if (criteria.excludeIds && criteria.excludeIds.length > 0) {
-                    potentialAdditionalMembers = potentialAdditionalMembers.filter(p => !criteria.excludeIds?.includes(p.id));
-                    // console.log(`GM Criteria: After excludeIds filter: ${potentialAdditionalMembers.length} potential.`);
-                }
-            } else {
-                // Fallback logic if no memberSelectionCriteria is defined
-                console.warn(`GroupManager: No memberSelectionCriteria for group '${groupDef.name}'. Falling back to selecting 'learner' role for group language '${groupLanguage}'.`);
-                potentialAdditionalMembers = potentialAdditionalMembers.filter(p =>
-                    p.languageRoles?.[groupLanguage]?.includes("learner") &&
-                    !p.languageRoles?.[groupLanguage]?.includes("tutor")
-                );
-            }
-
-            const shuffledAdditionalMembers = potentialAdditionalMembers.sort(() => 0.5 - Math.random());
-            const neededAdditionalCount = Math.max(0, groupDef.maxLearners || 0);
-            const selectedAdditionalMembers = shuffledAdditionalMembers.slice(0, neededAdditionalCount);
-
-            currentGroupMembersArray.push(...selectedAdditionalMembers);
-
-            console.log(`GroupManager: For group '${groupDef.name}', Host: '${currentGroupTutorObject.profileName}'. Added ${selectedAdditionalMembers.length} additional members. Total AI members: ${currentGroupMembersArray.length}.`);
-            if (selectedAdditionalMembers.length < neededAdditionalCount) {
-                console.warn(`GroupManager: Could only find ${selectedAdditionalMembers.length} additional members matching criteria/fallback for group '${groupDef.name}' (needed ${neededAdditionalCount}). Potential pool size was ${potentialAdditionalMembers.length}.`);
-            }
+        // ===== START: REPLACE WITH THIS BLOCK =====
+        currentGroupMembersArray = getMembersForGroup(groupDef);
+        if (currentGroupMembersArray.length === 0) {
+            console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
+            alert(`Error: Could not assemble members for group "${groupDef.name}". Please check configuration.`);
+            return;
+        }
+        currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
 
          // <<< REPLACE THE END OF THE joinGroup FUNCTION WITH THIS LOGIC >>>
 
@@ -573,7 +605,8 @@ async function handleUserMessageInGroup(
             initialize, loadAvailableGroups, joinGroup, leaveCurrentGroup,
             handleUserMessageInGroup, userIsTyping: userIsTypingInGroupSignal,
             getCurrentGroupData, getAllGroupDataWithLastActivity,
-            isGroupJoined: isCurrentlyJoined, getFullCurrentGroupMembers
+            isGroupJoined: isCurrentlyJoined, getFullCurrentGroupMembers,
+            getMembersForGroup
         };
     })(); 
 

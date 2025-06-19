@@ -1,11 +1,13 @@
 // D:\polyglot_connect\src\js\sessions\session_history_manager.ts
+// AFTER
 import type {
+    YourDomElements, // <<< ADD THIS LINE
     PolyglotHelpersOnWindow as PolyglotHelpers,
     ListRenderer,
-    SessionManager, // For window.sessionManager.showSessionRecapInView
+    SessionManager,
     SessionData,
     TranscriptTurn,
-    Connector // For SessionData.connector (if it exists on your SessionData type)
+    Connector
 } from '../types/global.d.ts';
 
 console.log('session_history_manager.ts: Script loaded, waiting for core dependencies.');
@@ -26,27 +28,36 @@ console.log('session_history_manager.ts: Placeholder window.sessionHistoryManage
 function initializeActualSessionHistoryManager(): void {
     console.log('session_history_manager.ts: initializeActualSessionHistoryManager() called. Performing detailed dependency check...');
 
-    type VerifiedDeps = {
-        polyglotHelpers: PolyglotHelpers;
-        listRenderer: ListRenderer;
-       sessionManager: Partial<SessionManager>; // Or just `object`
-    };
+ // AFTER
+type VerifiedDeps = {
+    domElements: YourDomElements; // <<< ADD THIS LINE
+    polyglotHelpers: PolyglotHelpers;
+    listRenderer: ListRenderer;
+    sessionManager: Partial<SessionManager>;
+};
 
-    const getSafeDeps = (): VerifiedDeps | null => {
-        const deps = {
-            polyglotHelpers: window.polyglotHelpers,
-            listRenderer: window.listRenderer,
-            sessionManager: window.sessionManager // Added
-        };
-        const missing: string[] = [];
-        if (!deps.polyglotHelpers?.loadFromLocalStorage) missing.push("polyglotHelpers.loadFromLocalStorage");
-        if (!deps.listRenderer?.renderSummaryList) missing.push("listRenderer.renderSummaryList");
-        if (!deps.sessionManager) missing.push("sessionManager (object existence)"); // Relies on placeholder being set
-        if (missing.length > 0) {
-            console.error("session_history_manager.ts: CRITICAL - Functional deps not ready. Details:", missing.join(', '));
-            return null;
-        }
-        return deps as VerifiedDeps;
+const getSafeDeps = (): VerifiedDeps | null => {
+    const deps = {
+        domElements: window.domElements,
+        polyglotHelpers: window.polyglotHelpers,
+        listRenderer: window.listRenderer,
+        sessionManager: window.sessionManager
+    };
+    
+    const missing: string[] = []; // Declare 'missing' first
+    
+    // Now, check all dependencies
+    if (!deps.domElements) missing.push("domElements");
+    if (!deps.polyglotHelpers?.loadFromLocalStorage) missing.push("polyglotHelpers.loadFromLocalStorage");
+    if (!deps.listRenderer?.renderSummaryList) missing.push("listRenderer.renderSummaryList");
+    if (!deps.sessionManager) missing.push("sessionManager (object existence)");
+    
+    if (missing.length > 0) {
+        console.error("session_history_manager.ts: CRITICAL - Functional deps not ready. Details:", missing.join(', '));
+        return null;
+    }
+    
+    return deps as VerifiedDeps;
     };
     
     const resolvedDeps = getSafeDeps();
@@ -146,31 +157,40 @@ function initializeActualSessionHistoryManager(): void {
             URL.revokeObjectURL(link.href);
         }
 
-        function updateSummaryListUI(): void {
-            console.log("SHM: updateSummaryListUI() called.");
-            if (!resolvedDeps) {
-                console.error("SHM: updateSummaryListUI called but resolvedDeps is null. Cannot proceed.");
-                return;
-            }
-            const sessions = getCompletedSessions();
-            const currentSessionManager = window.sessionManager; // Resolve at runtime
-            const safeListRenderer = resolvedDeps.listRenderer;
+    // AFTER
+function updateSummaryListUI(): void {
+    console.log("SHM: updateSummaryListUI() called.");
+    if (!resolvedDeps) {
+        console.error("SHM: updateSummaryListUI called but resolvedDeps is null. Cannot proceed.");
+        return;
+    }
 
-            if (safeListRenderer && typeof safeListRenderer.renderSummaryList === 'function') {
-                if (currentSessionManager && typeof currentSessionManager.showSessionRecapInView === 'function') {
-                    safeListRenderer.renderSummaryList(sessions, currentSessionManager.showSessionRecapInView);
-                } else {
-                    console.error("SHM: window.sessionManager.showSessionRecapInView not available at runtime for listRenderer callback.");
-                    safeListRenderer.renderSummaryList(sessions, (sessionDataOrId: SessionData | string) => {
-                        const id = typeof sessionDataOrId === 'string' ? sessionDataOrId : (sessionDataOrId?.sessionId || "unknown");
-                        console.error(`SHM Fallback: Cannot show recap for ${id}, sessionManager not fully ready.`);
-                        alert(`Cannot show recap, session manager is not fully initialized. Session ID: ${id}`);
-                    });
-                }
-            } else {
-                console.error("SHM: listRenderer or listRenderer.renderSummaryList is not available.");
-            }
+    let sessions = getCompletedSessions(); // Get all sessions
+    const currentSessionManager = window.sessionManager;
+    const safeListRenderer = resolvedDeps.listRenderer;
+    
+    // Get the search term from the new input field
+    // Note: We access domElements through the already-verified 'resolvedDeps'
+    const searchTerm = resolvedDeps.domElements?.searchSessionHistoryInput?.value.trim().toLowerCase() || '';
+
+    // If there's a search term, filter the list
+    if (searchTerm) {
+        sessions = sessions.filter(session => 
+            session.connectorName?.toLowerCase().includes(searchTerm)
+        );
+    }
+
+    if (safeListRenderer && typeof safeListRenderer.renderSummaryList === 'function') {
+        if (currentSessionManager && typeof currentSessionManager.showSessionRecapInView === 'function') {
+            safeListRenderer.renderSummaryList(sessions, currentSessionManager.showSessionRecapInView);
+        } else {
+            console.error("SHM: window.sessionManager.showSessionRecapInView not available at runtime for listRenderer callback.");
+            safeListRenderer.renderSummaryList(sessions, () => {}); // Fallback with empty function
         }
+    } else {
+        console.error("SHM: listRenderer or listRenderer.renderSummaryList is not available.");
+    }
+}
         
         console.log("session_history_manager.ts: IIFE (module definition) FINISHED.");
         return {

@@ -20,9 +20,9 @@ window.domElements = {
     homepageTipsList: document.getElementById('homepage-tips-list') as HTMLUListElement | null,
 
     // Find Someone View
-    findView: document.getElementById('find-view') as HTMLElement | null,
+    friendsView: document.getElementById('friends-view') as HTMLElement | null,
     connectorHubGrid: document.getElementById('connector-hub') as HTMLElement | null,
-  findFiltersPanel: document.getElementById('findFiltersPanel') as HTMLElement | null, // Match HTML id // HTML ID is find-filters
+    friendsFiltersPanel: document.getElementById('friendsFiltersPanel') as HTMLElement | null, // Match HTML id // HTML ID is find-filters
     filterLanguageSelect: document.getElementById('filter-language') as HTMLSelectElement | null,
     filterRoleSelect: document.getElementById('filter-role') as HTMLSelectElement | null,
     applyFiltersBtn: document.getElementById('apply-filters-btn') as HTMLButtonElement | null,
@@ -62,7 +62,8 @@ window.domElements = {
   gmmMemberCount: document.getElementById('gmm-member-count') as HTMLSpanElement | null,
   gmmMemberSearchInput: document.getElementById('gmm-member-search-input') as HTMLInputElement | null,
   gmmMembersListUl: document.getElementById('gmm-members-list') as HTMLUListElement | null,
-
+  gmmModalFooter: document.querySelector('#group-members-modal .gmm-modal-footer') as HTMLElement | null,
+  gmmCtaBtn: document.getElementById('gmm-cta-btn') as HTMLButtonElement | null,
 
    // Messages View (Embedded Chat)
    messagesView: document.getElementById('messages-view') as HTMLElement | null,
@@ -85,6 +86,7 @@ window.domElements = {
    // --- END ENSURE ---
    messagesChatListPanel: document.getElementById('messagesChatListPanel') as HTMLElement | null,
    chatListUl: document.getElementById('chat-list-ul') as HTMLUListElement | null,
+   searchActiveChatsInput: document.getElementById('search-active-chats-input') as HTMLInputElement | null, // <<< ADD THIS
    emptyChatListMsg: document.getElementById('empty-chat-list-msg') as HTMLElement | null,
 
    // Messaging Modal
@@ -113,6 +115,7 @@ window.domElements = {
     summaryPlaceholder: document.getElementById('summary-placeholder') as HTMLElement | null,
   summaryChatListPanel: document.getElementById('summaryChatListPanel') as HTMLElement | null, // Match HTML id
     summaryListUl: document.getElementById('summary-list-ul') as HTMLUListElement | null,
+    searchSessionHistoryInput: document.getElementById('search-session-history-input') as HTMLInputElement | null, // <<< ADD THIS
     emptySummaryListMsg: document.getElementById('empty-summary-list-msg') as HTMLElement | null,
 
     // Detailed Persona Modal

@@ -270,6 +270,7 @@ export interface GroupDataManager {
   // Define a more specific return type for the items in this array if possible
   // This is for the sidebar active chat list
  getAllGroupDataWithLastActivity: () => ActiveGroupListItem[]; // Use ActiveGroupListItem
+ 
 }
 
 // D:\polyglot_connect\src\js\types\global.d.ts
@@ -278,7 +279,7 @@ export interface GroupDataManager {
 
 export interface GroupUiHandler {
   initialize: () => void;
-  displayAvailableGroups: (languageFilter: string | null | undefined, categoryFilter: string | null | undefined, nameSearch: string | null | undefined, joinGroupCallback: (groupOrId: string | Group) => void) => void;
+  displayAvailableGroups: (groupsToDisplay: Group[], joinGroupCallback: (groupOrId: string | Group) => void) => void;
   showGroupChatView: (
     groupData: Group, // Assuming Group type
     groupMembers: Connector[],
@@ -296,6 +297,7 @@ export interface GroupUiHandler {
   ) => void;
   clearGroupChatLog: () => void;
   openGroupMembersModal: () => void; // New method
+  openGroupInfoModal: (group: Group) => void; // ===== ADD THIS LINE =====
 }
 // In global.d.ts
 export interface GeminiTtsService {
@@ -375,7 +377,7 @@ export interface GroupInteractionLogic {
 
 export interface GroupManager {
     initialize: () => void;
-    loadAvailableGroups: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null) => void;
+    loadAvailableGroups: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null, options?: { viewType: 'my-groups' | 'discover' }) => void;
     joinGroup: (groupOrGroupId: string | Group) => void; // Group type based on usage
     leaveCurrentGroup: (triggerReload?: boolean, updateSidebar?: boolean) => void;
     handleUserMessageInGroup: (
@@ -391,6 +393,7 @@ export interface GroupManager {
     isGroupJoined: (groupId: string) => boolean;
     getFullCurrentGroupMembers: () => Connector[];
    getAllGroupDataWithLastActivity: () => ActiveGroupListItem[]; // Use ActiveGroupListItem
+   getMembersForGroup: (groupDef: Group) => Connector[]; // <-- CORRECT PLACE
 }
 const getAllGroupDataWithLastActivity = (): ActiveGroupListItem[] => {
     return getDeps().groupDataManager.getAllGroupDataWithLastActivity() || [];
@@ -507,9 +510,9 @@ export interface YourDomElements { // Ensure EXPORT
     homepageTipsList: HTMLUListElement | null;
 
     // Find Someone View
-    findView: HTMLElement | null;
+    friendsView: HTMLElement | null;
     connectorHubGrid: HTMLElement | null;
-    findFiltersPanel: HTMLElement | null; // Assuming it's a generic HTMLElement
+    friendsFiltersPanel: HTMLElement | null; // Assuming it's a generic HTMLElement
     filterLanguageSelect: HTMLSelectElement | null;
     filterRoleSelect: HTMLSelectElement | null;
     applyFiltersBtn: HTMLButtonElement | null;
@@ -549,7 +552,8 @@ export interface YourDomElements { // Ensure EXPORT
     gmmMemberCount: HTMLSpanElement | null;     // New
     gmmMemberSearchInput: HTMLInputElement | null; // New
     gmmMembersListUl: HTMLUListElement | null;  // New
-
+    gmmModalFooter: HTMLElement | null;         // New
+    gmmCtaBtn: HTMLButtonElement | null;         // New
     // Messages View (Embedded Chat)
     messagesView: HTMLElement | null;
     embeddedChatHeaderAvatar: HTMLImageElement | null;
@@ -569,6 +573,8 @@ export interface YourDomElements { // Ensure EXPORT
     embeddedImageCaptionInput?: HTMLInputElement | null;        // <<< ADD
     messagesChatListPanel: HTMLElement | null;
     chatListUl: HTMLUListElement | null;
+    searchActiveChatsInput: HTMLInputElement | null; // <<< ADD THIS
+    
     emptyChatListMsg: HTMLElement | null; // Likely <p>
 
     // Messaging Modal
@@ -595,6 +601,7 @@ export interface YourDomElements { // Ensure EXPORT
     summaryPlaceholder: HTMLElement | null; // Likely <p>
     summaryChatListPanel: HTMLElement | null;
     summaryListUl: HTMLUListElement | null;
+    searchSessionHistoryInput: HTMLInputElement | null; // <<< ADD THIS
     emptySummaryListMsg: HTMLElement | null; // Likely <p>
 
     // Detailed Persona Modal
@@ -787,7 +794,7 @@ export interface ActiveConversationsStore {
   }
 
 export interface CardRenderer {
-  renderCards: (connectorsToDisplay: Connector[]) => void;
+  renderCards: (connectorsToDisplay: Connector[], activeFriendsView: 'my-friends' | 'discover') => void;
 }
 export interface UiUpdater {
   updateVirtualCallingScreen: (connector: Connector, sessionTypeAttempt: string) => void;
@@ -873,7 +880,7 @@ export interface ChatMessageOptions {
 }
 export interface ActivityManager {
   isConnectorActive: (connector: Connector | null | undefined) => boolean;
-  simulateAiTyping: (connectorId: string, chatType?: string, aiMessageText?: string) => HTMLElement | null | void;
+  simulateAiTyping: (connectorId: string, chatType?: string, aiMessageText?: string) => HTMLElement | null;
   clearAiTypingIndicator: (connectorId: string, chatType?: string, thinkingMsgElement?: HTMLElement | null) => void;
   getAiReplyDelay: (connector: Connector | null | undefined, messageLength?: number) => number;
 }

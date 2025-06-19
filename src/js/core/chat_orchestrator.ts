@@ -310,29 +310,40 @@ function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
         }
     }
 }
+// AFTER
 function renderCombinedActiveChatsList(): void {
-    console.log("CO_DEBUG: renderCombinedActiveChatsList CALLED. Timestamp:", Date.now()); // Add timestamp
+    console.log("CO_DEBUG: renderCombinedActiveChatsList CALLED. Timestamp:", Date.now());
     const deps = getResolvedDeps();
     
-    if (!deps) {
-        console.error("CO_ERROR: renderCombinedActiveChatsList - getResolvedDeps() returned null/undefined. Aborting render.");
+    if (!deps || !deps.listRenderer || typeof deps.listRenderer.renderActiveChatList !== 'function') {
+        console.warn("CO_WARN: listRenderer or its renderActiveChatList method is not available. Skipping render.");
         return;
     }
-    
-    console.log("CO_DEBUG: renderCombinedActiveChatsList - Resolved deps. listRenderer functional?:", !!(deps.listRenderer && typeof deps.listRenderer.renderActiveChatList === 'function'));
 
-    if (!deps.listRenderer || typeof deps.listRenderer.renderActiveChatList !== 'function') {
-        console.warn("CO_WARN: listRenderer or its renderActiveChatList method is not available. Skipping render.");
-        if (deps.listRenderer) {
-            console.warn("CO_WARN: deps.listRenderer exists, but renderActiveChatList is type:", typeof deps.listRenderer.renderActiveChatList);
-        } else {
-            console.warn("CO_WARN: deps.listRenderer itself is undefined.");
+    // Get the full list of chats
+    let combinedChats = getCombinedActiveChats();
+
+    // Get the search term from the new input field
+    const searchTerm = deps.domElements?.searchActiveChatsInput?.value.trim().toLowerCase() || '';
+
+    // If there's a search term, filter the list
+// AFTER
+if (searchTerm) {
+    combinedChats = combinedChats.filter(item => {
+        // If it's a group, check item.name
+        if (item.isGroup) {
+            return item.name?.toLowerCase().includes(searchTerm);
         }
-        return; // Return if listRenderer isn't ready
-    }
-
-    const combinedChats = getCombinedActiveChats(); // This already logs well
-    console.log(`CO_INFO: About to call listRenderer.renderActiveChatList with ${combinedChats.length} items.`);
+        // If it's a 1-on-1 chat, check the connector's name
+        else {
+            const oneOnOneItem = item as ActiveOneOnOneChatItem;
+            return oneOnOneItem.connector?.profileName?.toLowerCase().includes(searchTerm) ||
+                   oneOnOneItem.connector?.name?.toLowerCase().includes(searchTerm);
+        }
+    });
+}
+    
+    console.log(`CO_INFO: About to call listRenderer.renderActiveChatList with ${combinedChats.length} items (filtered by '${searchTerm}').`);
     
     try {
         deps.listRenderer.renderActiveChatList(combinedChats, handleActiveChatItemClickInternal);

@@ -133,9 +133,7 @@ body.dark-mode .sidebar-item-subtext .list-item-timestamp {
 
 /* --- Specifics for CHAT LIST Items --- */
 /* Add class "chat-list-item-wrapper" to the .list-item-base div for chat items */
-.list-item-base.chat-list-item-wrapper {
-    /* Any overall structural difference for chat items vs summary items */
-}
+
 
 /* Status Dot for 1-on-1 Chats */
 .chat-list-item-status {
@@ -180,12 +178,6 @@ body.dark-mode .list-item-base.active-chat-item .sidebar-item-name {
 
 /* --- Specifics for SUMMARY LIST Items --- */
 /* Add class "summary-list-item-wrapper" to the .list-item-base div for summary items */
-.list-item-base.summary-list-item-wrapper {
-    /* Any overall structural difference for summary items vs chat items */
-    /* Example: maybe summary items have slightly more padding */
-    /* padding-top: var(--spacing-md); */
-    /* padding-bottom: var(--spacing-md); */
-}
 
 /* Styles for elements unique to summary items (like specific date/duration spans)
    These would be inside the .sidebar-item-subtext for summaries.
@@ -213,3 +205,26 @@ body.dark-mode .list-item-base.active-chat-item .sidebar-item-name {
    as these sidebar items. If you have a simple list display for groups somewhere
    (NOT the main grid cards, and NOT the sidebar chat list items), then those styles
    would be adapted here. For now, assuming it's not needed as per our current focus. */
+   /* --- Styles for Sidebar Search --- */
+.sidebar-search-container {
+    padding: 0 var(--spacing-sm) var(--spacing-md);
+    margin-top: calc(-1 * var(--spacing-sm)); /* Pulls it up closer to the h4 */
+}
+
+.sidebar-search-container .styled-input {
+    width: 100%;
+    font-size: 0.9em;
+}
+/* ========================================================== */
+/* ==   SIDEBAR SEARCH SPACING OVERRIDE                    == */
+/* ========================================================== */
+
+/*
+  This rule is more specific because it targets a .sidebar-search-container
+  that is *inside* a .sidebar-panel. It will override any general styles
+  from .filter-group without affecting the main filter panel.
+*/
+.sidebar-panel .sidebar-search-container {
+    padding: 0 0 var(--spacing-sm); /* Removes top/side padding, keeps a little space at the bottom */
+    margin-top: 0;                  /* Removes the negative top margin */
+}

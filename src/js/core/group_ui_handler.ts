@@ -14,19 +14,18 @@ import type {
 } from '../types/global.d.ts';
 
 console.log('group_ui_handler.ts: Script loaded, waiting for core dependencies.');
-
 interface GroupUiHandlerModule {
     initialize: () => void;
-    displayAvailableGroups: (languageFilter: string | null | undefined, categoryFilter: string | null | undefined, nameSearch: string | null | undefined, joinGroupCallback: (groupOrId: string | Group) => void) => void;
+    displayAvailableGroups: (groupsToDisplay: Group[], joinGroupCallback: (groupOrId: string | Group) => void) => void;
     showGroupChatView: (groupData: Group, groupMembers: Connector[], groupHistory: GroupChatHistoryItem[]) => void;
     hideGroupChatViewAndShowList: () => void;
     updateGroupTypingIndicator: (text: string) => HTMLElement | null;
     clearGroupInput: () => void;
     appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string) => void;
     clearGroupChatLog: () => void;
-    openGroupMembersModal: () => void; // <<< ADD THIS LINE
+    openGroupMembersModal: () => void;
+    openGroupInfoModal: (group: Group) => void; // ===== ADD THIS LINE =====
 }
-
 // This type should match the non-null return of getSafeDeps if all checks pass
 interface VerifiedGroupUiHandlerDeps {
     domElements: YourDomElements;
@@ -72,18 +71,18 @@ function initializeActualGroupUiHandler(): void {
 
     if (!resolvedDeps) { // This check ensures resolvedDeps is not null if we proceed
         console.error("group_ui_handler.ts: CRITICAL - Core functional dependencies not ready. Halting GroupUiHandler setup.");
-       window.groupUiHandler = { 
-        initialize: () => console.error("GUH not init"),
-        displayAvailableGroups: () => console.error("GUH not init"),
-        showGroupChatView: () => console.error("GUH not init"),
-        hideGroupChatViewAndShowList: () => console.error("GUH not init"),
-        // This line is the only change. It now returns null.
-        updateGroupTypingIndicator: () => { console.error("GUH not init"); return null; },
-        clearGroupInput: () => console.error("GUH not init"),
-        appendMessageToGroupLog: () => console.error("GUH not init"),
-        clearGroupChatLog: () => console.error("GUH not init"),
-        openGroupMembersModal: () => console.error("GUH not init (members modal)")
-    } as GroupUiHandlerModule;
+        window.groupUiHandler = { 
+            initialize: () => console.error("GUH not init"),
+            displayAvailableGroups: () => console.error("GUH not init"),
+            showGroupChatView: () => console.error("GUH not init"),
+            hideGroupChatViewAndShowList: () => console.error("GUH not init"),
+            updateGroupTypingIndicator: () => { console.error("GUH not init"); return null; },
+            clearGroupInput: () => console.error("GUH not init"),
+            appendMessageToGroupLog: () => console.error("GUH not init"),
+            clearGroupChatLog: () => console.error("GUH not init"),
+            openGroupMembersModal: () => console.error("GUH not init (members modal)"),
+            openGroupInfoModal: () => console.error("GUH not init (info modal)") // ===== ADD THIS LINE =====
+        } as GroupUiHandlerModule;
         document.dispatchEvent(new CustomEvent('groupUiHandlerReady'));
         console.warn('group_ui_handler.ts: "groupUiHandlerReady" event dispatched (initialization FAILED).');
         return;
@@ -264,30 +263,97 @@ function initializeActualGroupUiHandler(): void {
             }
             console.log("GUH.initialize: Event listener setup process FINISHED.");
         }
-        function displayAvailableGroups(
-            languageFilter: string | null | undefined = null,
-            categoryFilter: string | null | undefined = null,
-            nameSearch: string | null | undefined = null, // <<< ADD nameSearch
-            joinGroupCallback: (groupOrId: string | Group) => void
-        ): void {
-            console.log("GUH_DEBUG: displayAvailableGroups called with lang:", languageFilter, "cat:", categoryFilter, "name:", nameSearch);
-            const augmentedGroups = groupDataManager.getAllGroupDefinitions(languageFilter, categoryFilter, nameSearch); // <<< PASS nameSearch
-            console.log("GUH_DEBUG: Groups fetched from GDM:", JSON.parse(JSON.stringify(augmentedGroups || [])));
-            
-            if (!domElements.availableGroupsUl) { // No '!' needed if domElements is typed as YourDomElements (non-optional)
-                console.error("GUH_DEBUG: domElements.availableGroupsUl is NULL!");
-                return;
-            }
-            console.log("GUH_DEBUG: domElements.availableGroupsUl found:", domElements.availableGroupsUl);
-            
-           listRenderer.renderAvailableGroupsList(augmentedGroups, joinGroupCallback);
-            // viewManager is obsolete. This is now handled by view_action_coordinator.
-      
+
+             // =================== START: REPLACE THE ENTIRE FUNCTION WITH THIS ===================
+           // =================== START: REPLACE THE ENTIRE FUNCTION WITH THIS ===================
+function openGroupInfoModal(group: Group): void {
+    const { domElements, modalHandler, groupDataManager, listRenderer, polyglotHelpers } = resolvedDeps!;
+    const groupManager = window.groupManager;
+
+    if (!group || !domElements?.groupMembersModal || !modalHandler || !groupDataManager || !groupManager || !listRenderer || !polyglotHelpers) {
+        console.error("GUH.openGroupInfoModal: Missing critical dependencies or group data.");
+        return;
+    }
+
+    const isJoined = groupDataManager.isGroupJoined(group.id);
+
+    // --- STATE MANAGEMENT ---
+    // Add or remove the class that controls visibility based on join status
+    domElements.groupMembersModal.classList.toggle('state-joined', isJoined);
+
+    // 1. Populate Modal Header (No changes here)
+    if (domElements.gmmGroupName) domElements.gmmGroupName.textContent = polyglotHelpers.sanitizeTextForDisplay(group.name);
+    if (domElements.gmmGroupDescription) domElements.gmmGroupDescription.textContent = polyglotHelpers.sanitizeTextForDisplay(group.description);
+    
+    const effectiveBaseUrl_guh_gmm = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
+    const safeBaseUrl_guh_gmm = effectiveBaseUrl_guh_gmm.endsWith('/') ? effectiveBaseUrl_guh_gmm : effectiveBaseUrl_guh_gmm + '/';
+    const placeholderGroupAvatarSrc_guh_gmm = `${safeBaseUrl_guh_gmm}images/placeholder_group_avatar.png`;
+    let groupPhotoSrc = placeholderGroupAvatarSrc_guh_gmm;
+    if (group.groupPhotoUrl) {
+        let photoPath = group.groupPhotoUrl;
+        if (photoPath.startsWith('/')) photoPath = photoPath.substring(1);
+        else if (!photoPath.startsWith('images/')) photoPath = `images/groups/${photoPath}`;
+        groupPhotoSrc = `${safeBaseUrl_guh_gmm}${photoPath}`;
+    }
+    if (domElements.gmmGroupPhoto) {
+        domElements.gmmGroupPhoto.src = groupPhotoSrc;
+        domElements.gmmGroupPhoto.onerror = () => { if(domElements.gmmGroupPhoto) domElements.gmmGroupPhoto.src = placeholderGroupAvatarSrc_guh_gmm; };
+    }
+
+    // 2. Populate Members List (only if joined)
+    if (isJoined && domElements.gmmMembersListUl) {
+        const members = groupManager.getMembersForGroup(group);
+        if (domElements.gmmMemberCount) domElements.gmmMemberCount.textContent = String(members.length);
+        listRenderer.renderGroupMembersList(members, group.tutorId, (connector: Connector) => {
+             modalHandler.close(domElements.groupMembersModal);
+             window.personaModalManager?.openDetailedPersonaModal(connector);
+        }, domElements.gmmMembersListUl);
+    }
+
+    // 3. Configure CTA Button Listener (No changes here, it was correct)
+    const currentCtaBtnInDom = document.getElementById('gmm-cta-btn') as HTMLButtonElement | null;
+    if (currentCtaBtnInDom) {
+        currentCtaBtnInDom.textContent = isJoined ? 'View Chat' : 'Join Group';
         
-      
-      
-      
-        }
+        const newBtn = currentCtaBtnInDom.cloneNode(true) as HTMLButtonElement;
+
+        newBtn.addEventListener('click', () => {
+            console.log(`INFO MODAL CTA CLICKED! Action: ${isJoined ? 'View Chat' : 'Join Group'}. Group ID: ${group.id}`);
+            groupManager.joinGroup(group);
+            modalHandler.close(domElements.groupMembersModal);
+        });
+
+        currentCtaBtnInDom.parentNode?.replaceChild(newBtn, currentCtaBtnInDom);
+        domElements.gmmCtaBtn = newBtn;
+    } else {
+        console.error("GUH: Could not find #gmm-cta-btn in the DOM to attach listener.");
+    }
+
+    // 4. Open Modal
+    modalHandler.open(domElements.groupMembersModal);
+}
+// ===================  END: REPLACE THE ENTIRE FUNCTION WITH THIS  ===================
+
+
+
+
+
+function displayAvailableGroups(
+    groupsToDisplay: Group[], // The function now receives the final list
+    joinGroupCallback: (groupOrId: string | Group) => void
+): void {
+    console.log(`GUH_DEBUG: displayAvailableGroups called with ${groupsToDisplay.length} pre-filtered groups.`);
+    // const augmentedGroups = groupDataManager.getAllGroupDefinitions(...); // REMOVE THIS LINE
+    
+    if (!domElements.availableGroupsUl) {
+        console.error("GUH_DEBUG: domElements.availableGroupsUl is NULL!");
+        return;
+    }
+    console.log("GUH_DEBUG: domElements.availableGroupsUl found:", domElements.availableGroupsUl);
+    
+   // The render call now uses the passed-in array directly
+   listRenderer.renderAvailableGroupsList(groupsToDisplay, joinGroupCallback);
+}
 // Inside the IIFE in group_ui_handler.ts
 // =================== START: REPLACE THE ENTIRE FUNCTION ===================
 
@@ -317,7 +383,7 @@ function showGroupChatView(
     // --- AGGRESSIVE UI RESET ---
     // Update the header FIRST to set the new context before clearing the log.
     currentChatUiManager.showGroupChatView(groupData.name, groupMembers);
-    
+    domElements.groupsView?.classList.add('in-chat-mode'); // <<< ADD THIS LINE
     console.log(`GUH.showGroupChatView: Clearing and re-rendering chat log for group ${groupData.id}. History length: ${groupHistory?.length || 0}`);
     
     // Clear the log completely.
@@ -417,6 +483,7 @@ const hideGroupChatViewAndShowList = (): void => {
         console.error("GUH.hideGroupChatViewAndShowList: Functional chatUiManager or its hideGroupChatView method not available at runtime!");
         return;
     }
+    domElements.groupsView?.classList.remove('in-chat-mode'); // <<< ADD THIS LINE
     currentChatUiManager.hideGroupChatView();
 };
 // PASTE THIS NEW VERSION
@@ -538,7 +605,8 @@ function appendMessageToGroupLog(text: string, senderName: string, isUser: boole
             clearGroupInput,
             appendMessageToGroupLog,
             clearGroupChatLog,
-            openGroupMembersModal: openGroupMembersModalInternal // Ensure this matches the function name
+            openGroupMembersModal: openGroupMembersModalInternal,
+            openGroupInfoModal // ===== ADD THIS LINE =====
         };
     })();
 

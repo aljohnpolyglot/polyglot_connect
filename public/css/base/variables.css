@@ -18,7 +18,11 @@
   --warning-color: #ffc107;
   --danger-color: #dc3545;
   --info-color: #17a2b8;
-
+  --view-groups-info-color: #17a2b8;
+  --view-groups-info-color-hover: #117a8b;
+  --view-groups-text-on-accent: #ffffff;
+  --view-groups-border-light: #dee2e6;
+  --view-groups-border-strong: #ced4da;
   /* Text Colors */
   --text-color-light: #f8f9fa;
   --text-color-dark: #212529;
@@ -31,7 +35,37 @@
   --bg-dark-secondary: #242526; /* Slightly lighter dark for elements */
   --bg-dark-tertiary: #3a3b3c;  /* Even lighter dark for other elements */
 
+  --view-groups-bg-page: #e9eef2;                     /* Page background */
+    --view-groups-text-primary: #212529;
+    --view-groups-text-secondary: #495057;
+    --view-groups-text-muted: #6c757d;
+    --view-groups-text-on-accent: #ffffff;
+    --view-groups-accent-primary: #007bff;
+    --view-groups-accent-primary-hover: #0069d9;
+    --view-groups-info-color: #17a2b8;
+    --view-groups-info-color-hover: #117a8b;
+    --view-groups-border-light: #dee2e6;
+    --view-groups-border-strong: #ced4da;
+    --view-groups-shadow-soft: 0 1px 3px rgba(0,0,0,0.04);
+    --view-groups-shadow-medium: 0 3px 6px rgba(0,0,0,0.06);
+    --view-groups-shadow-card-hover: 0 5px 12px rgba(0,0,0,0.08);
+    --view-groups-border-radius-main: 6px;
+    --view-groups-border-radius-card: 8px;
+    --view-groups-border-radius-button: 4px;
 
+    /* Group Card Specific */
+    --group-card-bg: #ffffff;
+    --group-card-avatar-placeholder-bg: #cccccc;
+    --group-card-avatar-size: 60px;
+    --group-card-padding: var(--spacing-lg, 20px);
+    --group-card-gap: var(--spacing-lg, 24px);
+    --group-card-min-width: 270px;
+    --group-card-aspect-ratio: 1 / 1;
+
+    /* Chat Interface (when a group is entered) - OPAQUE BACKGROUNDS ARE KEY */
+    --group-chat-ui-container-bg: #ffffff; /* Main chat UI background - MUST BE OPAQUE */
+    --group-chat-ui-log-bg: #ffffff;       /* Chat log area background - MUST BE OPAQUE (can be same as container or different) */
+    --group-chat-ui-header-footer-bg: #f8f9fa; /* Header/footer background - MUST BE OPAQUE */
   /* Borders */
   --border-color-light: #dee2e6;
   --border-color-dark: #495057; /* For dark mode borders */
@@ -75,4 +109,18 @@
   --z-index-modal-content: 1001;
   --z-index-sidebar: 100; /* Left/Right sidebars */
   --z-index-header: 200;  /* Fixed top header if any */
+
+  /* --- ADD these to variables.css --- */
+
+
+body.dark-mode {
+  /* ... your existing dark mode variables ... */
+
+  /* Add these new globally available dark mode variables */
+  --view-groups-info-color: #20c997;
+  --view-groups-info-color-hover: #1baa80;
+  /* --view-groups-text-on-accent is the same in dark mode */
+  --view-groups-border-light: #495057;
+  --view-groups-border-strong: #5a6268;
+}
 }
