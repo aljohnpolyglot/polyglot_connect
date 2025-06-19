@@ -48,7 +48,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <script type="module" crossorigin src="/polyglot_connect/assets/main-ClyoJYpe.js"></script>
+  <script type="module" crossorigin src="/polyglot_connect/assets/main-D4xCjJi0.js"></script>
 </head>
 <body>
   <div id="polyglot-connect-app-shell">
@@ -61,7 +61,8 @@
         <nav class="main-nav">
             <ul>
                 <li class="nav-item active" data-tab="home"><a href="#"><i class="fas fa-home"></i><span>Home</span></a></li>
-                <li class="nav-item" data-tab="find"><a href="#"><i class="fas fa-search"></i><span>Find</span></a></li>
+          <!-- AFTER -->
+<li class="nav-item" data-tab="friends"><a href="#"><i class="fas fa-user-friends"></i><span>Friends</span></a></li>
                 <li class="nav-item" data-tab="groups"><a href="#"><i class="fas fa-users"></i><span>Groups</span></a></li>
                 <li class="nav-item" data-tab="messages"><a href="#"><i class="fas fa-comments"></i><span>Messages</span></a></li>
                 <li class="nav-item" data-tab="summary"><a href="#"><i class="fas fa-chart-line"></i><span>Summary</span></a></li>
@@ -82,15 +83,33 @@
         </div>
 
         <!-- Find Someone View -->
-        <div id="find-view" class="view">
-            <header class="view-header"><h1>Find a Practice Partner or Tutor</h1><p>Connect with personas tailored to your learning needs.</p></header>
-            <div class="view-content"><div id="connector-hub" class="connector-grid"><p class="loading-message">Loading Connectors...</p></div></div>
+     <!-- AFTER -->
+<!-- Friends View -->
+<div id="friends-view" class="view">
+    <header class="view-header"><h1>Friends & Connections</h1><p>Find new partners or chat with your friends.</p></header>
+    <div class="view-content">
+
+        <div class="friends-view-toggle-container">
+            <button id="my-friends-tab-btn" class="friends-view-toggle-btn active" data-view="my-friends">My Friends</button>
+            <button id="discover-friends-tab-btn" class="friends-view-toggle-btn" data-view="discover">Discover</button>
         </div>
+    
+        <div id="connector-hub" class="connector-grid">
+            <p class="loading-message">Loading Connectors...</p>
+        </div>
+    </div>
+</div>
 
         <!-- Groups View -->
         <div id="groups-view" class="view">
             <header class="view-header"><h1>Language Practice Groups</h1><p>Join simulated group chats with learners and tutors.</p></header>
             <div class="view-content">
+
+                <div class="group-view-toggle-container">
+                    <button id="my-groups-tab-btn" class="group-view-toggle-btn active" data-view="my-groups">My Groups</button>
+                    <button id="discover-groups-tab-btn" class="group-view-toggle-btn" data-view="discover">Discover</button>
+                </div>
+
                 <div id="group-list-container" class="group-list-view">
                     <p class="loading-message" id="group-loading-message">Loading groups...</p>
                     <ul id="available-groups-ul" class="available-groups-list"></ul>
@@ -128,47 +147,46 @@
             </div>
         </div>
 
-        <!-- Messages View (for 1-on-1 Embedded Chat) -->
-        <div id="messages-view" class="view">
-        <!-- Inside #messages-view -->
-<header class="view-header embedded-chat-main-header"> <!-- New class for styling -->
-    <div class="partner-info">
-        <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Partner" id="embedded-chat-header-avatar" class="chat-header-avatar">
-        <div>
-            <h1 id="embedded-chat-header-name">Partner Name</h1>
-            <p id="embedded-chat-header-details" class="chat-header-sub-details">Location | Age</p>
-        </div>
-    </div>
-    <div class="chat-header-actions">
-        <button id="embedded-chat-call-btn" class="control-btn" title="Start Direct Call"><i class="fas fa-phone-alt"></i></button>
-        <button id="embedded-chat-info-btn" class="control-btn" title="View Profile"><i class="fas fa-info-circle"></i></button>
-    </div>
-</header>
+           <!-- Messages View (for 1-on-1 Embedded Chat) -->
+           <div id="messages-view" class="view">
             <div class="view-content messages-view-flex-container">
                 <p id="messages-placeholder" class="loading-message">Select a conversation from the right, or find someone new to start chatting!</p>
-                 <div id="embedded-chat-container" style="display:none;" class="embedded-chat-ui">
+                
+                <div id="embedded-chat-container" style="display:none;" class="embedded-chat-ui">
+                    <!-- HEADER IS THE FIRST ITEM INSIDE -->
+                    <header class="view-header embedded-chat-main-header">
+                        <div class="partner-info">
+                            <img src="/polyglot_connect/images/placeholder_avatar.png" alt="Partner" id="embedded-chat-header-avatar" class="chat-header-avatar">
+                            <div>
+                                <h1 id="embedded-chat-header-name">Partner Name</h1>
+                                <p id="embedded-chat-header-details" class="chat-header-sub-details">Location | Age</p>
+                            </div>
+                        </div>
+                        <div class="chat-header-actions">
+                            <button id="embedded-chat-call-btn" class="control-btn" title="Start Direct Call"><i class="fas fa-phone-alt"></i></button>
+                            <button id="embedded-chat-info-btn" class="control-btn" title="View Profile"><i class="fas fa-info-circle"></i></button>
+                        </div>
+                    </header>
+                    
+                    <!-- CHAT LOG IS THE SECOND ITEM -->
                     <div id="embedded-chat-log" class="chat-log-area styled-scrollbar"></div>
-                    <!-- <div id="embedded-message-activity-area" class="activity-area-style" style="display:none;">
-                        <img src="" id="embedded-message-activity-image-display" alt="Activity Image">
-                    </div> -->
-                  <!-- Inside #messages-view -> #embedded-chat-container -> .embedded-chat-footer -->
-                  <footer class="embedded-chat-footer">
-                    <div class="chat-input-previews-container">
-                        <div id="image-preview-container-embedded" class="image-preview-container">
-                            <!-- JS will add image previews here -->
+                    
+                    <footer class="embedded-chat-footer">
+                         <!-- All your original footer content goes here -->
+                        <div class="chat-input-previews-container">
+                            <div id="image-preview-container-embedded" class="image-preview-container"></div>
                         </div>
-                    </div>
-                    <div class="chat-main-input-area">
-                        <button id="embedded-message-attach-btn" class="control-btn attach-btn" title="Attach Image"><i class="fas fa-paperclip"></i></button>
-                        <input type="file" id="embedded-message-image-upload" accept="image/*" style="display:none;" multiple> <!-- Added 'multiple' -->
-                        <button id="embedded-message-mic-btn" class="control-btn mic-btn" title="Send Voice Message"><i class="fas fa-microphone"></i></button>
-                        <div class="text-input-wrapper">
-                            <input type="text" id="embedded-message-text-input" placeholder="Type message, paste image..." class="chat-input-field">
-                            <input type="text" id="embedded-image-caption-input" placeholder="Add a caption (optional)..." class="image-caption-input" style="display:none;">
+                        <div class="chat-main-input-area">
+                            <button id="embedded-message-attach-btn" class="control-btn attach-btn" title="Attach Image"><i class="fas fa-paperclip"></i></button>
+                            <input type="file" id="embedded-message-image-upload" accept="image/*" style="display:none;" multiple>
+                            <button id="embedded-message-mic-btn" class="control-btn mic-btn" title="Send Voice Message"><i class="fas fa-microphone"></i></button>
+                            <div class="text-input-wrapper">
+                                <input type="text" id="embedded-message-text-input" placeholder="Type message, paste image..." class="chat-input-field">
+                                <input type="text" id="embedded-image-caption-input" placeholder="Add a caption (optional)..." class="image-caption-input" style="display:none;">
+                            </div>
+                            <button id="embedded-message-send-btn" class="send-btn primary-btn"><i class="fas fa-paper-plane"></i></button>
                         </div>
-                        <button id="embedded-message-send-btn" class="send-btn primary-btn"><i class="fas fa-paper-plane"></i></button>
-                    </div>
-                </footer>
+                    </footer>
                 </div>
             </div>
         </div>
@@ -186,7 +204,7 @@
     <!-- ===== RIGHT SIDEBAR (Contextual Filters/Lists) ===== -->
     <aside id="right-sidebar" class="styled-scrollbar">
         <!-- Find Filters -->
-        <div id="findFiltersPanel" class="sidebar-panel"> <!-- Matches 'findFiltersPanel' -->
+        <div id="friendsFiltersPanel" class="sidebar-panel"><!-- Matches 'findFiltersPanel' -->
         <h4><i class="fas fa-filter"></i> Filters</h4>
         <div class="filter-group">
             <label for="filter-connector-name">Name:</label>
@@ -217,14 +235,23 @@
         <button id="apply-group-filters-btn" class="sidebar-action-btn primary-btn"><i class="fas fa-search"></i> Find Groups</button>
         </div>
         <!-- Messages Chat List -->
-        <div id="messagesChatListPanel" class="sidebar-panel"> <!-- Matches 'messagesChatListPanel' -->
-        <h4><i class="fas fa-inbox"></i> Active Chats</h4>
-        <ul id="chat-list-ul" class="sidebar-list"></ul><p class="empty-list-msg" id="empty-chat-list-msg" style="display:none;">No active chats.</p>
-        </div>
+       <!-- AFTER -->
+<div id="messagesChatListPanel" class="sidebar-panel">
+    <h4><i class="fas fa-inbox"></i> Active Chats</h4>
+    <div class="sidebar-search-container filter-group">
+        <input type="text" id="search-active-chats-input" class="styled-input" placeholder="Search chats...">
+    </div>
+    <ul id="chat-list-ul" class="sidebar-list"></ul>
+    <p class="empty-list-msg" id="empty-chat-list-msg" style="display:none;">No active chats.</p>
+</div>
         <!-- Summary List -->
-        <div id="summaryChatListPanel" class="sidebar-panel"> <!-- Matches 'summaryChatListPanel' -->
-        <h4><i class="fas fa-history"></i> Session History</h4>
-        <ul id="summary-list-ul" class="sidebar-list"></ul><p class="empty-list-msg" id="empty-summary-list-msg" style="display:none;">No session history.</p>
+        <div id="summaryChatListPanel" class="sidebar-panel">
+            <h4><i class="fas fa-history"></i> Session History</h4>
+            <div class="sidebar-search-container filter-group">
+                <input type="text" id="search-session-history-input" class="styled-input" placeholder="Search history...">
+            </div>
+            <ul id="summary-list-ul" class="sidebar-list"></ul>
+            <p class="empty-list-msg" id="empty-summary-list-msg" style="display:none;">No session history.</p>
         </div>
     </aside>
 
@@ -260,6 +287,9 @@
                 </li>
                      
             </ul>
+        </div>
+        <div class="modal-footer gmm-modal-footer">
+            <button id="gmm-cta-btn" class="action-btn primary-btn large-btn">Join Group</button>
         </div>
     </div>
 </div>

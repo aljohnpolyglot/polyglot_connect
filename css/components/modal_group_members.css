@@ -1,16 +1,16 @@
 /* css/components/modal_group_members.css */
 
 /* Styles for the Group Members Modal */
-#group-members-modal .modal-content { /* Renamed class for specificity */
-    max-width: 450px; /* Slightly wider than persona modal if lots of members */
+#group-members-modal .modal-content {
+    max-width: 450px;
     width: 90%;
     text-align: left;
     padding: 0;
     display: flex;
     flex-direction: column;
-    max-height: 80vh; /* Limit height */
-    height: 80vh; /* Fixed height instead of max-height */
-    overflow: hidden; /* Prevent content from overflowing */
+    max-height: 80vh; /* This correctly limits the height */
+    /* REMOVED: height: 80vh; */
+    overflow: hidden;
 }
 .group-members-modal-header {
     padding: var(--spacing-lg) var(--spacing-xl);
@@ -179,4 +179,46 @@ body.dark-mode .gmm-member-role-badge.tutor {
     padding: var(--spacing-xs);
     font-size: 0.9em;
     /* Uses .control-btn and .subtle-btn from buttons.css */
+}/* Styling for the new Group Info Modal CTA Footer */
+.gmm-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-color-light);
+    display: flex;
+    justify-content: center; /* Center the button */
+    background-color: var(--background-color-secondary);
+    border-radius: 0 0 var(--border-radius-large) var(--border-radius-large);
+  }
+  
+  #gmm-cta-btn {
+    width: 100%; /* Make the button take full width */
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+  }/* ================================================== */
+/* ===== START: ADD THIS ENTIRE BLOCK OF CSS      ===== */
+/* ================================================== */
+
+/* By default, assume we are showing info for a NON-JOINED group */
+#group-members-modal .group-members-modal-body {
+    display: none; /* Hide the entire members section by default */
 }
+
+/* When the modal is for a JOINED group, we add the 'state-joined' class */
+#group-members-modal.state-joined .group-members-modal-body {
+    display: block; /* SHOW the members section */
+}
+
+/* --- Consistent Button Styling for the Modal Footer --- */
+/* This ensures the button style is consistent with other action buttons */
+#gmm-cta-btn {
+    /* Leveraging existing .action-btn and .primary-btn styles */
+    /* You can add more specific overrides here if needed */
+    width: 100%;
+    max-width: 300px; /* Give it a max-width so it doesn't look weirdly wide */
+    padding: 0.8rem 1rem;
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+}
+
+/* ================================================== */
+/* =====  END: ADD THIS ENTIRE BLOCK OF CSS       ===== */
+/* ================================================== */

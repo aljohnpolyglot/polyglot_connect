@@ -176,4 +176,16 @@ body.dark-mode .theme-toggle-btn:hover {
 .chat-message-ui.user-error {
     font-style: italic;
     opacity: 0.8;
+}/* --- ADD THIS TO buttons.css --- */
+
+/* New reusable class for the "View Chat" button style */
+.view-chat-style-btn {
+    background-color: var(--view-groups-info-color);
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+
+.view-chat-style-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
 }

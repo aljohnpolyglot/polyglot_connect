@@ -18,7 +18,18 @@
     height: 400px; /* Fixed height for consistency */
     margin: 0 auto; /* Centering if in a non-grid context, or for single card views */
 }
+/* --- ADD THIS NEW RULE to card.css --- */
 
+/* This rule specifically targets the taller "My Friends" cards */
+.connector-card.is-friend-card {
+    height: 460px;
+}
+.connector-card .connector-card-bg {
+    height: 100px;
+    background: linear-gradient(135deg, var(--primary-color-lighter) 0%, var(--accent-color-2) 100%);
+    border-bottom: 1px solid var(--border-color-light);
+    flex-shrink: 0; /* Prevents the header from shrinking */
+}
 /* Hover effect */
 .connector-card:hover {
     transform: translateY(-4px);
@@ -106,12 +117,17 @@
 }
 
 /* Actions section */
+/* AFTER - The final, correct rule */
+/* AFTER */
 .connector-actions {
-    padding: var(--spacing-md);
+    padding: var(--spacing-lg); /* Increased padding for more height */
     border-top: 1px solid var(--border-color-light);
+    background-color: var(--bg-light);
     display: flex;
-    justify-content: center; /* Center button(s) */
-    background-color: var(--bg-light); /* Slight differentiation for actions area */
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
 }
 
 /* Assuming .view-profile-btn is a general button style, potentially from a buttons.css */
@@ -218,4 +234,128 @@ body.dark-mode .language-tag.practice {
 
 body.dark-mode .language-tag .lang-flag {
     border-color: var(--border-color-dark); /* If flags have borders */
+}/* --- ADD THIS TO card.css --- */
+/* ================================================== */
+/* ==   GLOBAL STYLES FOR ALL CARD ACTION BUTTONS  == */
+/* ================================================== */
+/* ================================================== */
+/* ==   GLOBAL STYLES FOR ALL CARD ACTION BUTTONS  == */
+/* ================================================== */
+
+/* 1. General LAYOUT for ALL card buttons. */
+.group-card-join-btn,
+.group-card-view-chat-btn,
+.group-card-info-btn,
+.view-profile-btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.9em;
+    text-decoration: none;
+    width: 100%;
+    max-width: 95%;
+    line-height: 1.5;
+    border: 1px solid;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s ease-out;
+}
+
+/* 2. Specific COLOR for the "View Chat" button */
+.group-card-view-chat-btn {
+    background-color: var(--view-groups-info-color);
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+.group-card-view-chat-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
+}
+
+/* 3. Specific STYLE for the "Info" button */
+.group-card-info-btn {
+    background-color: transparent;
+    color: var(--view-groups-text-secondary);
+    border-color: var(--view-groups-border-strong);
+    margin-top: 0.3rem;
+}
+.group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--view-groups-text-primary);
+}
+/* ======================================================= */
+/* ==   SPECIFIC STYLES FOR CONNECTOR CARD BUTTONS        == */
+/* ======================================================= */
+
+/* 1. This makes the button container stack them vertically. */
+.connector-card .connector-actions {
+    /* This part is correct and remains */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+
+    /* This is the fix for the header being pushed */
+    margin-top: auto; /* Pushes this block to the bottom */
+    flex-shrink: 0; /* Prevents this block from shrinking */
+}
+
+.connector-card .group-card-view-chat-btn {
+    background-color: var(--view-groups-info-color); /* Now works globally! */
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+.connector-card .group-card-view-chat-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
+}
+
+/* This rule styles the "View Info" button */
+.connector-card .group-card-info-btn {
+    background-color: transparent;
+    color: var(--view-groups-text-secondary); /* This uses a global var, so it's fine */
+    border-color: var(--view-groups-border-strong);
+}
+.connector-card .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--text-color-dark); /* Uses a global var */
+}
+.connector-card .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--view-groups-text-primary);
+}/* ========================================================== */
+/* ==   RESPONSIVE STYLES FOR CARD ACTION BUTTONS          == */
+/* ========================================================== */
+
+/* --- On Tablets and Smaller --- */
+@media (max-width: 992px) {
+    /* This targets all our action buttons on any card */
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 90%; /* Make buttons a bit wider */
+        font-size: 0.85em; /* Slightly smaller text */
+        padding: 8px 16px; /* Adjust padding */
+    }
+}
+
+/* --- On Mobile Phones --- */
+@media (max-width: 768px) {
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 95%; /* Even wider to feel more proportional */
+        font-size: 0.9em; /* Can slightly increase font size again on mobile */
+    }
+}
+
+/* --- On Very Small Screens --- */
+@media (max-width: 480px) {
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 100%; /* Make buttons take the full available width */
+        padding: 10px;   /* Adjust padding for a better fit */
+    }
 }
