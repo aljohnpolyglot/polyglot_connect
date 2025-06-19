@@ -4,7 +4,10 @@ export type AiRecapService = AiRecapServiceModule; // <<< ADD EXPORT HERE (or ex
 import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_service'; 
 import type { IdentityServiceModule } from '../services/identity_service';
 import { GroupInteractionLogicModule } from '../core/group_interaction_logic';// --- SUB-INTERFACES for Persona/Connector ---
-
+// IN global.d.ts - ADD THIS NEW INTERFACE
+export interface JumpButtonManagerModule {
+  initialize: (initialTab: string) => void;
+}
 export interface Connector {
     id: string;
   liveApiModelName?: string;
@@ -309,52 +312,58 @@ export interface GeminiTtsService {
     ) => Promise<{ audioBase64: string; mimeType: string } | null>;
 }
 // For geminiTextGenerationService
+// Replace with this in global.d.ts
 export interface GeminiTextGenerationService {
- generateTextMessage: (
-        userText: string, // Or promptOrText if you prefer consistency with AIService
-        connector: Connector, 
-        existingGeminiHistory: GeminiChatItem[],
-        preferredProvider?: string, 
-        expectJson?: boolean        
-    ) => Promise<string | null /* | object */ >; // Add object if expectJson can lead to i
+  generateTextMessage: (
+      userText: string,
+      connector: Connector, 
+      existingGeminiHistory: GeminiChatItem[],
+      preferredProvider?: string, 
+      expectJson?: boolean,
+      context?: 'group-chat' | 'one-on-one', // <<< ADDED
+      abortSignal?: AbortSignal              // <<< ADDED
+  ) => Promise<string | null | object>;
 
-    generateTextForCallModal?: (
-        userText: string,
-        connector: Connector,
-        modalCallHistory: GeminiChatItem[] // Assuming this also receives a guaranteed array
-    ) => Promise<string | null>;
+  generateTextForCallModal?: (
+      userText: string,
+      connector: Connector,
+      modalCallHistory: GeminiChatItem[]
+  ) => Promise<string | null>;
 
-    generateTextFromImageAndTextOpenAI?: (
-        base64ImageString: string,
-        mimeType: string,
-        connector: Connector,
-        existingConversationHistory: GeminiChatItem[],
-        userTextQuery?: string,
-        provider?: string
-    ) => Promise<string | null>;
+  generateTextFromImageAndTextOpenAI?: (
+      base64ImageString: string,
+      mimeType: string,
+      connector: Connector,
+      existingConversationHistory: GeminiChatItem[],
+      userTextQuery?: string,
+      provider?: string,
+      abortSignal?: AbortSignal // <<< ADDED
+  ) => Promise<string | null>;
 }
 // For geminiMultimodalService
+// Replace with this in global.d.ts
 export interface GeminiMultimodalService {
-    generateTextFromAudioForCallModal?: (
-        base64AudioString: string, 
-        mimeType: string, 
-        connector: Connector, 
-        modalCallHistory: GeminiChatItem[]
-    ) => Promise<string | null>;
-    generateTextFromImageAndText?: (
-        base64ImageString: string, 
-        mimeType: string, 
-        connector: Connector, 
-        existingGeminiHistory: GeminiChatItem[], 
-        optionalUserText?: string
-    ) => Promise<string | null>;
-    transcribeAudioToText?: ( // From your second version of gemini_service.js
-        base64Audio: string,
-        mimeType: string,
-        langHint?: string
-    ) => Promise<string | null>; // Assuming it returns transcribed text or null
+  generateTextFromAudioForCallModal?: (
+      base64AudioString: string, 
+      mimeType: string, 
+      connector: Connector, 
+      modalCallHistory: GeminiChatItem[]
+  ) => Promise<string | null>;
+  generateTextFromImageAndText?: (
+      base64ImageString: string, 
+      mimeType: string, 
+      connector: Connector, 
+      existingGeminiHistory: GeminiChatItem[], 
+      optionalUserText?: string,
+      preferredProvider?: string, // <<< ADDED
+      abortSignal?: AbortSignal   // <<< ADDED
+  ) => Promise<string | null>;
+  transcribeAudioToText?: (
+      base64Audio: string,
+      mimeType: string,
+      langHint?: string
+  ) => Promise<string | null>;
 }
-
 // D:\polyglot_connect\js\types\global.d.ts
 export interface GeminiRecapService { // Or GeminiRecapServiceModule
   generateSessionRecap: (
@@ -364,8 +373,8 @@ export interface GeminiRecapService { // Or GeminiRecapServiceModule
 }
 export interface GroupInteractionLogic {
     initialize: (members: Connector[], tutor: Connector) => void;
-    startConversationFlow: () => void;
-    stopConversationFlow?: () => void; // Optional if not always present
+    startConversationFlow: () => Promise<void>; // It's async
+    stopConversationFlow: () => void; // This is the missing piece
     setUserTypingStatus: (isTyping: boolean) => void;
     handleUserMessage: (text: string | undefined, options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }) => Promise<void>;
     simulateAiMessageInGroup: (isReplyToUser?: boolean, userMessageText?: string, imageContextForReply?: any) => Promise<void>;
@@ -505,13 +514,16 @@ export interface YourDomElements { // Ensure EXPORT
     rightSidebar: HTMLElement | null;
     rightSidebarPanels: NodeListOf<HTMLElement>;
     themeToggleButton: HTMLButtonElement | null;
-
+  // ================= ADD THIS LINE =================
+  universalJumpButtons: HTMLElement | null;
+  // =================================================
     // Home View
     homepageTipsList: HTMLUListElement | null;
 
     // Find Someone View
     friendsView: HTMLElement | null;
     connectorHubGrid: HTMLElement | null;
+    friendsEmptyPlaceholder?: HTMLElement | null;
     friendsFiltersPanel: HTMLElement | null; // Assuming it's a generic HTMLElement
     filterLanguageSelect: HTMLSelectElement | null;
     filterRoleSelect: HTMLSelectElement | null;
@@ -521,6 +533,7 @@ export interface YourDomElements { // Ensure EXPORT
     groupsView: HTMLElement | null;
     groupListContainer: HTMLElement | null;
     availableGroupsUl: HTMLUListElement | null;
+    groupsEmptyPlaceholder?: HTMLElement | null;
     groupLoadingMessage: HTMLElement | null; // Likely a <p> or <div>
     groupChatInterfaceDiv: HTMLElement | null;
     activeGroupNameHeader: HTMLElement | null; // Likely <h3>
@@ -662,7 +675,7 @@ export interface YourDomElements { // Ensure EXPORT
 // It uses the EXPORTED Connector and TranscriptTurn types.
 export interface PolyglotHelpersOnWindow {
   formatRelativeTimestamp(lastActivity: string | number): unknown;
-  isConnectorCurrentlyActive: (connector: Connector | null | undefined) => boolean;
+  isConnectorCurrentlyActive: (connector: Partial<Connector> | null | undefined) => boolean;
   calculateAge: (birthdateString?: string | null) => number | null;
   getFlagCdnUrl: (countryCode: string, width?: number | null) => string;
   getFlagEmoji: (countryCode: string) => string;
@@ -677,6 +690,14 @@ export interface PolyglotHelpersOnWindow {
   formatTranscriptForLLM: (transcriptArray: TranscriptTurn[], personaName?: string, userName?: string) => string;
   normalizeText: (text: string) => string;
   fileToBase64: (file: File) => Promise<string>;
+  getPersonaLocalTimeDetails: (timezone: string) => { 
+    localTime: string; 
+    localDate: string; 
+    dayOfWeek: string; 
+    timeOfDay: 'morning' | 'afternoon' | 'evening' | 'late night' | 'early morning';
+  };
+ 
+ 
   formatReadableList: (items?: string[], conjunction?: string, defaultText?: string) => string;
   formatStructuredInterestsForPrompt: (interests?: { [key: string]: string[] | string | undefined }) => string;
   formatKeyLifeEventsForPrompt: (events?: Array<{ event: string; description?: string }>) => string;
@@ -1165,17 +1186,20 @@ export interface AIService {
       connector: Connector,
       history: GeminiChatItem[] | null | undefined, 
       preferredProvider?: string, 
-      expectJson?: boolean 
-  ) => Promise<string | null | object>; // Allow object if expectJson is true
+      expectJson?: boolean,
+      context?: 'group-chat' | 'one-on-one', // <<< ADDED
+      abortSignal?: AbortSignal              // <<< ADDED
+  ) => Promise<string | null | object>;
     
   generateTextFromImageAndText: ( 
       base64Data: string,
       mimeType: string,
       connector: Connector,
       history: GeminiChatItem[] | null | undefined, 
-      prompt?: string, // This was 'optionalUserText' in your JS facade
-      preferredProvider?: string
-  ) => Promise<string | null | object>; // Allow object if expectJson is true (though less common for image2text)
+      prompt?: string,
+      preferredProvider?: string,
+      abortSignal?: AbortSignal // <<< ADDED
+  ) => Promise<string | null | object>;
 
   getTTSAudio: ( // Added from your JS facade's methods
       textToSpeak: string, 
@@ -1227,9 +1251,11 @@ export interface MessageInStore { // Ensure this is also defined and exported if
 // D:\polyglot_connect\src\js\types\global.d.ts
 // ... other interface exports ...
 
-export interface SidebarPanelManagerModule { // <<< ENSURE 'export'
+// D:\polyglot_connect\js\types\global.d.ts
+
+export interface SidebarPanelManagerModule {
   initialize: () => void;
-  updatePanelForCurrentTab: () => void;
+  updatePanelForCurrentTab: (currentTab: string) => void; // THIS IS THE NEW, CORRECT SIGNATURE
 }
 export interface GeminiLiveApiService {
     connect: (
@@ -1448,6 +1474,7 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
     geminiTtsService?: any;
     geminiMultimodalService?: any;
     geminiRecapService?: any;
+    jumpButtonManager?: JumpButtonManagerModule; // <<< ADD THIS LINE
    openaiCompatibleApiCaller?: OpenaiCompatibleApiCallerFn;
    polyglotConversationUpdated: CustomEvent<PolyglotConversationUpdatedEventDetail>;
     aiTextGenerationService?: any;

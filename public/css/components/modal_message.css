@@ -339,3 +339,17 @@ body.dark-mode .messaging-interface-footer {
 body.dark-mode .chat-log-empty-placeholder {
     color: var(--text-color-muted-dark, #adb5bd);
 }
+
+@media (max-width: 480px) { /* Very Small Screens */
+.messaging-interface-header #message-modal-header-name{
+    font-size: 0.86em;
+}
+.messaging-interface-header .modal-controls.chat-header-actions{
+    
+}
+.messaging-interface-header #message-modal-header-details{
+    font-size: 0.75em;
+}
+.modal-btn, .action-btn, .control-btn, .sidebar-action-btn, .send-btn{
+    padding: 0.4em;
+}

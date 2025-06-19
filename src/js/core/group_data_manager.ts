@@ -201,39 +201,48 @@ function getAllGroupDefinitions(
         // Returns a copy of the currently loaded group's history (for the group set by setCurrentGroupContext)
         const getLoadedChatHistory = (): GroupChatHistoryItem[] => [...groupChatHistoryInternal];
 
-        function addMessageToCurrentGroupHistory(message: GroupChatHistoryItem): void {
-            if (!currentGroupIdInternal) {
-                console.warn("GDM.addMessageToCurrentGroupHistory: No current group ID set. Cannot add message.");
-                return;
-            }
-            if (!message?.speakerId || typeof message.timestamp !== 'number') {
-                console.warn("GDM.addMessageToCurrentGroupHistory: Message missing speakerId or valid timestamp.", message);
-                return;
-            }
-            if (!message.isImageMessage && !message.text?.trim()) {
-                console.warn("GDM.addMessageToCurrentGroupHistory: Text message is empty.", message);
-                return;
-            }
-            if (message.isImageMessage && !message.imageUrl) {
-                console.warn("GDM.addMessageToCurrentGroupHistory: Image message is missing imageUrl.", message);
-                return;
-            }
-    
-            groupChatHistoryInternal.push(message); // Add to the IIFE's scoped variable
-            console.log(`GDM: Message added to internal history for group ${currentGroupIdInternal}. New length: ${groupChatHistoryInternal.length}`);
-            
-            // <<< START OF REFINEMENT 1: LIVE UPDATE >>>
-            // Dispatch our unified event to tell the sidebar to refresh itself immediately.
-            document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
-                detail: {
-                    type: 'group',
-                    id: getCurrentGroupId()
-                }
-            }));
-            console.log(`GDM: Dispatched 'polyglot-conversation-updated' for group: ${getCurrentGroupId()}`);
-            // <<< END OF REFINEMENT 1 >>>
-        }
+     // In src/js/core/group_data_manager.ts
+// In src/js/core/group_data_manager.ts
 
+// The old signature was `(message, triggerListUpdate?)`
+// The new signature accepts an options object. This is the fix.
+// In src/js/core/group_data_manager.ts
+// In src/js/core/group_data_manager.ts
+// In src/js/core/group_data_manager.ts// In src/js/core/group_data_manager.ts
+
+// The old, incorrect signature was: (message: GroupChatHistoryItem, triggerListUpdate?: boolean)
+// The new, CORRECT signature is: (message: GroupChatHistoryItem, options?: { triggerListUpdate?: boolean })
+function addMessageToCurrentGroupHistory(message: GroupChatHistoryItem, options?: { triggerListUpdate?: boolean }): void {
+    if (!currentGroupIdInternal) {
+        console.warn("GDM.addMessageToCurrentGroupHistory: No current group ID set. Cannot add message.");
+        return;
+    }
+    if (!message?.speakerId || typeof message.timestamp !== 'number') {
+        console.warn("GDM.addMessageToCurrentGroupHistory: Message missing speakerId or valid timestamp.", message);
+        return;
+    }
+    if (!message.isImageMessage && !message.text?.trim()) {
+        console.warn("GDM.addMessageToCurrentGroupHistory: Text message is empty.", message);
+        return;
+    }
+
+    groupChatHistoryInternal.push(message);
+
+    if (groupChatHistoryInternal.length > MAX_MESSAGES_STORED_PER_GROUP) {
+        groupChatHistoryInternal = groupChatHistoryInternal.slice(-MAX_MESSAGES_STORED_PER_GROUP);
+    }
+    
+    // This part is correct: it checks the `options` object for the property.
+    // By default, if options isn't provided or triggerListUpdate isn't false, it will update.
+    if (options?.triggerListUpdate !== false) {
+        document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
+            detail: {
+                type: 'group',
+                id: getCurrentGroupId()
+            }
+        }));
+    }
+}
     // In group_data_manager.ts
 // REPLACE THE ENTIRE saveCurrentGroupChatHistory FUNCTION
 // In src/js/core/group_data_manager.ts

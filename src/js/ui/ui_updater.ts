@@ -173,6 +173,13 @@ const methods = ((): UiUpdaterModule => {
 
 // PASTE THIS NEW FUNCTION:
 // REPLACE WITH THIS LINE (this is the correct version):
+// D:\polyglot_connect\src\js\ui\ui_updater.ts
+// Inside the initializeActualUiUpdater -> const methods = ((): UiUpdaterModule => { ... })();
+
+
+
+// PASTE THIS NEW FUNCTION:
+// REPLACE WITH THIS LINE (this is the correct version):
 function appendSystemMessage(logEl: HTMLElement | null, text: string, isError: boolean = false, isTimestamp: boolean = false): HTMLElement | null {
     if (!logEl) return null;
 
@@ -222,6 +229,8 @@ function appendChatMessage(
         logElement.innerHTML = '';
     }
 
+   // REPLACE WITH THIS BLOCK:
+// =================== START: REPLACE WITH THIS BLOCK (in ui_updater.ts) ===================
    // REPLACE WITH THIS BLOCK:
 // =================== START: REPLACE WITH THIS BLOCK (in ui_updater.ts) ===================
 const messageTimestamp = options.timestamp ? new Date(options.timestamp) : new Date();
@@ -565,30 +574,27 @@ if (isFirstMessageInLog) {
             contentHtml += `<strong class="chat-message-sender-name">${currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName)}</strong>`;
         }
 
-        // Display the main text (could be message, caption, or AI's comment on image)
-        if (text && text.trim() !== "") {
-            let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
-            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
-            
-            // Add a line break after the sender name if there is text content
-            if (contentHtml !== '') {
-                contentHtml += '';
-            }
-            contentHtml += `<span class="chat-message-text">${processedText}</span>`;
-        }
-
-        // Display the image if imageUrl is provided
+        // --- START OF THE FIX ---
+        
+        // FIX #1: Create the image tag FIRST if an imageUrl is provided.
         if (options.imageUrl) {
-            if (contentHtml.trim() !== '' && !contentHtml.endsWith('<br>') && text && text.trim() !== "" && !text.startsWith("[User sent an image")) {
-                contentHtml += '<br>';
-            }
             contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
         }
 
-        messageDiv.innerHTML = contentHtml;
+        // FIX #2: Create the text tag SECOND if text content exists.
+        if (text && text.trim() !== "") {
+            // Add a line break if there is BOTH an image AND text, for spacing.
+            if (options.imageUrl) {
+                contentHtml += '<br>';
+            }
+            let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
+            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+            contentHtml += `<span class="chat-message-text">${processedText}</span>`;
+        }
+        
+        // --- END OF THE FIX ---
 
-        // Assemble avatar and message content into the wrapper
-        messageDiv.innerHTML = contentHtml; // Set the bubble's content first
+        messageDiv.innerHTML = contentHtml;
 
         // Create and append the avatar as a proper DOM element if needed.
         // This allows the consecutive message logic to find and remove it later.
@@ -850,16 +856,17 @@ if (isFirstMessageInLog) {
         const appendToEmbeddedChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
             const { domElements: cd, polyglotConnectors: pc } = getDepsLocal();
             let finalOptions = { ...options };
-            if (senderClass === 'connector') {
-                const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
-                const connector = pc?.find(c => c.id === connectorId);
-                if (connector) { 
-                    finalOptions.avatarUrl = connector.avatarModern; 
-                    if(options.type !== 'call_event') finalOptions.senderName = connector.profileName;
-                    finalOptions.speakerId = connector.id;
-                    finalOptions.connectorId = connector.id;
-                }
-            }
+         // Use the same robust logic as appendToMessageLogModal
+if (!senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('system-call-event')) {
+    const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
+    const connector = pc?.find(c => c.id === connectorId);
+    if (connector) { 
+        finalOptions.avatarUrl = connector.avatarModern; 
+        if(options.type !== 'call_event') finalOptions.senderName = connector.profileName;
+        finalOptions.speakerId = connector.id;
+        finalOptions.connectorId = connector.id;
+    }
+}
             return appendChatMessage(cd.embeddedChatLog, text, senderClass, finalOptions);
         };
 
@@ -908,6 +915,8 @@ if (isFirstMessageInLog) {
             }
         };
 
+    // <<< REPLACE THE ENTIRE appendToGroupChatLog FUNCTION WITH THIS >>>
+// <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
     // <<< REPLACE THE ENTIRE appendToGroupChatLog FUNCTION WITH THIS >>>
 // <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
 const appendToGroupChatLog = (

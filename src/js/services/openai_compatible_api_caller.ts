@@ -86,12 +86,13 @@ async function callWithRetry<T>(
     throw lastError; // Throw the last captured error after all retries fail
 }
   // <<< REPLACE THE ENTIRE FUNCTION ASSIGNMENT BLOCK WITH THIS >>>
-(window as any).openaiCompatibleApiCaller = async function callOpenAICompatibleAPI(
+  (window as any).openaiCompatibleApiCaller = async function callOpenAICompatibleAPI(
     messages: OpenAIMessage[],
     modelIdentifier: string,
     provider: string,
     apiKey: string,
-    options: OpenAICallOptions = {}
+    options: OpenAICallOptions = {},
+    abortSignal?: AbortSignal // <<< ADD THIS
 ): Promise<string | ReadableStream | null> {
     const functionName = "[OpenAI_Compatible_Caller]";
     console.log(`${functionName}: Called for provider [${provider}] with model [${modelIdentifier}]`); // <<< ADD THIS LINE
@@ -165,7 +166,8 @@ if (!Array.isArray(messages) || messages.length === 0) {
             const response = await fetch(fetchUrl, {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: abortSignal // <<< ADD THIS
             });
 
             // Now, we use our "faked" nickname for the success/fail logs

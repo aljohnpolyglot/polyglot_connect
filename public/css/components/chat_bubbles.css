@@ -112,6 +112,7 @@
     color: var(--chat-bubble-connector-text, var(--text-color-default, #212529));
     border-bottom-left-radius: 6px; /* Tail effect */
     margin-left: 0.6rem;
+    align-items: left;
 }
 
 /* Tutor Bubble (Specific style for tutors, e.g., in group chats) */
@@ -123,7 +124,7 @@
 }
 .modal-content .chat-message-text{
   align-items: left;
-    /* border: 1px solid var(--secondary-color-light, #b6e2f9); */ /* Optional border */
+
 }
 /* Sender Name (Primarily for Group Chat AI/Connector bubbles) */
 /* HTML: <strong class="chat-message-sender-name">Sender:</strong> <span class="chat-message-text">...</span> */

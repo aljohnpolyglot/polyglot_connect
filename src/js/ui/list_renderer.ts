@@ -559,61 +559,85 @@ function renderGroupMembersListInternal (
         );
       
     },
-            renderAvailableGroupsList: (groupsArray: Group[], onGroupClick: (groupOrId: Group | string) => void) => { // Added types to params for clarity
-    console.log("LR_DEBUG: renderAvailableGroupsList called with raw groupsArray:", JSON.parse(JSON.stringify(groupsArray || []))); // ADD THIS (stringify to log content)
-    const { domElements} = getDeps(); // Added viewManager for updateEmptyListMessages
-
-    if (!domElements?.availableGroupsUl) {
-        console.error("LR_DEBUG: domElements.availableGroupsUl is not available! Cannot render group list.");
-        return;
-    }
-    console.log("LR_DEBUG: domElements.availableGroupsUl found:", domElements.availableGroupsUl);
-
-    const validGroups = Array.isArray(groupsArray) ? groupsArray : [];
-    console.log("LR_DEBUG: Valid groups count:", validGroups.length);
-
-    if (validGroups.length === 0) {
-        console.log("LR_DEBUG: No valid groups to render. Displaying empty/loading message.");
-        if (domElements.availableGroupsUl) {
-            domElements.availableGroupsUl.innerHTML = ""; // Clear any previous items
-        }
-        if (domElements.groupLoadingMessage) { // Use the specific loading message element for groups
-            domElements.groupLoadingMessage.textContent = "No groups found matching your criteria.";
-            domElements.groupLoadingMessage.style.display = 'block'; // Ensure it's visible
-        }
-        // viewManager?.updateEmptyListMessages?.(); // This might also control visibility
-        return;
-    } else {
-         if (domElements.groupLoadingMessage) { // Hide loading message if there are groups
-             domElements.groupLoadingMessage.style.display = 'none';
-         }
-    }
-
-    const sortedGroups = [...validGroups].sort((a,b) => (a?.name || "").localeCompare(b?.name || ""));
-    console.log("LR_DEBUG: Sorted groups count:", sortedGroups.length);
-
-    // Assuming renderList is defined above in the same IIFE and handles the actual rendering
-    renderList(
-        domElements.availableGroupsUl, 
-        domElements.groupLoadingMessage, // Pass it, renderList might use it or its own logic
-        sortedGroups as ListItemData[], // Cast needed if renderList expects ListItemData[] more generically
-        'groupDiscovery', 
-        onGroupClick as (item: ListItemData) => void // Cast needed if renderList expects ListItemData
-    );
-    console.log("LR_DEBUG: renderList called for available groups.");
-}, renderGroupMembersList: renderGroupMembersListInternal // <<< ENSURE THIS LINE IS PRESENT AND CORRECT
-            
-        };
-    })(); // End of IIFE
-
-    if (window.listRenderer && typeof window.listRenderer.renderActiveChatList === 'function') {
-        console.log("list_renderer.ts: SUCCESSFULLY assigned to window.listRenderer.");
-    } else {
-        console.error("list_renderer.ts: CRITICAL ERROR - assignment FAILED or method missing.");
-    }
+    renderAvailableGroupsList: (groupsArray: Group[], onGroupClick: (groupOrId: Group | string) => void) => {
+        console.log("LR_DEBUG: renderAvailableGroupsList called with groups count:", groupsArray?.length || 0);
+        const { domElements } = getDeps();
     
-    document.dispatchEvent(new CustomEvent('listRendererReady'));
-    console.log('list_renderer.ts: "listRendererReady" event dispatched (after full init).');
+        if (!domElements?.availableGroupsUl || !domElements.groupsEmptyPlaceholder) {
+            console.error("LR_ERROR: Critical elements for rendering groups (availableGroupsUl or groupsEmptyPlaceholder) are missing.");
+            return;
+        }
+    
+        const validGroups = Array.isArray(groupsArray) ? groupsArray : [];
+        const placeholder = domElements.groupsEmptyPlaceholder;
+        const listElement = domElements.availableGroupsUl;
+    
+        // --- FIX: Clear and explicit empty-state logic at the top ---
+        if (validGroups.length === 0) {
+            console.log("LR_DEBUG: No groups to render. Activating empty state placeholder.");
+            
+            // 1. Clear any old list items from a previous render.
+            listElement.innerHTML = "";
+            
+            // 2. Populate the placeholder with the correct "no groups joined" message.
+            placeholder.innerHTML = `
+                <i class="fas fa-users placeholder-icon"></i>
+                <h3>No Groups Joined</h3>
+                <p>You haven't joined any groups yet. Check out the "Discover" tab to find one that interests you!</p>
+                <button id="empty-groups-discover-btn" class="placeholder-action-btn">
+                    <i class="fas fa-compass"></i>
+                    Discover Groups
+                </button>
+            `;
+    
+            // 3. Make the placeholder visible by adding the '.visible' class.
+            placeholder.classList.add('visible');
+    
+            // 4. Add the event listener for the "Discover Groups" button.
+            const discoverBtn = placeholder.querySelector('#empty-groups-discover-btn');
+            if (discoverBtn) {
+                discoverBtn.addEventListener('click', () => {
+                    document.getElementById('discover-groups-tab-btn')?.click();
+                }, { once: true });
+            }
+            
+            // 5. Exit the function. We are done.
+            return;
+        }
+    
+        // --- If we have groups to display ---
+        console.log("LR_DEBUG: Groups found. Hiding placeholder and rendering list.");
+        
+        // 1. Make sure the placeholder is hidden.
+        placeholder.classList.remove('visible');
+    
+        // 2. Sort the groups and call the generic `renderList` function to build the <li> items.
+        const sortedGroups = [...validGroups].sort((a,b) => (a?.name || "").localeCompare(b?.name || ""));
+        
+        renderList(
+            listElement,
+            null, // Pass null because this function now handles the main placeholder.
+            sortedGroups as ListItemData[],
+            'groupDiscovery', 
+            onGroupClick as (item: ListItemData) => void
+        );
+    },
+
+
+
+    renderGroupMembersList: renderGroupMembersListInternal // <<< ENSURE THIS LINE IS PRESENT AND CORRECT
+                
+            };
+        })(); // End of IIFE
+
+        if (window.listRenderer && typeof window.listRenderer.renderActiveChatList === 'function') {
+            console.log("list_renderer.ts: SUCCESSFULLY assigned to window.listRenderer.");
+        } else {
+            console.error("list_renderer.ts: CRITICAL ERROR - assignment FAILED or method missing.");
+        }
+        
+        document.dispatchEvent(new CustomEvent('listRendererReady'));
+        console.log('list_renderer.ts: "listRendererReady" event dispatched (after full init).');
 
 } // End of initializeActualListRenderer
 const depsForListRenderer = ['domElementsReady', 'polyglotHelpersReady', 'activityManagerReady', 'flagLoaderReady', 'polyglotDataReady'];

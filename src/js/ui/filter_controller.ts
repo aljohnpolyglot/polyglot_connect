@@ -432,6 +432,9 @@ function filterAndDisplayConnectors(): void {
     // console.log("FilterController: filterAndDisplayConnectors - FINISHED (Revised Logic).");
 } // End of filterAndDisplayConnectors
     // AFTER (The new, tab-aware function)
+
+
+
 function applyFindConnectorsFilters(): void {
     console.log(`FC_DEBUG: applyFindConnectorsFilters() triggered for view: ${activeFriendsView}`);
     const { cardRenderer, domElements, activityManager } = getDeps();
@@ -480,12 +483,48 @@ function applyFindConnectorsFilters(): void {
         }
     } 
     // --- Logic for "Discover" Tab ---
-    else { 
-        // This is the original "Find" logic. Enable filters and use all connectors.
+    else {
+        // 1. Enable the sidebar filters for the Discover view
         if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = false;
-        // The role select will be enabled/disabled based on language selection, which is correct.
-        
-        filterAndDisplayConnectors(); // Call the original filtering function
+        if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = false;
+
+        // 2. Get the list of friends to EXCLUDE them from the Discover view
+        const conversationManager = window.conversationManager;
+        if (!conversationManager) {
+            console.error("FC: conversationManager not available for 'discover' view.");
+            cardRenderer.renderCards([], 'discover'); // Render an empty list on error
+            return;
+        }
+        const friendConnectorIds = new Set(
+            conversationManager.getActiveConversations().map(convo => convo.connector.id)
+        );
+
+        // 3. Start with all connectors and remove the friends
+        let discoverableConnectors = (window.polyglotConnectors || []).filter(c => !friendConnectorIds.has(c.id));
+
+        // 4. Apply the user's selected filters (language, role, name)
+        const languageFilter = domElements.filterLanguageSelect?.value || 'all';
+        if (languageFilter !== 'all') {
+            discoverableConnectors = discoverableConnectors.filter(c => c.language === languageFilter);
+        }
+
+        const roleFilter = domElements.filterRoleSelect?.value || 'all';
+        if (roleFilter !== 'all') {
+            discoverableConnectors = discoverableConnectors.filter(c =>
+                c.languageRoles?.[c.language]?.includes(roleFilter)
+            );
+        }
+
+        const nameSearchTerm = domElements.filterConnectorNameInput?.value.trim().toLowerCase() || "";
+        if (nameSearchTerm) {
+            discoverableConnectors = discoverableConnectors.filter(friend =>
+                (friend.name?.toLowerCase().includes(nameSearchTerm)) ||
+                (friend.profileName?.toLowerCase().includes(nameSearchTerm))
+            );
+        }
+
+        // 5. Render the final list of discoverable connectors
+        cardRenderer.renderCards(discoverableConnectors, 'discover');
     }
 }
 function applyGroupSearchFilters(): void {

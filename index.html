@@ -26,11 +26,13 @@
   <link rel="stylesheet" href="/css/components/card.css">
   <link rel="stylesheet" href="/css/components/chat_bubbles.css">
   <link rel="stylesheet" href="/css/components/lists.css">
+  <link rel="stylesheet" href="/css/components/jump_buttons.css"> 
   <link rel="stylesheet" href="/css/components/modal_call.css">
   <link rel="stylesheet" href="/css/components/modal_message.css">
   <link rel="stylesheet" href="/css/components/modal_persona.css">
   <link rel="stylesheet" href="/css/components/modal_recap.css">
   <link rel="stylesheet" href="/css/components/modal_group_members.css">
+  <link rel="stylesheet" href="/css/components/placeholders.css">
   <!-- Views CSS -->
   <link rel="stylesheet" href="/css/views/view_find.css">
   <link rel="stylesheet" href="/css/views/view_groups.css">
@@ -84,21 +86,36 @@
         <!-- Find Someone View -->
      <!-- AFTER -->
 <!-- Friends View -->
+<!-- Friends View -->
+<!-- Friends View -->
+<!-- Friends View -->
 <div id="friends-view" class="view">
-    <header class="view-header"><h1>Friends & Connections</h1><p>Find new partners or chat with your friends.</p></header>
+    <header class="view-header">
+        <h1>Friends & Connections</h1>
+        <p>Find new partners or chat with your friends.</p>
+    </header>
     <div class="view-content">
 
-        <div class="friends-view-toggle-container">
-            <button id="my-friends-tab-btn" class="friends-view-toggle-btn active" data-view="my-friends">My Friends</button>
-            <button id="discover-friends-tab-btn" class="friends-view-toggle-btn" data-view="discover">Discover</button>
+        <!-- Unified class for the tab container -->
+        <div class="group-view-toggle-container">
+            <button id="my-friends-tab-btn" class="group-view-toggle-btn active" data-view="my-friends">My Friends</button>
+            <button id="discover-friends-tab-btn" class="group-view-toggle-btn" data-view="discover">Discover</button>
         </div>
-    
-        <div id="connector-hub" class="connector-grid">
-            <p class="loading-message">Loading Connectors...</p>
+
+        <!-- Unified class for the main content area -->
+        <div class="group-list-container group-list-view">
+            <div id="connector-hub" class="connector-grid">
+                <!-- Connector cards will be rendered here by JS -->
+            </div>
+            <div id="friends-empty-placeholder" class="view-content-placeholder">
+                <!-- JS will populate and show this if the grid is empty -->
+            </div>
         </div>
+
+      
+
     </div>
 </div>
-
         <!-- Groups View -->
         <div id="groups-view" class="view">
             <header class="view-header"><h1>Language Practice Groups</h1><p>Join simulated group chats with learners and tutors.</p></header>
@@ -110,8 +127,12 @@
                 </div>
 
                 <div id="group-list-container" class="group-list-view">
-                    <p class="loading-message" id="group-loading-message">Loading groups...</p>
-                    <ul id="available-groups-ul" class="available-groups-list"></ul>
+                    <ul id="available-groups-ul" class="available-groups-list">
+                        <!-- Group list will be rendered here by JS -->
+                    </ul>
+                    <div id="groups-empty-placeholder" class="view-content-placeholder">
+                        <!-- JS will populate and show this -->
+                    </div>
                 </div>
                 <div id="group-chat-interface" style="display:none;" class="group-chat-container">
                     <header class="group-chat-header">
@@ -124,6 +145,9 @@
                     </header>
                     <div id="group-chat-log" class="chat-log-area styled-scrollbar"></div>
                 
+
+
+
                     <footer class="group-chat-footer">
                     
                         <div class="chat-input-previews-container">
@@ -188,6 +212,7 @@
                     </footer>
                 </div>
             </div>
+         
         </div>
 
         <!-- Summary View -->
@@ -451,6 +476,11 @@
 
   </div> <!-- End #polyglot-connect-app-shell -->
 
+
+<!-- ===== START: ADD THIS UNIVERSAL JUMP BUTTON CONTAINER ===== -->
+<div class="jump-button-container" id="universal-jump-buttons">
+    <!-- Buttons will be populated here by JavaScript -->
+</div>
   <!-- Configuration -->
 <!-- Configuration -->
  
@@ -551,6 +581,7 @@
     <script type="module" src="/src/js/ui/ui_updater.ts"></script>
     <script type="module" src="/src/js/ui/list_renderer.ts"></script>
     <script type="module" src="/src/js/ui/title_notifier.ts"></script> <!-- <<< ADD THIS LINE -->
+    <script type="module" src="/src/js/ui/jump_button_manager.ts"></script>
     <script type="module" src="/src/js/ui/card_renderer.ts"></script>
     <script type="module" src="/src/js/ui/persona_modal_manager.ts"></script>
     <script type="module" src="/src/js/ui/chat_ui_manager.ts"></script>

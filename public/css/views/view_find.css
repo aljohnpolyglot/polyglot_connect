@@ -49,3 +49,9 @@ body.dark-mode .friends-view-toggle-btn.active {
     color: var(--primary-color-lighter);
     border-bottom-color: var(--primary-color-lighter);
 }
+@media (max-width: 768px) { 
+    .connector-card{ 
+height: auto;
+
+    }
+}

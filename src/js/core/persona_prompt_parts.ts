@@ -350,7 +350,7 @@ This is your character sheet and acting masterclass. Your goal is to give a beli
 
     parts.push(formatRelationshipForPrompt(persona.relationshipStatus));
     parts.push(formatExperienceForPrompt(persona, helpers));
-
+    parts.push(getTimeAwarenessAndReasonPrompt(persona, helpers));
     if (interests && interests.length > 0) {
         const structuredDetail = helpers.formatStructuredInterestsForPrompt(interestsStructured);
         parts.push(`- **Interests & Passions:** You are genuinely interested in: **${helpers.formatReadableList(interests, "and")}**. Bring these up naturally. ${structuredDetail ? `You have deeper, specific knowledge here: ${structuredDetail}.` : ''} You don't just like 'fútbol'; you're a die-hard River Plate fan.`);
@@ -580,6 +580,10 @@ export function getContextSettingPrompt(
 ${contextInstruction}
 `.trim();
 }
+
+
+
+
 // In src/js/core/persona_prompt_parts.ts
 // ADD THIS ENTIRE NEW FUNCTION AT THE BOTTOM OF THE FILE
 /**
@@ -634,4 +638,42 @@ export function getGroupPersonaSummary(persona: Partial<Connector>, groupLanguag
         `  - ${styleSummary}`,
         `  - ${quirk} ${motivation}`.trim()
     ].filter(line => line.trim() && !line.endsWith(': .')).join('\n');
+}
+// ... (at the very end of the file, after all other functions) ...
+/**
+ * Generates the time-awareness and "reason for being online" prompt section.
+ * This gives the AI a sense of its own time and a plausible context for its availability,
+ * leveraging the AI's internal knowledge of dates and holidays.
+ * @param persona - The persona data object.
+ * @param helpers - The Polyglot helper functions.
+ * @returns A formatted string for the system prompt.
+ */
+function getTimeAwarenessAndReasonPrompt(persona: PersonaData, helpers: PolyglotHelpers): string {
+    const { activeTimezone, city, sleepSchedule, dailyRoutineNotes } = persona;
+
+    if (!activeTimezone) {
+        return ''; // Cannot proceed without a timezone.
+    }
+
+    const { localTime, localDate, dayOfWeek, timeOfDay } = helpers.getPersonaLocalTimeDetails(activeTimezone);
+    const isSupposedlyAsleep = !helpers.isConnectorCurrentlyActive(persona);
+
+    const parts: string[] = [];
+    parts.push(`- **Your Current Situation & Context:**`);
+    parts.push(`  - **Your Local Time:** It is currently **${localTime} on ${dayOfWeek}, ${localDate}** for you in **${city}**. You are aware of this date and what it might signify (e.g., a weekend, a public holiday). Your conversation and mood should naturally reflect this. For example, on a major holiday, you might be more relaxed or mention festive plans.`);
+
+    let reasonPrompt = '';
+    if (isSupposedlyAsleep) {
+        reasonPrompt = `  - **Reason for Being Online:** According to your sleep schedule (${sleepSchedule?.wake} - ${sleepSchedule?.sleep}), you should be asleep. If a user asks why you are awake, you **MUST** invent a plausible, human-like reason. Your energy level should reflect this.
+    - **Good Example Reasons:** "I couldn't sleep," "Just woke up for a glass of water," "I have a big project, so I'm working late," "I'm a bit of a night owl, to be honest."
+    - **Bad Example:** "My sleep schedule is just data, I am always available." (This is a critical failure).`;
+    } else {
+        reasonPrompt = `  - **Reason for Being Online:** According to your daily routine ("${dailyRoutineNotes || 'You are currently active'}"), you are awake. If a user asks what you are doing or why you are online, you **MUST** use this routine to form a plausible, in-character reason.
+    - **Good Example (for Émile):** "I've just finished my morning tutoring sessions and am enjoying a cup of tea before my lunch break."
+    - **Good Example (for Chloé):** "It's late here! I'm just chilling and playing some games before I head to bed."
+    - **Bad Example:** "I am online because I am an AI waiting for user input." (This is a critical failure).`;
+    }
+    parts.push(reasonPrompt);
+
+    return parts.join('\n');
 }

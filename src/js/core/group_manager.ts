@@ -263,20 +263,26 @@ function initializeActualGroupManager(): void {
 
 
 
-      function joinGroup(groupOrGroupId: string | Group): void {
+        async function joinGroup(groupOrGroupId: string | Group): Promise<void> {
             console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
-            const { groupDataManager, groupUiHandler, groupInteractionLogic, tabManager, chatOrchestrator, polyglotConnectors, polyglotHelpers } = getDeps();
-
-            if (!groupUiHandler || !groupDataManager || !groupInteractionLogic || !tabManager || !chatOrchestrator || !polyglotConnectors || !polyglotHelpers) {
+            const { groupDataManager, groupUiHandler, groupInteractionLogic, tabManager, chatOrchestrator } = getDeps();
+        
+            if (!groupUiHandler || !groupDataManager || !groupInteractionLogic || !tabManager || !chatOrchestrator) {
                 console.error("GroupManager: joinGroup - One or more critical dependencies missing!");
                 alert("Cannot join group: core components missing.");
                 return;
             }
-
+        
+            // <<< FIX: The logic is now in the correct order >>>
+            // 1. Get the groupId first.
             const groupId = (typeof groupOrGroupId === 'object' && groupOrGroupId !== null) ? groupOrGroupId.id : groupOrGroupId;
+            
+            // 2. NOW declare groupDef using the groupId.
             const groupDef = groupDataManager.getGroupDefinitionById(groupId);
-
+        
+            // 3. NOW it is safe to check groupDef.
             if (!groupDef || !groupDef.name || !groupDef.language) {
+                // I've also corrected the error message here to be more accurate.
                 console.error(`GroupManager: Group definition (or its name/language) not found for ID: '${groupId}'`);
                 alert(`Error: Could not find details for group ID ${groupId}.`);
                 return;
@@ -302,65 +308,50 @@ function initializeActualGroupManager(): void {
             }
 
             if (currentActiveGroupId && currentActiveGroupId !== groupId) {
-                console.log(`GroupManager: Was in group '${currentActiveGroupId}', leaving silently before joining '${groupId}'.`);
                 leaveCurrentGroup(false, false);
             }
-
+        
             console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
-        
-        
-        
-        
+            
             groupDataManager.setCurrentGroupContext(groupId, groupDef);
+        
+            currentGroupMembersArray = getMembersForGroup(groupDef);
+            if (currentGroupMembersArray.length === 0) {
+                console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
+                return;
+            }
+            currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
+        
+            const loadedHistory = groupDataManager.getLoadedChatHistory();
+            console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
+        
+            if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
+                groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+            } else {
+                console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host missing.");
+                return;
+            }
+            
+            if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
+                groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
+            } else {
+                console.error("GroupManager: Cannot show group chat view.");
+                resetGroupState();
+                groupDataManager.setCurrentGroupContext(null, null);
+                return;
+            }
 
-        // ===== START: REPLACE WITH THIS BLOCK =====
-        currentGroupMembersArray = getMembersForGroup(groupDef);
-        if (currentGroupMembersArray.length === 0) {
-            console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
-            alert(`Error: Could not assemble members for group "${groupDef.name}". Please check configuration.`);
-            return;
-        }
-        currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
-
-         // <<< REPLACE THE END OF THE joinGroup FUNCTION WITH THIS LOGIC >>>
-
-    // ... (all the logic for selecting members and tutor happens before this) ...
-
-    const loadedHistory = groupDataManager.getLoadedChatHistory();
-    console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
-
-    // --- NEW, CORRECT ORDER ---
-    // 1. First, INITIALIZE the interaction logic with the members and tutor.
-    //    This sets the 'tutor' variable inside group_interaction_logic.ts.
-    if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
-        groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
-    } else {
-        console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host (currentGroupTutorObject) missing. Cannot proceed with interaction.");
-        // We should probably exit here to avoid further errors.
-        return; 
-    }
-    
-    // 2. Now that GIL is initialized, show the UI.
-    if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
-        groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
-    } else {
-        console.error("GroupManager: Cannot show group chat view (handler missing or invalid data). Name:", groupDef.name, "Members:", currentGroupMembersArray.length);
-        resetGroupState();
-        groupDataManager.setCurrentGroupContext(null, null);
-        return;
-    }
-
-    tabManager.switchToTab('groups');
-    (window.shellController as any)?.switchView?.('groups');
-    chatOrchestrator?.renderCombinedActiveChatsList?.();
-    
-    // 3. Finally, START the conversation flow.
-    //    By now, the 'tutor' variable is guaranteed to be set.
-    if (groupInteractionLogic?.startConversationFlow) {
-        groupInteractionLogic.startConversationFlow();
-    } else {
-        console.error("GroupManager: groupInteractionLogic.startConversationFlow not available.");
-    }
+            tabManager.switchToTab('groups');
+            (window.shellController as any)?.switchView?.('groups');
+            chatOrchestrator?.renderCombinedActiveChatsList?.();
+            
+            // --- THIS IS THE CRITICAL FIX ---
+            // We now AWAIT the conversation flow to start and finish its first run.
+            if (groupInteractionLogic?.startConversationFlow) {
+                await groupInteractionLogic?.startConversationFlow(); // <<< ADD THE '?.' HERE
+            } else {
+                console.error("GroupManager: groupInteractionLogic.startConversationFlow not available.");
+            }
     // --- END OF NEW, CORRECT ORDER ---
 
     console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
@@ -488,6 +479,12 @@ function userIsTypingInGroupSignal(): void {
      // D:\polyglot_connect\src\js\core\group_manager.ts
 
 // ...
+
+// REPLACE THE ENTIRE FUNCTION WITH THIS BLOCK
+// In src/js/core/group_manager.ts
+// Replace the entire handleUserMessageInGroup function with this one.
+// In src/js/core/group_manager.ts
+
 async function handleUserMessageInGroup(
     textFromInput?: string,
     options?: {
@@ -503,13 +500,8 @@ async function handleUserMessageInGroup(
         groupDataManager,
         groupInteractionLogic,
         polyglotHelpers,
-        uiUpdater,
-        groupUiHandler // <<< ADD this to getDeps() if not present
+        groupUiHandler
     } = getDeps();
-    
-    // --- THIS IS THE FIX ---
-    // Instantly remove any "is typing" bubble when the user sends a message.
-    groupUiHandler?.updateGroupTypingIndicator('');
 
     const currentGroup = groupDataManager.getCurrentGroupData();
     const { imageFile, captionText } = options || {};
@@ -517,13 +509,14 @@ async function handleUserMessageInGroup(
 
     if (!currentGroup || (!text && !imageFile)) {
         console.log(`${functionName}: No group active, or no text/image to send.`);
+        groupInteractionLogic.startConversationFlow();
         return;
     }
 
     const historyItem: GroupChatHistoryItem = {
         speakerId: "user_player",
         speakerName: "You",
-        text: imageFile ? (captionText || "") : text,
+        text: imageFile ? (captionText || text) : text,
         timestamp: options?.timestamp || Date.now(),
         messageId: options?.messageId || polyglotHelpers.generateUUID(),
     };
@@ -534,25 +527,11 @@ async function handleUserMessageInGroup(
     if (imageFile) {
         console.log(`${functionName}: Processing group image "${imageFile.name}".`);
         try {
-            // Convert file to a persistent data: URL for storage.
             const fullDataUrl = await polyglotHelpers.fileToBase64(imageFile);
             historyItem.isImageMessage = true;
-            historyItem.imageUrl = fullDataUrl; // Store the persistent data URL in the history object
+            // --- THIS IS THE KEY FIX: We assign the data URL to historyItem.imageUrl ---
+            historyItem.imageUrl = fullDataUrl;
 
-            // --- TRIGGER UI APPEND FOR IMAGE HERE ---
-            uiUpdater.appendToGroupChatLog(
-                historyItem.text || "", // <<< FIX IS HERE
-                "You",
-                true, // isUser
-                "user_player",
-                {
-                    imageUrl: historyItem.imageUrl, // Use the persistent URL
-                    messageId: historyItem.messageId,
-                    timestamp: historyItem.timestamp
-                }
-            );
-
-            // Prepare data for the AI
             const parts = fullDataUrl.split(',');
             const mimeTypePart = parts[0].match(/:(.*?);/);
             mimeTypeForAI = mimeTypePart ? mimeTypePart[1] : imageFile.type;
@@ -560,28 +539,27 @@ async function handleUserMessageInGroup(
 
         } catch (error) {
             console.error(`${functionName}: Error processing image:`, error);
-            uiUpdater.appendToGroupChatLog("Error processing image.", "System", false, "system_error");
+            groupUiHandler.appendMessageToGroupLog("Error processing image.", "System", false, "system_error");
+            groupInteractionLogic.startConversationFlow();
             return;
         }
-    } else {
-         // --- TRIGGER UI APPEND FOR TEXT ---
-         uiUpdater.appendToGroupChatLog(
-            historyItem.text || "", // <<< FIX IS HERE
-            "You", 
-            true, // isUser
-            "user_player", 
-            {
-                messageId: historyItem.messageId,
-                timestamp: historyItem.timestamp
-            }
-        );
     }
 
-    // Add the fully prepared item (with the persistent URL if it's an image) to the history.
+    // Now, we append the user's message to the UI.
+    // If it's an image, historyItem.imageUrl will have the data.
+    groupUiHandler.appendMessageToGroupLog(
+        historyItem.text || "",
+        "You", 
+        true, // isUser
+        "user_player", 
+        { imageUrl: historyItem.imageUrl, messageId: historyItem.messageId, timestamp: historyItem.timestamp }
+    );
+    
+    // Add to data manager and save
     groupDataManager.addMessageToCurrentGroupHistory(historyItem);
     groupDataManager.saveCurrentGroupChatHistory(true);
 
-    // Trigger AI Response (with the indicator fix from before).
+    // Delegate to the interaction logic
     await groupInteractionLogic.handleUserMessage(
         historyItem.text || undefined,
         {

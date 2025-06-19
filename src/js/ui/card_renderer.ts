@@ -266,50 +266,73 @@ card.innerHTML = `
         }
 
      // AFTER (The new, simplified version)
-     function renderCards(connectorsToDisplay: Connector[], activeFriendsView: 'my-friends' | 'discover'): void {
+   // REPLACE THE ENTIRE renderCards FUNCTION WITH THIS BLOCK
+// =================== REPLACE THE ENTIRE renderCards FUNCTION in card_renderer.ts ===================
+
+function renderCards(connectorsToDisplay: Connector[], activeFriendsView: 'my-friends' | 'discover'): void {
     const grid = getHubGridElement();
-    
-    // Safety check for the grid element
     if (!grid) {
-        console.error("cardRenderer.renderCards: Connector hub grid element not found. Cannot render cards.");
+        console.error("CardRenderer: Grid element #connector-hub not found.");
         return;
     }
-    
-    // Always clear the grid first
-    grid.innerHTML = '';
 
-    // Handle the case where there are no connectors to display
+    const { domElements } = getDeps();
+    const placeholder = domElements.friendsEmptyPlaceholder;
+    if (!placeholder) {
+        console.error("CardRenderer: Placeholder element #friends-empty-placeholder not found.");
+        return;
+    }
+
     if (!connectorsToDisplay || connectorsToDisplay.length === 0) {
-        // The loading message element is already inside the grid from the HTML.
-        const loadingMsg = grid.querySelector('.loading-message') as HTMLElement | null;
-        if (loadingMsg) {
-            loadingMsg.textContent = "No one matches your criteria.";
-            loadingMsg.style.display = 'block';
-        }
-        return;
-    }
+        // --- EMPTY STATE ---
+        // 1. Clear the grid of any old cards.
+        grid.innerHTML = '';
+        // HIDE the grid itself, so the placeholder can take up the space.
+        grid.style.display = 'none';
 
-    // Hide the loading/empty message if we have cards to render
-    const loadingMsg = grid.querySelector('.loading-message') as HTMLElement | null;
-    if (loadingMsg) {
-        loadingMsg.style.display = 'none';
-    }
+        // 2. Populate the placeholder's content.
+        placeholder.innerHTML = `
+            <i class="fas fa-user-friends placeholder-icon"></i>
+            <h3>No Friends Added</h3>
+            <p>You haven't added any friends yet. Switch to the "Discover" tab to find new language partners!</p>
+            <button id="empty-friends-discover-btn" class="placeholder-action-btn">
+                <i class="fas fa-search"></i>
+                Discover Partners
+            </button>
+        `;
 
-    // Create and append the cards
-    const fragment = document.createDocumentFragment();
-    connectorsToDisplay.forEach(connector => {
-        if (!connector) {
-            console.warn("CardRenderer: renderCards - Skipping undefined connector.");
-            return;
+        // 3. Make the placeholder visible.
+        placeholder.classList.add('visible');
+        placeholder.style.display = 'flex'; // Use flex for centering its content
+
+        // 4. Attach event listener to the button.
+        const discoverBtn = placeholder.querySelector('#empty-friends-discover-btn');
+        if (discoverBtn) {
+            discoverBtn.addEventListener('click', () => {
+                document.getElementById('discover-friends-tab-btn')?.click();
+            }, { once: true });
         }
-        const cardElement = renderSingleCard(connector, activeFriendsView);
-        if (cardElement) {
-            fragment.appendChild(cardElement);
-        }
-    });
-    grid.appendChild(fragment);
+    } else {
+        // --- CARDS TO RENDER ---
+        // 1. Ensure the placeholder is hidden and the grid is visible.
+        placeholder.classList.remove('visible');
+        placeholder.style.display = 'none';
+        grid.style.display = 'grid'; // Make sure grid is visible
+
+        // 2. Create and append cards.
+        const fragment = document.createDocumentFragment();
+        connectorsToDisplay.forEach(connector => {
+            const cardElement = renderSingleCard(connector, activeFriendsView);
+            if (cardElement) {
+                fragment.appendChild(cardElement);
+            }
+        });
+
+        // 3. Clear the grid and append the new cards.
+        grid.innerHTML = '';
+        grid.appendChild(fragment);
+    }
 }
-
         console.log("ui/card_renderer.ts: IIFE for actual methods finished, returning exports.");
         return {
             renderCards

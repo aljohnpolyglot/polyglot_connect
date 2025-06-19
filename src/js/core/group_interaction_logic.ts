@@ -33,19 +33,38 @@ console.log('group_interaction_logic.ts: (Hybrid V2) Script loaded.');
 
     // --- MODULE-LEVEL STATE (SHARED BY ALL FUNCTIONS BELOW) ---
    // --- MODULE-LEVEL STATE (SHARED BY ALL FUNCTIONS BELOW) ---
+// Replace with this
 let members: Connector[] = [];
 let tutor: Connector | null = null;
 let isAwaitingUserFirstIntro: boolean = false;
 let conversationFlowActive: boolean = false;
 let conversationLoopId: ReturnType<typeof setTimeout> | null = null;
 let lastMessageTimestamp: number = 0;
-let hasProddedSinceUserSpoke: boolean = false; // <<< ADD THIS LINE
+let hasProddedSinceUserSpoke: boolean = false;
 let isRenderingScene: boolean = false; // <<< ADD THIS LINE
 let currentSceneCancellationToken: { isCancelled: boolean } | null = null; // <<< ADD THIS LINE
-let currentTypingIndicator: { speakerId: string | undefined; element: HTMLElement | null | void } | null = null;
+let currentTypingIndicator: { speakerId: string | undefined; element: HTMLElement | null | void } | null = null; // <<< ADD THIS LINE
 
+// ADD THIS CODE
 
+const activeGroupAiOperation = new Map<string, AbortController>();
 
+/**
+ * Interrupts any ongoing AI generation for the active group and prepares a new AbortController.
+ * This is the core of the responsive cancellation feature for group chats.
+ * @param groupId The ID of the currently active group.
+ * @returns A new AbortController for the upcoming AI operation.
+ */
+function interruptAndTrackGroupOperation(groupId: string): AbortController {
+    if (activeGroupAiOperation.has(groupId)) {
+        console.log(`%c[Group Interrupt] User sent new message. Cancelling previous AI request for group ${groupId}.`, 'color: #ff6347; font-weight: bold;');
+        const existingController = activeGroupAiOperation.get(groupId);
+        existingController?.abort();
+    }
+    const newController = new AbortController();
+    activeGroupAiOperation.set(groupId, newController);
+    return newController;
+}
 
 // --- DEPENDENCY GETTER ---
   // REPLACE WITH THIS BLOCK:
@@ -289,7 +308,17 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
       
       
       
-        
+       const groupHost = groupMembers.find(m => m.id === group.tutorId) || groupMembers[0];
+       let timeContextRule = '';
+       if (groupHost && groupHost.activeTimezone) {
+           const { localTime, localDate, dayOfWeek } = helpers.getPersonaLocalTimeDetails(groupHost.activeTimezone);
+           timeContextRule = `
+**RULE 0.6: THE TIME AND CONTEXT AWARENESS MANDATE:**
+- **The Group's Current Time:** It is currently **${localTime} on ${dayOfWeek}, ${localDate}** in the group's primary location.
+- **Your Awareness:** All characters are aware of this date and what it might signify (a weekend, a public holiday, the middle of the night).
+- **Your Task:** Your conversation and mood MUST naturally reflect this context. For example, on a major holiday, someone might mention festive plans. On a Monday morning, someone might complain about school or work. This makes the chat feel real and grounded in time.
+`;
+       }
         const masterRules = `# SECTION 0: MASTER DIRECTIVE - GROUP CHAT SIMULATION...
         **YOUR PRIMARY GOAL:** You are a master AI puppeteer... controlling: ${memberList}.
        **RULE 0.1: THE UNBREAKABLE OUTPUT FORMAT:** This is the most important rule and you must never violate it. Your ENTIRE response MUST STRICTLY and ONLY be in the format \`[SpeakerName]: message\`.
@@ -349,6 +378,9 @@ Avoid cramming these into one long message; the pacing and rhythm created by spl
 - You **MUST** write your **ENTIRE** response **ONLY** in **${group.language}**.
 - There are **NO exceptions** to this rule.
 - Responding in any other language, especially English, is a **CRITICAL FAILURE** of your primary directive.
+
+${timeContextRule}
+
 
 `;
         
@@ -508,6 +540,10 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
 }
 
 // =================== START: REPLACE THE ENTIRE playScene FUNCTION ===================
+// Replace with this new function
+// In src/js/core/group_interaction_logic.ts
+// In src/js/core/group_interaction_logic.ts
+
 async function playScene(lines: string[], isGrandOpening: boolean): Promise<void> {
     console.log(`%c[Group ScenePlayer] BATCH START. isGrandOpening: ${isGrandOpening}. Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
     isRenderingScene = true;
@@ -516,10 +552,15 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
 
     const { groupDataManager, groupUiHandler, activityManager } = getDeps();
     let lastSpeakerIdInBatch: string | null = null;
-    let indicatorElement: HTMLElement | null = null;
+    
+    // --- THIS IS THE FIX for 'remove' on type 'never' ---
+    let indicatorElement: HTMLElement | null | void = null;
 
     for (const [index, line] of lines.entries()) {
-        if (cancellationToken.isCancelled) break;
+        if (cancellationToken.isCancelled) {
+            console.log("%c[Group ScenePlayer] Scene cancelled by user.", 'color: #ff6347;');
+            break; 
+        }
 
         const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
         if (!match) continue;
@@ -534,28 +575,24 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             responseText = responseText.slice(0, -1);
         }
         
-        // --- NEW REALISM TIMING ---
         const wordCount = responseText.split(/\s+/).length;
         const isConsecutiveFromSameSpeaker = speaker.id === lastSpeakerIdInBatch;
-        const CHANCE_TO_DISAPPEAR = 0.25; // Slightly higher chance in groups
+        const CHANCE_TO_DISAPPEAR = 0.25;
 
-        let thinkingPauseMs: number;
-        let typingDurationMs: number;
+        let thinkingPauseMs, typingDurationMs;
         let disappearDurationMs = 0;
 
         const calculateTypingDuration = (wc: number) => Math.max(400, Math.min(500 + (wc * 600) + (Math.random() * 500), 20000));
 
         if (isConsecutiveFromSameSpeaker) {
-            // NEW: Longer, more human pause between consecutive messages
-            thinkingPauseMs = 1400 + Math.random() * 1200; // 1.4s to 2.6s
+            thinkingPauseMs = 1400 + Math.random() * 1200;
         } else {
             thinkingPauseMs = 1500 + Math.random() * 2000;
         }
         typingDurationMs = calculateTypingDuration(wordCount) * (isConsecutiveFromSameSpeaker ? 0.8 : 1.0);
 
-        // NEW: The "disappearing indicator" effect
         if (wordCount > 5 && Math.random() < CHANCE_TO_DISAPPEAR) {
-            disappearDurationMs = 1000 + Math.random() * 1300; // 1.0s to 2.3s of "thinking"
+            disappearDurationMs = 1000 + Math.random() * 1300;
         }
         
         console.log(
@@ -563,7 +600,6 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             'color: #28a745;'
         );
 
-        // --- Correct Animation Sequence ---
         await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
         if (cancellationToken.isCancelled) break;
 
@@ -571,7 +607,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         indicatorElement = groupUiHandler.updateGroupTypingIndicator(indicatorText);
 
         if (disappearDurationMs > 0) {
-            const typingBurst = typingDurationMs * (0.4 + Math.random() * 0.2); // 40-60% of the time
+            const typingBurst = typingDurationMs * (0.4 + Math.random() * 0.2);
             await new Promise(resolve => setTimeout(resolve, typingBurst));
             if (indicatorElement) indicatorElement.remove();
             
@@ -593,16 +629,22 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         
         const historyItem: GroupChatHistoryItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
         lastMessageTimestamp = historyItem.timestamp;
-        groupDataManager.addMessageToCurrentGroupHistory(historyItem);
         
-        lastSpeakerIdInBatch = speaker.id;
+     // --- THIS IS THE BAND-AID FIX ---
+// @ts-ignore - We are forcing this call because we know the function signature in group_data_manager is correct, even if TS is stuck.
+groupDataManager.addMessageToCurrentGroupHistory(historyItem, { triggerListUpdate: true });
+
+lastSpeakerIdInBatch = speaker.id;
     }
     
     if (indicatorElement) indicatorElement.remove();
     
     isRenderingScene = false;
     currentSceneCancellationToken = null;
-    console.log(`%c[Group ScenePlayer] BATCH FINISHED.`, 'color: #8a2be2; font-weight: bold;');
+    
+    groupDataManager.saveCurrentGroupChatHistory(false);
+    
+    console.log(`%c[Group ScenePlayer] BATCH FINISHED (or was cancelled).`, 'color: #8a2be2; font-weight: bold;');
 }
 
 // ===================  END: REPLACE THE ENTIRE playScene FUNCTION  ===================
@@ -621,7 +663,8 @@ async function generateAiTextResponse(
     engineTriggered: boolean = false, 
     isGrandOpening: boolean = false, 
     isReEngagement: boolean = false, 
-    userText: string | undefined = undefined
+    userText: string | undefined = undefined,
+    abortSignal?: AbortSignal // <<< ADD THIS
 ): Promise<string[]> {
    
     if (!conversationFlowActive) return []; // FIX 1
@@ -996,7 +1039,7 @@ FINAL CHECK: Your entire output MUST only be the dialogue in the format [Speaker
 // <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
 try {
     // This function now ONLY gets the text and returns the lines.
-    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], 'openrouter');
+    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], 'openrouter', false, 'group-chat', abortSignal); // <<< ADD abortSignal
     
     if (typeof rawResponse !== 'string' || !rawResponse) {
         throw new Error("AI service returned empty or invalid response.");
@@ -1004,9 +1047,14 @@ try {
     
     console.log(`[Scene Getter] Raw Conversation Block from AI:\n${rawResponse}`);
     return rawResponse.split('\n').filter(line => line.trim() !== '');
-} catch (error) {
+} catch (error: any) { // <<< ADD type annotation
+    if (error.name === 'AbortError') {
+        console.log(`%c[Group Interrupt] AI text generation was successfully aborted.`, 'color: #ff9800;');
+        return []; // Return empty on abort
+    }
+    // --- END OF ADDED BLOCK ---
     console.error("GIL (Hybrid): Error getting conversation block from AI:", error);
-    return []; // <<< FIX: Return an empty array on failure
+    return [];
 }
 }
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
@@ -1015,126 +1063,148 @@ try {
      * Generates a response when a user sends an image. This is a multi-stage process.
      */
   // <<< REPLACE WITH THIS CORRECTED SIGNATURE >>>
-async function generateAiImageResponse(members: Connector[], imageBase64Data: string, imageMimeType: string, userCaption: string): Promise<boolean> {
-        if (!conversationFlowActive) return false;
+
+// REPLACE THE ENTIRE FUNCTION WITH THIS BLOCK
+
+/**
+ * Generates a multi-person, multi-stage response to a user's image in a group chat.
+ * Stage 1: An expert or the most relevant person comments and provides a detailed,
+ *          structured description of the image for the group's "memory".
+ * Stage 2: Other members then react to the first comment and the image description,
+ *          creating a dynamic and grounded follow-up scene.
+ */
+async function generateAiImageResponse(members: Connector[], imageBase64Data: string, imageMimeType: string, userCaption: string, abortSignal?: AbortSignal): Promise<boolean> { // <<< ADD abortSignal
+    if (!conversationFlowActive) return false;
+
+    console.log("%c[Group Image] Starting multi-stage image response...", 'color: #17a2b8; font-weight: bold;');
+    const { groupDataManager, polyglotHelpers, aiService, groupUiHandler } = getDeps();
     
-        console.log("GIL (Hybrid): generateAiImageResponse called. Will first determine the best speaker.");
-        const { groupDataManager, polyglotHelpers, aiService, groupUiHandler, activityManager } = getDeps();
-        
-        // This variable is declared here to be accessible throughout the function scope.
-        let personaToSpeak: Connector | undefined;
-        
-        try {
-            // --- STAGE 1: CHOOSE THE BEST SPEAKER ---
-            // --- STAGE 1: CHOOSE THE BEST SPEAKER ---
-    const currentGroup = groupDataManager.getCurrentGroupData()!;
-    const memberProfiles = members.map(m => `- ${m.profileName}: Primarily interested in ${polyglotHelpers.formatReadableList(m.interests, 'and')}.`).join('\n'); 
-            const speakerChoicePrompt = `Based on the content of the attached image and the following member profiles, who is the MOST qualified or likely person to comment on it?
+    let firstSpeaker: Connector | undefined;
+    let indicatorElement: HTMLElement | null = null;
+    
+    try {
+        // --- STAGE 1: CHOOSE THE FIRST, MOST RELEVANT SPEAKER ---
+        const memberProfiles = members.map(m => `- ${m.profileName}: Primarily interested in ${polyglotHelpers.formatReadableList(m.interests, 'and')}.`).join('\n');
+        const speakerChoicePrompt = `Based on the content of the attached image and the following member profiles, who is the MOST qualified or likely person to comment first?
 
 Group Members:
 ${memberProfiles}
 User's caption with the image: "${userCaption || 'none'}"
-Your task: Respond with ONLY the name of the best person to speak next. Do not provide any other text or explanation.`;
-            
-            // Use a fast, cheap model for this routing task
-            const speakerNameResponse = await aiService.generateTextFromImageAndText(
-                imageBase64Data, imageMimeType, members[0], [], speakerChoicePrompt, 'groq'
-            );
-    
-            if (!speakerNameResponse || typeof speakerNameResponse !== 'string') {
-                throw new Error("Speaker choice AI returned no response.");
-            }
-            
-            const chosenSpeakerName = speakerNameResponse.trim();
-            personaToSpeak = members.find(m => m.profileName === chosenSpeakerName);
-            
-            if (!personaToSpeak) {
-                console.warn(`GIL: Speaker choice AI chose '${chosenSpeakerName}', who is not in the group. Defaulting to tutor.`);
-                personaToSpeak = members.find(m => m.id === tutor!.id) || members[0];
-            }
-            
-            if (!personaToSpeak) {
-                throw new Error("Could not determine a speaker, even after fallback to tutor.");
-            }
-            
-            console.log(`GIL (Hybrid): Speaker Choice AI selected: ${personaToSpeak.profileName}`);
-            
-            // --- STAGE 2: GENERATE THE RESPONSE FOR THE CHOSEN SPEAKER ---
-            activityManager.simulateAiTyping(tutor!.id, 'group'); // The tutor still "hosts" the typing indicator
-            
-            const imagePrompt = `You are ${personaToSpeak.profileName}. A user in the group chat has shared an image. Your interests are [${personaToSpeak.interests?.join(', ') || 'general topics'}].
+Your task: Respond with ONLY the name of the best person to speak next.`;
 
-Your response MUST have two parts.
-Part 1: Your Conversational Comment (as ${personaToSpeak.profileName}):
-Rule: Your comment MUST reflect your personality and interests.
-If you are an expert (e.g., a football fan seeing a football photo): Make a knowledgeable comment. You can identify players or teams if you recognize them.
-If you are NOT an expert (e.g., a chef seeing a physics diagram): Express curious confusion or ask a basic question. It's okay to say "I have no idea what this is, but it looks cool!"
-Acknowledge the user's caption ("${userCaption || 'none'}") naturally.
-This conversational part MUST come FIRST.
+const speakerNameResponse = await aiService.generateTextFromImageAndText(
+    imageBase64Data, imageMimeType, members[0], [], speakerChoicePrompt, 'groq', abortSignal // <<< ADD abortSignal
+);
+        if (!speakerNameResponse || typeof speakerNameResponse !== 'string') throw new Error("Speaker choice AI returned no response.");
+        
+        const chosenSpeakerName = speakerNameResponse.trim();
+        firstSpeaker = members.find(m => m.profileName === chosenSpeakerName) || members.find(m => m.id === tutor!.id) || members[0];
+        if (!firstSpeaker) throw new Error("Could not determine a first speaker.");
 
-Part 2: The Semantic Description for your teammates (CRITICAL):
-After your comment, you MUST include a special section formatted EXACTLY like this:
-[IMAGE_DESCRIPTION_START]
-A highly detailed, factual, and objective description of the image's visual content. Your goal is to paint a picture with words for someone who cannot see the image.
-Composition: Describe the main subject and its position (e.g., "A close-up of a person's face in the center," "A wide shot of a landscape with a mountain on the left").
-Colors & Lighting: Mention the dominant colors and the lighting style (e.g., "The image has a warm, golden-hour glow," "Dominated by cool blues and grays," "Bright, direct sunlight creating harsh shadows").
-Key Objects & Scenery: List all significant objects, people, and background elements. Be specific (e.g., "a wooden table with a half-empty coffee mug," "a bustling city street at night with neon signs").
-Recognizable Entities: If you recognize a famous person (e.g., Cristiano Ronaldo), a team (e.g., Real Madrid), or a landmark (e.g., the Colosseum in Rome), you MUST state their name.
-Unrecognized People/Sports: If you see a person you don't recognize, describe their appearance and clothing in detail (e.g., "a person with short brown hair wearing a blue jacket," "a basketball player in a purple and gold jersey with the number 24").
-Visible Text: If there is any visible text, no matter how small, transcribe it accurately.
-[IMAGE_DESCRIPTION_END]
-FINAL RULE: Do not add any other text, reasoning, or preamble before or after your formatted response.`;
+        console.log(`[Group Image] Stage 1: AI selected '${firstSpeaker.profileName}' as the first responder.`);
+        indicatorElement = groupUiHandler.updateGroupTypingIndicator(`${firstSpeaker.profileName} is typing...`);
 
-            // Use a powerful vision model for the detailed analysis
-            const rawResponse = await aiService.generateTextFromImageAndText(
-                imageBase64Data, imageMimeType, personaToSpeak, [], imagePrompt, 'together'
-            );
-            
-            activityManager.clearAiTypingIndicator(tutor!.id, 'group');
-    
-            if (typeof rawResponse !== 'string' || !rawResponse) throw new Error("Main AI returned empty response for image.");
-    
-            let conversationalReply: string | null = null;
-            let extractedImageDescription: string | undefined = undefined;
-    
-            const descStartTag = "[IMAGE_DESCRIPTION_START]";
-            const descEndTag = "[IMAGE_DESCRIPTION_END]";
-            const startIndex = rawResponse.indexOf(descStartTag);
-            const endIndex = rawResponse.indexOf(descEndTag);
-    
-            if (startIndex !== -1 && endIndex > startIndex) {
-                extractedImageDescription = rawResponse.substring(startIndex + descStartTag.length, endIndex).trim();
-                conversationalReply = rawResponse.substring(0, startIndex).trim();
-            } else {
-                conversationalReply = rawResponse.trim();
-                 console.warn("GIL (Hybrid): Image response did not contain semantic description tags. Using whole response as comment.");
-            }
-    
-            if (conversationalReply) {
-                lastMessageTimestamp = Date.now(); // <-- ADD THIS LINE
-                const historyItem: GroupChatHistoryItem = {
-                    speakerId: personaToSpeak.id,
-                    speakerName: personaToSpeak.profileName,
-                    text: conversationalReply,
-                    timestamp: Date.now(),
-                    imageSemanticDescription: extractedImageDescription 
-                };
-                groupDataManager.addMessageToCurrentGroupHistory(historyItem);
-                groupDataManager.saveCurrentGroupChatHistory(true);
-                groupUiHandler.appendMessageToGroupLog(conversationalReply, personaToSpeak.profileName, false, personaToSpeak.id);
-            } else {
-                throw new Error("Could not parse a conversational reply from the AI's image response.");
-            }
-            return true; // <<< ADD THIS LINE
-        } catch (error) {
-            console.error("GIL (Hybrid): Error during multi-stage AI image response generation:", error);
-            activityManager.clearAiTypingIndicator(tutor!.id, 'group');
-            const speaker = personaToSpeak || tutor;
-            groupUiHandler.appendMessageToGroupLog("(I had a little trouble seeing that image, sorry!)", speaker!.profileName, false, speaker!.id);
-            return false; // <<< ADD THIS LINE
+        // --- STAGE 2: GENERATE THE FIRST SPEAKER'S COMMENT AND THE DETAILED DESCRIPTION ---
+        const firstResponsePrompt = `You are ${firstSpeaker.profileName}. A user shared an image with the caption: "${userCaption || 'none'}".
+        Your personality is: **${firstSpeaker.personalityTraits?.join(', ')}**.
+        
+        Your task is to generate two things, in this exact order:
+        
+        1.  **Your Comment:** First, write a natural, in-character comment about the image, based on your personality and interests. Ask a question to engage the user.
+        2.  **The Description:** Immediately after your comment, you MUST include a special section formatted EXACTLY like this, with no extra words before or after the tags:
+            [IMAGE_DESCRIPTION_START]
+            A factual, objective description of what is visually in the image.
+            [IMAGE_DESCRIPTION_END]
+        
+        --- EXAMPLE ---
+        Oh, that looks delicious! What kind of soup is it?
+        [IMAGE_DESCRIPTION_START]
+        A close-up photo of a bowl of noodle soup with chopsticks resting on the side.
+        [IMAGE_DESCRIPTION_END]
+        
+        --- YOUR RESPONSE (in ${firstSpeaker.language}) ---`;
+                
+                // Find the AI call right after this prompt
+                const firstResponseRaw = await aiService.generateTextFromImageAndText(
+    imageBase64Data, imageMimeType, firstSpeaker, [], firstResponsePrompt, 'together', abortSignal // <<< ADD abortSignal
+);   if (indicatorElement) indicatorElement.remove();
+        if (typeof firstResponseRaw !== 'string' || !firstResponseRaw) throw new Error("Stage 2 AI returned empty response.");
+
+        let conversationalReply = firstResponseRaw;
+        let extractedImageDescription = "An image was shared."; // Default description
+        const descStartTag = "[IMAGE_DESCRIPTION_START]";
+        const descEndTag = "[IMAGE_DESCRIPTION_END]";
+        const startIndex = firstResponseRaw.indexOf(descStartTag);
+        const endIndex = firstResponseRaw.indexOf(descEndTag);
+
+        if (startIndex !== -1 && endIndex > startIndex) {
+            extractedImageDescription = firstResponseRaw.substring(startIndex + descStartTag.length, endIndex).trim();
+            conversationalReply = firstResponseRaw.substring(0, startIndex).trim();
+            console.log(`[Group Image] Stage 2: Successfully extracted semantic description.`);
         }
-        return false; // Final fallback return to satisfy TypeScript
+
+        // --- Append the first speaker's message and SAVE the description to history ---
+        const firstHistoryItem: GroupChatHistoryItem = {
+            speakerId: firstSpeaker.id,
+            speakerName: firstSpeaker.profileName,
+            text: conversationalReply,
+            timestamp: Date.now(),
+            imageSemanticDescription: extractedImageDescription // <-- CRITICAL SAVE
+        };
+        groupDataManager.addMessageToCurrentGroupHistory(firstHistoryItem);
+        groupUiHandler.appendMessageToGroupLog(conversationalReply, firstSpeaker.profileName, false, firstSpeaker.id);
+        console.log(`[Group Image] Stage 2: Appended first response from ${firstSpeaker.profileName} and saved description to history.`);
+
+        // --- STAGE 3: GENERATE A FOLLOW-UP SCENE WITH OTHER MEMBERS ---
+        const otherMembers = members.filter(m => m.id !== firstSpeaker!.id);
+        if (otherMembers.length > 0) {
+            console.log(`[Group Image] Stage 3: Generating follow-up scene with ${otherMembers.length} other members.`);
+            
+            const followUpPrompt = `
+You are a creative dialogue writer for a chat simulation.
+The group is currently reacting to an image.
+
+--- CONTEXT ---
+The user shared an image.
+The image's content is: "${extractedImageDescription}"
+The first person to react, ${firstSpeaker.profileName}, said: "${conversationalReply}"
+
+--- YOUR TASK ---
+Write a short, realistic follow-up scene (2-4 messages) where other members of the group react to BOTH the image description AND ${firstSpeaker.profileName}'s comment.
+
+- The speakers MUST be from this list: ${otherMembers.map(m => m.profileName).join(', ')}.
+- Their reactions MUST be consistent with their own personalities and interests.
+- Keep the messages short and chat-like.
+- The entire response MUST be in the format [SpeakerName]: message, with each message on a new line.
+- The entire response MUST be in the group's primary language.`;
+
+            // Use a text-only model for this, as it's reacting to text context.
+            const followUpSceneLines = await generateAiTextResponse(false, false, false, followUpPrompt, abortSignal); // <<< ADD abortSignal
+            if (followUpSceneLines && followUpSceneLines.length > 0) {
+                console.log(`[Group Image] Stage 3: Follow-up scene generated. Playing scene...`);
+                await playScene(followUpSceneLines, false);
+            }
+        }
+        
+        groupDataManager.saveCurrentGroupChatHistory(true);
+        return true;
+
+    } catch (error: any) { // <<< ADD type annotation
+        // --- ADD THIS BLOCK ---
+        if (error.name === 'AbortError') {
+            console.log(`%c[Group Interrupt] AI image generation was successfully aborted.`, 'color: #ff9800;');
+            return false;
+        }
+
+
+
+        console.error("GIL (Hybrid): Error during multi-stage AI image response generation:", error);
+        if (indicatorElement) indicatorElement.remove();
+        const speaker = firstSpeaker || tutor;
+        groupUiHandler.appendMessageToGroupLog("(I had a little trouble seeing that image, sorry!)", speaker!.profileName, false, speaker!.id);
+        return false;
     }
+}
 
 // ADD THIS ENTIRE NEW FUNCTION
 /**
@@ -1286,21 +1356,22 @@ function setIdleCheckTimerWithLogs(callback: () => void, totalDelayMs: number) {
     scheduleNextLog(totalDelayMs);
 }
 
-
-
-
+let isGenerating = false; // This should already be in your module-level state
 
 async function conversationEngineLoop(forceImmediateGeneration: boolean = false, isFirstRunAfterJoin: boolean = false): Promise<void> {
-    if (isRenderingScene || !conversationFlowActive) return;
+    if (isGenerating || isRenderingScene || !conversationFlowActive) return;
 
-    // Clear any previously scheduled loop to prevent duplicates
+    isGenerating = true; // Set lock at the beginning
+
     if (conversationLoopId) clearTimeout(conversationLoopId);
 
     const { groupDataManager } = getDeps();
     const currentGroup = groupDataManager.getCurrentGroupData();
-    if (!tutor || !currentGroup) return;
+    if (!tutor || !currentGroup) {
+        isGenerating = false; // <-- FIX 1: Unlock on early exit
+        return;
+    }
 
-    // Determine if the AI should speak
     const timeSinceLastMessage = Date.now() - (lastMessageTimestamp || 0);
     const shouldGenerate = isFirstRunAfterJoin || (timeSinceLastMessage > 10000 && !hasProddedSinceUserSpoke);
 
@@ -1314,30 +1385,26 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
             let combinedOpeningScene: string[] = [];
         
             if (members.length <= 1) {
-                // --- 1-on-1 Grand Opening ---
                 console.log(`[Engine] Taking 1-on-1 chat path.`);
                 const oneOnOneWelcome = await generateOneOnOneWelcome(currentGroup, tutor);
                 if (oneOnOneWelcome) {
                     combinedOpeningScene.push(...oneOnOneWelcome);
                 }
             } else {
-                // --- Multi-Member Grand Opening ---
                 console.log(`[Engine] Taking multi-member group path.`);
                 const tutorWelcomeLine = await generateTutorWelcome(currentGroup, tutor);
                 if (tutorWelcomeLine) {
                     combinedOpeningScene.push(...tutorWelcomeLine);
                 }
                 
-                // Generate the members' intros, but don't play them yet.
                 const otherMembersScene = await generateAiTextResponse(false, true, false);
                 if (otherMembersScene?.length > 0) {
                     combinedOpeningScene.push(...otherMembersScene);
                 }
             }
             
-            // --- Play the entire combined scene at once ---
             if (combinedOpeningScene.length > 0) {
-                await playScene(combinedOpeningScene, true); // The 'true' flag ensures the special intro timing.
+                await playScene(combinedOpeningScene, true);
             }
         
         } else {
@@ -1346,42 +1413,38 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
             
             const isReEngagement = history.length > 0 && isFirstRunAfterJoin;
 
-            // --- THIS IS THE NEW LOGIC ---
-            // 1. Get the raw lines from the AI
             const rawSceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
             if (!rawSceneLines || rawSceneLines.length === 0) {
-                // If AI returns nothing, just reset the loop timer
                 startCooldownWithLogging(15000 + Math.random() * 5000);
+                isGenerating = false; // <-- FIX 2: Unlock on early exit
                 return; 
             }
 
-            // 2. Enhance the lines using our parser
             const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawSceneLines, members);
             
-            // 3. Log the result
             if (wasSplit) {
                 console.log(`%c[Parser] Successfully fragmented AI response. Original lines: ${rawSceneLines.length}, Final Bubbles: ${enhancedLines.length}`, 'color: #28a745; font-weight: bold;');
             }
 
-            // 4. Play the final, enhanced scene
             await playScene(enhancedLines, false);
-            // --- END OF NEW LOGIC ---
         }
 
         groupDataManager.saveCurrentGroupChatHistory(true);
-        hasProddedSinceUserSpoke = false; // Reset prod state after AI speaks
+        hasProddedSinceUserSpoke = false; 
 
-        // Set timer for the next check after AI activity
         const nextCheckDelay = 5000 + Math.random() * 5000; 
         console.log(`%c[Engine] Interaction complete. Next idle check in ${(nextCheckDelay / 1000).toFixed(1)} seconds.`, 'color: #6c757d;');
         conversationLoopId = setTimeout(() => conversationEngineLoop(false, false), nextCheckDelay);
 
     } else {
-        // AI decided not to speak, use the T-minus logger to wait for user input.
-        const IDLE_THRESHOLD = 30000; // This is a separate value used for the logger. It should generally be a bit higher than the prod threshold.
-        const timeUntilNextCheck = IDLE_THRESHOLD - timeSinceLastMessage + 1000; // Check 1s after threshold is passed
-        setIdleCheckTimerWithLogs(() => conversationEngineLoop(false, false), timeUntilNextCheck);
+        if (conversationFlowActive) {
+            const IDLE_THRESHOLD = 30000;
+            const timeUntilNextCheck = IDLE_THRESHOLD - timeSinceLastMessage + 1000;
+            setIdleCheckTimerWithLogs(() => conversationEngineLoop(false, false), timeUntilNextCheck);
+        }
     }
+    
+    isGenerating = false; // <-- FIX 3: Unlock at the very end for all normal paths
 }
 
 // ===================  END: REPLACE WITH THIS BLOCK  ===================
@@ -1417,125 +1480,95 @@ const groupInteractionLogic = {
         conversationEngineLoop(false, true);
     },
 
-    stopConversationFlow: (): void => {
-        console.log("GIL (Hybrid): Conversation flow STOPPED.");
-        conversationFlowActive = false;
-        
-        // Clear any scheduled "engine loop" (the timer for the AI to speak on its own)
-        if (conversationLoopId) {
-            clearTimeout(conversationLoopId);
-            conversationLoopId = null;
-        }
+   // Replace with this
+   stopConversationFlow: (): void => {
+    console.log("GIL (Hybrid): Conversation flow STOPPED.");
+    conversationFlowActive = false;
     
-        // --- THIS IS THE CRITICAL FIX ---
-        // If a scene is currently rendering (i.e., looping through messages with timeouts),
-        // set its cancellation flag to true. This will cause the loop in `playScene` to break.
-        if (currentSceneCancellationToken) {
-            currentSceneCancellationToken.isCancelled = true;
-            currentSceneCancellationToken = null; // Clear the token
-            
-            // Also, immediately save any history that was rendered *before* the cancellation.
-            getDeps().groupDataManager.saveCurrentGroupChatHistory(true);
-            console.log("GIL (stopConversationFlow): Cancelled active scene and saved partial history.");
-        }
-    },
-
-    reset: (): void => {
-        console.log("GIL (Hybrid): State reset.");
-        members = [];
-        tutor = null;
-        conversationFlowActive = false;
-        hasProddedSinceUserSpoke = false;
-        if (conversationLoopId) {
-            clearTimeout(conversationLoopId);
-            conversationLoopId = null;
-        }
-        if (currentSceneCancellationToken) {
-            currentSceneCancellationToken.isCancelled = true;
-            currentSceneCancellationToken = null;
-        }
-    },
+    // --- THIS IS THE FIX: SIMPLIFY THIS FUNCTION ---
+    // Its only job is to stop the background AI timer and cancel any rendering scene
+    // when the user LEAVES the chat. It should NOT save history.
+    if (conversationLoopId) {
+        clearTimeout(conversationLoopId);
+        conversationLoopId = null;
+    }
+    if (currentSceneCancellationToken) {
+        currentSceneCancellationToken.isCancelled = true;
+        currentSceneCancellationToken = null;
+    }
+},
 
     // --- THIS IS THE CORRECTED handleUserMessage SIGNATURE ---
-     handleUserMessage: async (text: string | undefined, options?: {
-        userSentImage?: boolean;
-        imageBase64Data?: string;
-        imageMimeType?: string;
-    }): Promise<void> => {
-        console.log("GIL: User message received. Cancelling any active scene rendering.");
-        
-        const { groupDataManager } = getDeps();
+  // REPLACE THE ENTIRE FUNCTION WITH THIS BLOCK
+  handleUserMessage: async (text: string | undefined, options?: {
+    userSentImage?: boolean;
+    imageBase64Data?: string;
+    imageMimeType?: string;
+  }): Promise<void> => {
+    // --- THIS IS THE FIX: MAKE THIS THE "MASTER OF INTERRUPTIONS" ---
+    if (!conversationFlowActive) return;
 
-        const wasSceneCancelled = !!currentSceneCancellationToken;
-        if (currentSceneCancellationToken) {
-            currentSceneCancellationToken.isCancelled = true;
-            currentSceneCancellationToken = null;
-        }
-        if (wasSceneCancelled) {
-            groupDataManager.saveCurrentGroupChatHistory(true);
-            console.log("GIL: Saved partial scene history due to user interruption.");
-        }
-        if (conversationLoopId) {
-            clearTimeout(conversationLoopId);
-            conversationLoopId = null;
-            console.log("GIL: Cleared scheduled conversation engine loop due to user activity.");
-        }
+    const { groupDataManager } = getDeps();
+    const currentGroup = groupDataManager.getCurrentGroupData();
+    if (!currentGroup) return;
 
-        lastMessageTimestamp = Date.now();
-        hasProddedSinceUserSpoke = false;
-        if (!conversationFlowActive) return;
+    console.log("GIL: User message received. Cancelling ALL active AI operations.");
+    
+    // 1. Cancel any pending AI generation
+    const controller = interruptAndTrackGroupOperation(currentGroup.id);
+    
+    // 2. Cancel any scene that is currently rendering
+    if (currentSceneCancellationToken) {
+        currentSceneCancellationToken.isCancelled = true;
+        currentSceneCancellationToken = null;
+        // IMPORTANT: Save the partial history that was rendered BEFORE we were interrupted.
+        groupDataManager.saveCurrentGroupChatHistory(true); 
+        console.log("GIL: Saved partial scene history due to user interruption.");
+    }
+    
+    // 3. Cancel the next scheduled AI turn
+    if (conversationLoopId) {
+        clearTimeout(conversationLoopId);
+        conversationLoopId = null;
+    }
 
-        const userMessageText = text?.trim() || "";
-        
-        // --- MEMORY EXTRACTION STEP ---
-        if (userMessageText) {
-            const convoStore = window.convoStore;
-            if (convoStore) {
-                const currentGroup = groupDataManager.getCurrentGroupData();
-                if (currentGroup) {
-                    const groupConvoRecord = convoStore.getConversationById(currentGroup.id);
-                    const currentSummary = groupConvoRecord?.userProfileSummary || "";
-                    const updatedSummary = await extractAndUpdateUserSummary(userMessageText, currentSummary);
+    lastMessageTimestamp = Date.now();
+    hasProddedSinceUserSpoke = false;
 
-                    if (updatedSummary !== currentSummary) {
-                        convoStore.updateUserProfileSummary(currentGroup.id, updatedSummary);
-                        console.log("GIL: User profile summary was updated.");
-                    }
-                }
-            }
+    // The user's message itself is added to history by another module, which is fine.
+    // Now we proceed with generating a response to that message.
+    const userMessageText = text?.trim() || "";
+    
+    // 4. Update memory with the user's new message
+    if (userMessageText && window.convoStore) {
+        const groupConvoRecord = window.convoStore.getConversationById(currentGroup.id);
+        const currentSummary = groupConvoRecord?.userProfileSummary || "";
+        const updatedSummary = await extractAndUpdateUserSummary(userMessageText, currentSummary);
+        if (updatedSummary !== currentSummary) {
+            window.convoStore.updateUserProfileSummary(currentGroup.id, updatedSummary);
+            console.log("GIL: User profile summary was updated.");
         }
-        // --- END: MEMORY EXTRACTION STEP ---
+    }
 
-        if (!userMessageText && !options?.userSentImage) {
-             conversationEngineLoop(false, false);
-             return;
+    // 5. Generate a new AI response (image or text)
+    if (options?.userSentImage && options.imageBase64Data && options.imageMimeType) {
+        await generateAiImageResponse(members, options.imageBase64Data, options.imageMimeType, userMessageText, controller.signal);
+    } else if (userMessageText) {
+        const rawResponseLines = await generateAiTextResponse(false, false, false, userMessageText, controller.signal);
+        if (rawResponseLines && rawResponseLines.length > 0) {
+            const { enhancedLines } = enhanceGroupChatSplitting(rawResponseLines, members);
+            await playScene(enhancedLines, false);
         }
-        
-        // --- THIS IS THE NEW LOGIC YOU ARE PASTING IN ---
-        // 1. Get the raw lines from the AI
-        const rawResponseLines = await generateAiTextResponse(false, false, false, userMessageText);
-        if (!rawResponseLines || rawResponseLines.length === 0) {
-            // If AI gives no response, restart the idle check
-            console.log("GIL: AI generated no response to user. Restarting idle check engine.");
-            conversationEngineLoop(false, false);
-            return;
-        }
-
-        // 2. Enhance the lines using our parser
-        const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawResponseLines, members);
-        
-        // 3. Log the result
-        if (wasSplit) {
-            console.log(`%c[Parser] Successfully fragmented AI response. Original lines: ${rawResponseLines.length}, Final Bubbles: ${enhancedLines.length}`, 'color: #28a745; font-weight: bold;');
-        }
-        
-        // 4. Play the final, enhanced scene
-        await playScene(enhancedLines, false);
-        // --- END OF NEW LOGIC ---
-        
-        console.log("GIL: User interaction complete. Restarting idle check engine.");
-        conversationEngineLoop(false, false);
-    },
+    }
+    
+    if (activeGroupAiOperation.get(currentGroup.id) === controller) {
+        activeGroupAiOperation.delete(currentGroup.id);
+    }
+    
+    // 6. Restart the idle check loop now that the interaction is complete.
+    console.log("GIL: User interaction complete. Restarting idle check engine.");
+    conversationEngineLoop(false, false);
+  },
 
     setAwaitingUserFirstIntroduction: (isAwaiting: boolean): void => { 
         isAwaitingUserFirstIntro = isAwaiting; 

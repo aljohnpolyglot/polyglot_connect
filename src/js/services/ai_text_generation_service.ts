@@ -17,17 +17,19 @@ export interface AiTextGenerationServiceModule {
         connector: Connector,
         existingGeminiHistory: GeminiChatItem[],
         preferredProvider?: string,
-        expectJson?: boolean, // Added to align with potential facade usage
-        context?: 'group-chat' | 'one-on-one' // <<< ADD IT HERE        
-    ) => Promise<string | null | object>; // Allow object if expectJson
+        expectJson?: boolean,
+        context?: 'group-chat' | 'one-on-one',
+        abortSignal?: AbortSignal // <<< ADDED THIS
+    ) => Promise<string | null | object>;
 
-    generateTextFromImageAndTextOpenAI?: ( // This method seems specific to OpenAI/Together
+    generateTextFromImageAndTextOpenAI?: (
         base64ImageString: string,
         mimeType: string,
         connector: Connector,
-        existingConversationHistory: GeminiChatItem[], // Assuming OpenAI can take Gemini history or it's converted
-        userTextQuery?: string, // Changed from optionalUserText for clarity
-        provider?: string
+        existingConversationHistory: GeminiChatItem[],
+        userTextQuery?: string,
+        provider?: string,
+        abortSignal?: AbortSignal // <<< ADDED THIS
     ) => Promise<string | null>;
 
     generateTextForGeminiCallModal: ( // Specific to Gemini
@@ -157,7 +159,9 @@ function initializeActualAiTextGenerationService(): void {
         connector: Connector,
         existingGeminiHistory: GeminiChatItem[],
         preferredProvider: string = PROVIDERS.GROQ,
-        expectJson: boolean = false
+        expectJson: boolean = false,
+        context: 'group-chat' | 'one-on-one' = 'one-on-one', // This was from a previous change, keeping it
+        abortSignal?: AbortSignal // <<< ADDED THIS
     ): Promise<string | null | object> {
         const functionName = "[AI_TextGenSvc][generateTextMessage]";
         console.groupCollapsed(`%c🚀 [Smart Dispatcher] New Request Started`, 'color: #8a2be2; font-weight: bold; font-size: 14px;');
@@ -216,7 +220,7 @@ function initializeActualAiTextGenerationService(): void {
                     if (provider === 'gemini') {
                         const geminiModel = GEMINI_MODELS?.TEXT || "gemini-2.0-flash-live";
                         // The caller now returns an object: { response: string, nickname: string }
-                        const geminiResult = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent");
+                        const geminiResult = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent", abortSignal); // <<< PASS IT HERE
                         
                         console.log(`%c<-- SUCCESS from [gemini].`, 'color: #28a745; font-weight: bold;');
                         console.log(`%c...with the assist from: ${geminiResult.nickname}!`, 'color: #34A853;');
@@ -242,12 +246,16 @@ function initializeActualAiTextGenerationService(): void {
 
                     if (!model) { throw new Error(`Model for provider [${provider}] not defined.`); }
                     
-                    const response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined });
+                    const response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined }, abortSignal); // <<< PASS IT HERE
                     console.log(`%c<-- SUCCESS from [${provider}].`, 'color: #28a745; font-weight: bold;');
                     console.groupEnd();
                     return response;
                 }
             } catch (error: any) {
+                if (error.name === 'AbortError') {
+                    console.log(`%c<-- ABORTED by user. Provider [${provider}] request was cancelled.`, 'color: #ff6347;');
+                    throw error; // Re-throw to stop the failover loop
+                }
                 console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
                 console.log(`Error Details:`, error.message);
             }
@@ -258,11 +266,12 @@ function initializeActualAiTextGenerationService(): void {
         return getRandomHumanError();
     }
 
-        async function generateTextFromImageAndTextOpenAI(
-            base64ImageString: string, mimeType: string, connector: Connector,
-            existingConversationHistory: GeminiChatItem[], userTextQuery: string = "What's in this image?",
-            provider: string = PROVIDERS.TOGETHER 
-        ): Promise<string | null> {
+    async function generateTextFromImageAndTextOpenAI(
+        base64ImageString: string, mimeType: string, connector: Connector,
+        existingConversationHistory: GeminiChatItem[], userTextQuery: string = "What's in this image?",
+        provider: string = PROVIDERS.TOGETHER,
+        abortSignal?: AbortSignal // <<< ADDED THIS
+    ): Promise<string | null> {
             console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] CALLED FOR CONNECTOR: ${connector?.id} (${connector?.profileName})`);
             console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] User Text Query (Prompt): ${userTextQuery}`);
             console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] MimeType: ${mimeType}`);
@@ -317,11 +326,15 @@ function initializeActualAiTextGenerationService(): void {
         
                 // --- API Call with Clear Logging ---
                 console.log(`${Function}: --> ATTEMPTING call to [${provider}] vision service.`);
-                const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 });
+                const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 }, abortSignal); // <<< PASS IT HERE
                 console.log(`${Function}: <-- SUCCESS from [${provider}].`);
                 return response;
         
             } catch (error: any) {
+                if (error.name === 'AbortError') {
+                    console.log(`%c<-- ABORTED by user. Vision request for [${provider}] was cancelled.`, 'color: #ff6347;');
+                    throw error; // Re-throw to stop the failover loop
+                }
                 console.error(`${Function}: <-- FAILED. Error: ${error.message}`);
                 return getRandomHumanError();
             }

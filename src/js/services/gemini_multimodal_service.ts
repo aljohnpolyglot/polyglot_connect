@@ -167,9 +167,12 @@ function initializeActualGeminiMultimodalService(): void {
             base64ImageString: string,
             mimeType: string,
             connector: Connector,
-            existingGeminiHistory: GeminiChatItem[], // This history is for context if needed, but not for the direct payload of this specific image call
-            optionalUserText?: string
+            existingGeminiHistory: GeminiChatItem[],
+            optionalUserText?: string,
+            preferredProvider?: string, // <<< ADD THIS (even if unused, to match the call signature)
+            abortSignal?: AbortSignal   // <<< ADD THIS
         ): Promise<string | null> {
+
             const functionName = "GeminiMultimodalService.generateTextFromImageAndText";
             
             if (!connector?.profileName || !connector.language) { /* ... error handling ... */ throw new Error("Connector info missing.");}
@@ -217,6 +220,10 @@ function initializeActualGeminiMultimodalService(): void {
                     throw new Error("Response from image processing was not in the expected text format or was empty.");
                 }
             } catch (error: any) {
+                if (error.name === 'AbortError') {
+                    console.log(`%c[Interrupt] Gemini vision request for ${connector.profileName} was cancelled.`, 'color: #ff9800;');
+                    throw error; // Re-throw so the calling service knows to stop
+                }
                 console.error(`${functionName} Error for ${connector.profileName}: ${error.message}`, error);
                 throw error; 
             }

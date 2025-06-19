@@ -323,6 +323,12 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
         uiUpdater.scrollEmbeddedChatToBottom?.();
         if (domElements.embeddedMessageTextInput) domElements.embeddedMessageTextInput.focus();
         
+        // --- THIS IS THE FIX ---
+        // After successfully setting up the chat content, explicitly tell the
+        // TabManager to switch to the 'messages' tab. This will trigger the
+        // ShellController to make the view visible.
+       
+        
         console.log("CSH_TS: openConversationInEmbeddedView() - About to call chatOrchestrator.renderCombinedActiveChatsList()");
         chatOrchestrator.renderCombinedActiveChatsList(); 
         console.log("CSH_TS: openConversationInEmbeddedView() - FINISHED for", targetId);

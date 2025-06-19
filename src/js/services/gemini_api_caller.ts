@@ -6,7 +6,7 @@ console.log("gemini_api_caller.ts: Script execution STARTED (TS Version).");
 // --- THIS IS THE NEW, EXPORTED SOURCE OF TRUTH ---
 export const GEMINI_KEY_NICKNAMES = [
     'JOKIC', 'LUKA', 'SGA', 'EMBIID', 'TATUM',
-    'ANT', 'HALIBURTON', 'BOOKER', 'WEMBY', 'BRUNSON', 'SABONIS'
+    'ANT', 'HALIBURTON', 'BOOKER', 'KYRIE', 'BRUNSON', 'SABONIS'
 ];
 // --- END OF EXPORTED BLOCK ---
 
@@ -130,8 +130,9 @@ async function callWithRetry<T>(
     (window as any)._geminiInternalApiCaller = async function callGeminiAPIInternalWithRotation(
         payload: any, 
         modelIdentifier: string, 
-        requestType: string = "generateContent"
-    ): Promise<{ response: any; nickname: string }> { // <<< NOW RETURNS AN OBJECT
+        requestType: string = "generateContent",
+        abortSignal?: AbortSignal // <<< ADD THIS
+    ): Promise<{ response: any; nickname: string }> {
         const apiKeyData = getNextGeminiApiKey();
         if (!apiKeyData) {
             throw new Error("_geminiInternalApiCaller: No valid Gemini API Keys. Cannot call API.");
@@ -151,6 +152,7 @@ async function callWithRetry<T>(
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload),
+                signal: abortSignal // <<< ADD THIS
             });
             const responseData = await response.json();
     

@@ -137,7 +137,9 @@ function initializeActualChatOrchestrator(): void {
             { name: 'voiceMemoHandler', getter: () => window.voiceMemoHandler as VoiceMemoHandler | undefined, keyFn: 'handleNewVoiceMemoInteraction' },
             { name: 'personaModalManager', getter: () => window.personaModalManager as PersonaModalManager | undefined },
             { name: 'tabManager', getter: () => window.tabManager as import('../types/global').TabManagerModule | undefined, keyFn: 'switchToTab' },
-            { name: 'chatUiManager', getter: () => window.chatUiManager as ChatUiManager | undefined, keyFn: 'showEmbeddedChatInterface' }
+            { name: 'chatUiManager', getter: () => window.chatUiManager as ChatUiManager | undefined, keyFn: 'showEmbeddedChatInterface' },
+       
+            { name: 'tabManager', getter: () => window.tabManager as import('../types/global').TabManagerModule | undefined, keyFn: 'switchToTab' },
         ];
 
         type ResolvedDeps = {
@@ -151,6 +153,7 @@ function initializeActualChatOrchestrator(): void {
             personaModalManager?: PersonaModalManager;
             tabManager?: import('../types/global').TabManagerModule;
             chatUiManager?: ChatUiManager;
+            
         };
        // Inside ChatOrchestrator's IIFE
           // --- START OF MODIFICATION (CO.DEBUG.1a) ---
@@ -250,66 +253,54 @@ function initializeActualChatOrchestrator(): void {
 // D:\polyglot_connect\src\js\core\chat_orchestrator.ts
 // ... (inside the IIFE)
 
+
+
+// PASTE THIS ENTIRE FUNCTION INTO chat_orchestrator.ts, REPLACING THE OLD ONE
+
+// REPLACE with this new function:
+// In D:\polyglot_connect\src\js\core\chat_orchestrator.ts
+// ... inside the IIFE for window.chatOrchestrator ...
+
+// REPLACE this entire function
 function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
     console.log("CO_DEBUG: handleActiveChatItemClickInternal called with:", JSON.parse(JSON.stringify(itemData)));
-    // --- START OF MODIFICATION CO.FIX.DEPS.3 ---
-    const { chatSessionHandler, groupManager, tabManager, chatActiveTargetManager, groupDataManager } = getResolvedDeps(); 
-    // --- END OF MODIFICATION CO.FIX.DEPS.3 ---
+    // The getResolvedDeps function now needs to be able to find the tabManager
+    const { chatSessionHandler, groupManager, tabManager } = getResolvedDeps();
 
-    if (!chatSessionHandler || !groupManager || !tabManager) { // groupDataManager check not strictly needed here if only used in debug logs
-        console.error("CO: Critical dependency (CSH, GM, or TabM) missing in handleActiveChatItemClickInternal.");
+    if (!chatSessionHandler || !groupManager || !tabManager) {
+        console.error("CO: Critical dependency (CSH, GM, or TabManager) missing in handleActiveChatItemClickInternal.");
         return;
     }
 
     if (itemData.isGroup) {
+        // Delegate to Group Manager, which handles its own tab switching.
         const group = itemData as ActiveGroupListItem;
-        if (group && group.id) {
-            console.error(`CO_DEBUG_PRE_JOIN_GROUP: About to call groupManager.joinGroup for ID: ${group.id}.`);
-            console.error(`  Current GDM Group ID: ${groupDataManager?.getCurrentGroupId?.()}`);
-            console.error(`  Current Tab: ${tabManager?.getCurrentActiveTab?.()}`);
-            console.log("CO: Attempting to join/switch to group:", group.id);
-            groupManager.joinGroup(group.id); // This internally calls switchToTab('groups')
-        } else {
-            console.error("CO: Invalid group data for joining/switching.", group);
-            alert("Cannot switch to group: Invalid group information.");
-        }
+        console.log("CO: Delegating group join/switch to GroupManager for:", group.id);
+        groupManager.joinGroup(group.id);
+
     } else {
+        // This is for a 1-on-1 chat.
         const oneOnOne = itemData as ActiveOneOnOneChatItem;
-        if (oneOnOne.connector && oneOnOne.connector.id) {
-            
-            // --- THIS IS THE FIX ---
-            // Before opening a 1v1 chat, check if we are in a group.
-            // If so, silently leave it to stop background processing.
-            const groupManager = window.groupManager;
-            if (groupManager && groupManager.getCurrentGroupData?.()) {
-                console.log("ChatOrchestrator: Leaving active group to switch to 1-on-1 chat.");
-                // The (false, false) arguments prevent redundant UI changes.
-                groupManager.leaveCurrentGroup(false, false);
-            }
-            // --- END OF FIX ---
-    
-            console.log("CO: Attempting to open 1-on-1 conversation for connector:", oneOnOne.connector.id);
-
-
-
-
-            console.error(`CO_DEBUG_PRE_OPEN_EMBEDDED: About to call CSH.openConversationInEmbeddedView for ID: ${oneOnOne.connector.id}.`);
-            console.error(`  Current CATM Embedded ID: ${chatActiveTargetManager?.getEmbeddedChatTargetId?.()}`);
-            console.error(`  Current Tab: ${tabManager?.getCurrentActiveTab?.()}`);
-            if (typeof chatSessionHandler.openConversationInEmbeddedView === 'function') {
-                 chatSessionHandler.openConversationInEmbeddedView(oneOnOne.connector);
-                 console.log("CO: Switching to 'messages' tab for 1-on-1 chat.");
-                 tabManager.switchToTab('messages'); // <<< ADD THIS LINE
-            } else {
-                 console.error("CO: chatSessionHandler.openConversationInEmbeddedView not available.");
-                 alert("Cannot open chat: Chat display component is not ready.");
-            }
-        } else {
-            console.error("CO: Invalid connector data for 1-on-1 chat.", oneOnOne);
-            alert("Cannot open chat: Invalid contact information.");
+        
+        // If a group chat is open, close it first.
+        if (groupManager.getCurrentGroupData?.()) {
+            console.log("ChatOrchestrator: Leaving active group to switch to 1-on-1 chat.");
+            groupManager.leaveCurrentGroup(false, false);
         }
+        
+        // Step 1: Tell the session handler to load the chat content.
+        console.log("CO: Delegating 1-on-1 conversation to ChatSessionHandler for:", oneOnOne.connector.id);
+        chatSessionHandler.openConversationInEmbeddedView(oneOnOne.connector);
+        
+        // =====================================================================
+        // ==   THE FIX: Now, tell the tab manager to switch to the view.   ==
+        // =====================================================================
+        console.log("CO: Requesting tab switch to 'messages' after initiating 1-on-1 view.");
+        tabManager.switchToTab('messages');
     }
 }
+
+
 // AFTER
 function renderCombinedActiveChatsList(): void {
     console.log("CO_DEBUG: renderCombinedActiveChatsList CALLED. Timestamp:", Date.now());

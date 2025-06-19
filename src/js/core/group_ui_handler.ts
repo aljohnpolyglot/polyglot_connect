@@ -21,22 +21,24 @@ interface GroupUiHandlerModule {
     hideGroupChatViewAndShowList: () => void;
     updateGroupTypingIndicator: (text: string) => HTMLElement | null;
     clearGroupInput: () => void;
-    appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string) => void;
+    appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => void;
     clearGroupChatLog: () => void;
     openGroupMembersModal: () => void;
     openGroupInfoModal: (group: Group) => void; // ===== ADD THIS LINE =====
+    
 }
 // This type should match the non-null return of getSafeDeps if all checks pass
+// Add the missing line to the interface
 interface VerifiedGroupUiHandlerDeps {
     domElements: YourDomElements;
     uiUpdater: UiUpdater;
     chatUiManager: ChatUiManager;
-    listRenderer: ListRenderer; // Already there, good
-    groupDataManager: GroupDataManager; // Already there, good
-    modalHandler: import('../types/global.d.ts').ModalHandler;         // <<< ADD
-    polyglotHelpers: import('../types/global.d.ts').PolyglotHelpersOnWindow; // <<< ADD
+    listRenderer: ListRenderer;
+    groupDataManager: GroupDataManager;
+    modalHandler: import('../types/global.d.ts').ModalHandler;
+    polyglotHelpers: import('../types/global.d.ts').PolyglotHelpersOnWindow;
+    polyglotConnectors: Connector[]; // <<< ADD THIS LINE
 }
-
 function initializeActualGroupUiHandler(): void {
     console.log('group_ui_handler.ts: initializeActualGroupUiHandler() called.');
 
@@ -48,7 +50,8 @@ function initializeActualGroupUiHandler(): void {
             listRenderer: window.listRenderer,
             modalHandler: window.modalHandler,             // <<< ADD
             polyglotHelpers: window.polyglotHelpers ,       // <<< ADD
-            groupDataManager: window.groupDataManager
+            groupDataManager: window.groupDataManager,
+            polyglotConnectors: window.polyglotConnectors
         };
         const missingDeps: string[] = [];
         if (!deps.domElements) missingDeps.push("domElements");
@@ -58,7 +61,7 @@ function initializeActualGroupUiHandler(): void {
         if (!deps.groupDataManager || typeof deps.groupDataManager.getAllGroupDefinitions !== 'function') missingDeps.push("groupDataManager (or its key methods)");
         if (!deps.modalHandler || typeof deps.modalHandler.open !== 'function') missingDeps.push("modalHandler (or its open method)"); // <<< ADD CHECK
         if (!deps.polyglotHelpers || typeof deps.polyglotHelpers.sanitizeTextForDisplay !== 'function') missingDeps.push("polyglotHelpers (or its sanitizeTextForDisplay method)"); // <<< ADD CHECK
-    
+        if (!deps.polyglotConnectors || !Array.isArray(deps.polyglotConnectors)) missingDeps.push("polyglotConnectors"); // <<< ADD THIS LINE
     
         if (missingDeps.length > 0) {
             console.error(`GroupUiHandler: getSafeDeps - MISSING/INVALID: ${missingDeps.join(', ')}.`);
@@ -104,7 +107,8 @@ function initializeActualGroupUiHandler(): void {
             listRenderer, 
             groupDataManager,
             modalHandler,      // <<< ADD
-            polyglotHelpers    // <<< ADD
+            polyglotHelpers  ,  // <<< ADD
+            polyglotConnectors // <<< ADD THIS LINE
         } = resolvedDeps!; // Using '!' because of the preceding null check for resolvedDeps
 
 
@@ -492,14 +496,14 @@ const hideGroupChatViewAndShowList = (): void => {
 // =================== START: REPLACE WITH THIS BLOCK (in group_ui_handler.ts) ===================
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
+// Replace the old function with this new one.
+
 function updateGroupTypingIndicator(text: string): HTMLElement | null {
-    const domElements = window.domElements;
-    const uiUpdater = window.uiUpdater;
-    const polyglotConnectors = window.polyglotConnectors;
+    const { domElements, uiUpdater, polyglotConnectors } = resolvedDeps!;
 
     if (!domElements?.groupChatLogDiv || !uiUpdater || !polyglotConnectors) {
         console.error("GUH.updateTyping: Missing critical dependencies for bubble indicator.");
-        return null; // Return null on failure
+        return null;
     }
 
     const logElement = domElements.groupChatLogDiv;
@@ -518,23 +522,25 @@ function updateGroupTypingIndicator(text: string): HTMLElement | null {
         const speakerName = nameMatch ? nameMatch[1] : null;
         let speakerId = 'unknown_speaker';
 
+        // Find the speaker's ID to get the correct avatar
         if (speakerName) {
-            const speakerConnector = polyglotConnectors.find(c => c.profileName === speakerName);
+            const speakerConnector = polyglotConnectors.find((c: Connector) => c.profileName === speakerName);
             if (speakerConnector) speakerId = speakerConnector.id;
         }
         
+        // Use the main appendToGroupChatLog function to create a "thinking" bubble
         const newIndicatorBubble = uiUpdater.appendToGroupChatLog(
-            trimmedText,
+            "", // No text, just the thinking animation
             speakerName || "",
-            false,
+            false, // isUser
             speakerId,
-            { isThinking: true }
+            { isThinking: true } // This option creates the "..." animation
         );
 
-        // Add a class so we can find it next time and return it
+        // Add a special class so we can find and remove it easily next time
         if (newIndicatorBubble) {
             newIndicatorBubble.classList.add('is-typing-indicator-bubble');
-            return newIndicatorBubble; // <<< RETURN THE ELEMENT
+            return newIndicatorBubble;
         }
     }
     
@@ -549,7 +555,11 @@ function updateGroupTypingIndicator(text: string): HTMLElement | null {
 
        // group_ui_handler.ts -> initializeActualGroupUiHandler -> IIFE
 // Example for a method using uiUpdater:
-function appendMessageToGroupLog(text: string, senderName: string, isUser: boolean, speakerId: string): void {
+function appendMessageToGroupLog(text: string, senderName: string, isUser: boolean, speakerId: string,
+    options: ChatMessageOptions = {} // <<< THIS IS THE KEY ADDITION
+
+
+): void {
     const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
     const currentGroupDataManager = window.groupDataManager as GroupDataManager | undefined;
 
@@ -577,15 +587,17 @@ function appendMessageToGroupLog(text: string, senderName: string, isUser: boole
         }
     }
 
+  
     if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
-        // FIX: Create an options object and pass the current timestamp.
-        const messageOptions: ChatMessageOptions = {
-            timestamp: Date.now(), // Pass the current time
-            speakerId: speakerId   // Pass the speakerId
+        // Ensure the base options are passed through correctly
+        const finalOptions: ChatMessageOptions = {
+            ...options, // This carries the imageUrl, messageId, etc.
+            timestamp: options.timestamp || Date.now(),
+            speakerId: speakerId
         };
 
         console.log(`GUH.appendMessageToGroupLog: Passing to uiUpdater. Text: "${text.substring(0,30)}...", Sender: ${senderName}, speakerId: ${speakerId}`);
-        currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, messageOptions);
+        currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, finalOptions);
     } else {
         console.error("GUH.appendMessageToGroupLog: Functional uiUpdater or appendToGroupChatLog method not available at runtime.");
     }

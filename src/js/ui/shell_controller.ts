@@ -34,27 +34,6 @@ let isSwitchingViewTo: string | null = null;
 function initializeActualShellController(): void {
     console.log('shell_controller.ts: initializeActualShellController() called.');
 
-    // Check for all essential dependencies needed by the IIFE at its top level or by getDeps
-    // if (!window.domElements || !window.polyglotHelpers || !window.modalHandler /* add others if critical for getDeps */) {
-    //     console.error("shell_controller.ts: CRITICAL - Essential dependencies (domElements, polyglotHelpers, modalHandler, etc.) not ready. Halting ShellController setup.");
-    //     window.shellController = { // Dummy assignment
-    //         initializeAppShell: () => console.error("ShellController not initialized (deps missing)."),
-    //         openDetailedPersonaModal: () => console.error("ShellController not initialized (deps missing)."),
-    //         switchView: () => console.error("ShellController not initialized (deps missing)."),
-    //         updateEmptyListMessages: () => console.error("ShellController not initialized (deps missing)."),
-    //         showEmbeddedChat: () => console.error("ShellController not initialized (deps missing)."),
-    //         hideEmbeddedChat: () => console.error("ShellController not initialized (deps missing)."),
-    //         showGroupChatInterface: () => console.error("ShellController not initialized (deps missing)."),
-    //         hideGroupChatInterface: () => console.error("ShellController not initialized (deps missing)."),
-    //     };
-    //     return;
-    // }
-    // console.log('shell_controller.ts: Essential dependencies appear ready.');
-
-
-
-
-
     window.shellController = ((): ShellControllerModule => {
         'use strict';
         console.log("shell_controller.ts: IIFE STARTING");
@@ -68,70 +47,50 @@ function initializeActualShellController(): void {
             polyglotHelpers: window.polyglotHelpers as PolyglotHelpers,
             activityManager: window.activityManager as ActivityManager | undefined,
             uiUpdater: window.uiUpdater as UiUpdater | undefined,
-            chatManager: window.chatManager as ChatOrchestrator | undefined, // Using ChatOrchestrator type
+            chatManager: window.chatManager as ChatOrchestrator | undefined,
             groupManager: window.groupManager as GroupManager | undefined,
             sessionManager: window.sessionManager as SessionManager | undefined,
             polyglotSharedContent: window.polyglotSharedContent as SharedContent | undefined,
-            chatOrchestrator: window.chatOrchestrator as ChatOrchestrator | undefined, // <<< ADD THIS
-            sessionHistoryManager: window.sessionHistoryManager as import('../types/global').SessionHistoryManager | undefined, // <<< ADD THIS
-           
-           
-            chatActiveTargetManager: window.chatActiveTargetManager as import('../types/global').ChatActiveTargetManager | undefined // <<< ADDED
+            chatOrchestrator: window.chatOrchestrator as ChatOrchestrator | undefined,
+            sessionHistoryManager: window.sessionHistoryManager as import('../types/global').SessionHistoryManager | undefined,
+            chatActiveTargetManager: window.chatActiveTargetManager as import('../types/global').ChatActiveTargetManager | undefined,
+            sidebarPanelManager: window.sidebarPanelManager as import('../types/global').SidebarPanelManagerModule | undefined,
+            filterController: window.filterController as import('../types/global').FilterController | undefined
         });
-
         let currentActiveTab = 'home'; // This was also in view_manager. Consider consolidating.
 
         function initializeAppShell(): void {
             const { domElements, polyglotHelpers } = getDeps();
             console.log("ShellController: initializeAppShell - START. domElements available:", !!domElements);
-        
+
             if (!domElements?.appShell) {
                 console.error("ShellController: initializeAppShell - App shell container (appShell) not found in domElements! Cannot proceed.");
                 return;
             }
-        
-            // --- START: Guard for initial setup ---
+
             if (initialAppShellViewInitialized) {
                 console.warn("ShellController: initializeAppShell called again, but initial view setup already done. Skipping redundant setup.");
                 return;
             }
             initialAppShellViewInitialized = true;
             console.log("ShellController: initializeAppShell - Performing initial setup for the first time.");
-            // --- END: Guard for initial setup ---
-        
-            currentActiveTab = (polyglotHelpers!.loadFromLocalStorage('polyglotLastActiveTab') as string) || 'home';
-            console.log("ShellController: initializeAppShell - Loaded currentActiveTab:", currentActiveTab);
-        
-            console.log("ShellController: initializeAppShell - About to call switchView for tab:", currentActiveTab);
-            switchView(currentActiveTab);
-            console.log("ShellController: initializeAppShell - Returned from switchView for tab:", currentActiveTab);
-        
-            console.log("ShellController: initializeAppShell - About to call populateHomepageTips.");
+
+            const currentActiveTab = (polyglotHelpers!.loadFromLocalStorage('polyglotLastActiveTab') as string) || 'home';
+
+            // This new function handles the initial view setup AND listens for all future changes.
+            setupMasterViewCoordinator(currentActiveTab);
+
+            console.log("ShellController: initializeAppShell - About to call other setup functions.");
             populateHomepageTips();
-            console.log("ShellController: initializeAppShell - Returned from populateHomepageTips.");
-        
-            console.log("ShellController: initializeAppShell - About to call populateFilterDropdowns.");
             populateFilterDropdowns();
-            console.log("ShellController: initializeAppShell - Returned from populateFilterDropdowns.");
-            
-            console.log("ShellController: initializeAppShell - About to call setupShellEventListeners.");
-            setupShellEventListeners(); // Listeners should ideally only be set up once too.
-            console.log("ShellController: initializeAppShell - Returned from setupShellEventListeners.");
-        
-            console.log("ShellController: initializeAppShell - About to call initializeTheme.");
+            setupShellEventListeners();
             initializeTheme();
-            console.log("ShellController: initializeAppShell - Returned from initializeTheme.");
-            
+
             console.log("ui/shell_controller.ts: Shell Initialized and initializeAppShell COMPLETED.");
         }
-
         function setupShellEventListeners(): void {
             const { domElements, modalHandler, groupManager, chatManager } = getDeps();
-           
-           
-           
-           
-           
+
             if (!domElements || !modalHandler) {
                 console.warn("ShellController: Missing domElements or modalHandler for event listeners.");
                 return;
@@ -141,9 +100,6 @@ function initializeActualShellController(): void {
                 domElements.themeToggleButton.addEventListener('click', toggleTheme);
             }
 
-            if (domElements.mainNavItems) {
-                domElements.mainNavItems.forEach(item => item.addEventListener('click', handleTabSwitchEvent as EventListener));
-            }
 
             if (domElements.closePersonaModalBtn) {
                 domElements.closePersonaModalBtn.addEventListener('click', () => {
@@ -165,7 +121,7 @@ if (domElements.connectorHubGrid) {
     domElements.connectorHubGrid.addEventListener('click', (e: Event) => {
         const target = e.target as HTMLElement;
         const button = target.closest('button');
-        
+
         if (!button) return;
 
         const connectorId = button.dataset.connectorId;
@@ -186,7 +142,7 @@ if (domElements.connectorHubGrid) {
                 window.chatSessionHandler.openConversationInEmbeddedView(connector);
             }
         }
-        
+
         // Handle "View Info" and "View Profile" buttons (NOW LOOKS FOR THE CORRECT CLASSES)
         if (button.classList.contains('group-card-info-btn') || button.classList.contains('view-profile-btn')) {
             e.preventDefault();
@@ -198,27 +154,40 @@ if (domElements.connectorHubGrid) {
     });
 }
 
-
-
             // Ensure personaModalVoiceChatBtn exists on domElements interface if used
             const personaModalVoiceChatBtn = (domElements as any).personaModalVoiceChatBtn as HTMLButtonElement | null;
 
             if(domElements.personaModalMessageBtn) domElements.personaModalMessageBtn.addEventListener('click', () => handlePersonaModalAction('message_modal'));
             if(personaModalVoiceChatBtn) personaModalVoiceChatBtn.addEventListener('click', () => handlePersonaModalAction('voiceChat_modal'));
             if(domElements.personaModalDirectCallBtn) domElements.personaModalDirectCallBtn.addEventListener('click', () => handlePersonaModalAction('direct_modal'));
-            
+
             if (domElements.applyFiltersBtn) domElements.applyFiltersBtn.addEventListener('click', applyFindFilters);
             if (domElements.applyGroupFiltersBtn) domElements.applyGroupFiltersBtn.addEventListener('click', applyGroupFilters);
-            
-       
-          
+
+       // Add this new block
+            // --- NEW: Event Listeners for Friends/Groups Sub-Tabs ---
+            const myFriendsTabBtn = document.getElementById('my-friends-tab-btn');
+            const discoverFriendsTabBtn = document.getElementById('discover-friends-tab-btn');
+            const myGroupsTabBtn = document.getElementById('my-groups-tab-btn');
+            const discoverGroupsTabBtn = document.getElementById('discover-groups-tab-btn');
+
+            if (myFriendsTabBtn && discoverFriendsTabBtn) {
+                myFriendsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('friends', 'my-friends'));
+                discoverFriendsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('friends', 'discover'));
+            }
+
+            if (myGroupsTabBtn && discoverGroupsTabBtn) {
+                myGroupsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('groups', 'my-groups'));
+                discoverGroupsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('groups', 'discover'));
+            }
+
     // ===================================================================
     // ==   ADD THIS ENTIRE BLOCK FOR SIDEBAR SEARCH LISTENERS          ==
     // ===================================================================
     const { polyglotHelpers, chatOrchestrator, sessionHistoryManager } = getDeps();
 
     if (domElements.searchActiveChatsInput && polyglotHelpers?.debounce && chatOrchestrator?.renderCombinedActiveChatsList) {
-        domElements.searchActiveChatsInput.addEventListener('input', 
+        domElements.searchActiveChatsInput.addEventListener('input',
             polyglotHelpers.debounce(chatOrchestrator.renderCombinedActiveChatsList, 300)
         );
         console.log("ShellController: Event listener for Active Chats search bar attached.");
@@ -227,15 +196,15 @@ if (domElements.connectorHubGrid) {
     }
 
     if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessionHistoryManager?.updateSummaryListUI) {
-        domElements.searchSessionHistoryInput.addEventListener('input', 
+        domElements.searchSessionHistoryInput.addEventListener('input',
             polyglotHelpers.debounce(sessionHistoryManager.updateSummaryListUI, 300)
         );
         console.log("ShellController: Event listener for Session History search bar attached.");
     } else {
         console.warn("ShellController: Could not attach listener for Session History search. Dependencies missing.");
     }
-       
-       
+
+
        // ===================================================================
 // ==   LIVE SEARCH LISTENERS FOR SIDEBAR LISTS                     ==
 // ===================================================================
@@ -243,7 +212,7 @@ if (domElements.connectorHubGrid) {
 
 // Listener for the "Active Chats" search bar
 if (domElements.searchActiveChatsInput && polyglotHelpers?.debounce && chatOrchestrator?.renderCombinedActiveChatsList) {
-    domElements.searchActiveChatsInput.addEventListener('input', 
+    domElements.searchActiveChatsInput.addEventListener('input',
         // Debounce waits for the user to stop typing for 300ms before filtering
         polyglotHelpers.debounce(chatOrchestrator.renderCombinedActiveChatsList, 300)
     );
@@ -252,7 +221,7 @@ if (domElements.searchActiveChatsInput && polyglotHelpers?.debounce && chatOrche
 
 // Listener for the "Session History" search bar
 if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessionHistoryManager?.updateSummaryListUI) {
-    domElements.searchSessionHistoryInput.addEventListener('input', 
+    domElements.searchSessionHistoryInput.addEventListener('input',
         // Debounce waits for the user to stop typing for 300ms before filtering
         polyglotHelpers.debounce(sessionHistoryManager.updateSummaryListUI, 300)
     );
@@ -261,8 +230,8 @@ if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessio
 // ===================================================================
 // ==   END OF NEW BLOCK                                            ==
 // ===================================================================
-       
-       
+
+
             if (domElements.sendGroupMessageBtn && domElements.groupChatInput) {
                 domElements.sendGroupMessageBtn.addEventListener('click', handleSendGroupMessage);
                 domElements.groupChatInput.addEventListener('keypress', (e: KeyboardEvent) => { // Typed event
@@ -271,234 +240,109 @@ if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessio
                 });
             }
             if (domElements.leaveGroupBtn) domElements.leaveGroupBtn.addEventListener('click', () => groupManager?.leaveCurrentGroup?.());
-            
-            // if (domElements.embeddedMessageSendBtn && domElements.embeddedMessageTextInput) {
-            //     domElements.embeddedMessageSendBtn.addEventListener('click', handleSendEmbeddedMessage);
-            //     domElements.embeddedMessageTextInput.addEventListener('keypress', (e: KeyboardEvent) => { // Typed event
-            //         if (e.key === 'Enter' && !e.shiftKey) {
-            //             e.preventDefault();
-            //             handleSendEmbeddedMessage();
-            //         }
-            //     });
-            // }
+
             if (domElements.embeddedMessageAttachBtn && domElements.embeddedMessageImageUpload) {
                 domElements.embeddedMessageAttachBtn.addEventListener('click', () => {
                     // Reset the value of the file input to allow uploading the same file again if needed
-                    (domElements.embeddedMessageImageUpload as HTMLInputElement).value = ''; 
+                    (domElements.embeddedMessageImageUpload as HTMLInputElement).value = '';
                     (domElements.embeddedMessageImageUpload as HTMLInputElement).click();
                 });
-                // domElements.embeddedMessageImageUpload.addEventListener('change', handleEmbeddedImageUploadEvent); // <<< COMMENTED OUT / REMOVED
             }
         }
 
-        function handleTabSwitchEvent(e: Event): void { // Typed event
-            e.preventDefault();
-            const currentTarget = e.currentTarget as HTMLElement; // Type assertion
-            const targetTab = currentTarget.dataset.tab;
-            if (targetTab && targetTab !== currentActiveTab) {
-                switchView(targetTab);
-            }
-        }
 
-        // NOTE: switchView, populateHomepageTips, initializeTheme, toggleTheme,
-        // openDetailedPersonaModalInternal, cleanupModalData, handlePersonaModalAction,
-        // updateEmptyListMessages, applyFindFilters, applyGroupFilters, populateFilterDropdowns,
-        // handleSendGroupMessage, handleSendEmbeddedMessage, handleEmbeddedImageUploadEvent,
-        // showEmbeddedChat, hideEmbeddedChat, showGroupChatInterface, hideGroupChatInterface
-        // functions from your original shell_controller.js need to be pasted here.
-        // I will add typed stubs for a few, you'll need to fill them with your original logic
-        // and add types.
+   function switchView(targetTab: string): void {
+    const { domElements } = getDeps();
+    console.log(`%c[Shell Switch] Switching view to: '${targetTab}'`, 'color: white; background: #0d6efd; padding: 2px 5px; border-radius: 3px;');
 
-        function switchView(targetTab: string): void {
-            const previousTab = currentActiveTab; // <<< ADD THIS LINE
-            const { domElements, listRenderer, uiUpdater, chatManager, groupManager, sessionManager, polyglotHelpers } = getDeps();
-            console.log(`ShellController: switchView - START. TargetTab: '${targetTab}', CurrentActiveTab (before change): '${currentActiveTab}'`);
-        
-            if (!targetTab || !domElements?.mainNavItems || !domElements.mainViews /* removed rightSidebarPanels check here */ || !polyglotHelpers) {
-                console.error("ShellController.switchView: ABORTING - Missing critical DOM elements or helpers for switchView.");
-                return;
-            }
-        
-            currentActiveTab = targetTab; 
-            polyglotHelpers.saveToLocalStorage('polyglotLastActiveTab', currentActiveTab);
-            console.log(`ShellController: switchView - Saved currentActiveTab '${currentActiveTab}' to localStorage.`);
-        
-            domElements.mainNavItems.forEach(i => {
-                const isActive = i.dataset.tab === targetTab;
-                i.classList.toggle('active', isActive);
-            });
-        
-            domElements.mainViews.forEach(view => {
-                const isActive = view.id === `${targetTab}-view`;
-                view.classList.toggle('active-view', isActive);
-                console.log(`ShellController: switchView - View '#${view.id}': active-view=${isActive}, display=${view.style.display}`);
-                if (isActive) { 
-                    const computedStyle = window.getComputedStyle(view);
-                    console.log(`ShellController: switchView - Active View '#${view.id}' computed display: ${computedStyle.display}, visibility: ${computedStyle.visibility}, opacity: ${computedStyle.opacity}`);
-                }
-            });
+    if (!targetTab || !domElements?.mainNavItems || !domElements.mainViews) {
+        console.error("ShellController.switchView: ABORTING - Missing critical DOM elements for switch.");
+        return;
+    }
 
-
-    // --- START: Right Sidebar Panel Logic (Re-integrated and Modified) ---
- 
-// --- START: Right Sidebar Panel Logic (Managed by ShellController) ---
-if (domElements.rightSidebarPanels && domElements.appShell) { // Added appShell check for querySelector
-    // 1. Hide all right sidebar panels initially
-    domElements.rightSidebarPanels.forEach(panel => {
-        panel.classList.remove('active-panel');
+    // 1. Update the main view containers by toggling the 'active-view' class
+    domElements.mainViews.forEach(view => {
+        const isActive = view.id === `${targetTab}-view`;
+        view.classList.toggle('active-view', isActive);
     });
 
-    let panelIdToShow: string | null = null;
+    // 2. Update the left sidebar navigation item styles
+    domElements.mainNavItems.forEach(item => {
+        const isActive = item.dataset.tab === targetTab;
+        item.classList.toggle('active', isActive);
+    });
 
-    // 2. Determine which panel to show based on the targetTab
-    if (targetTab === 'groups') {
-        const currentGroupData = groupManager?.getCurrentGroupData?.();
-        if (currentGroupData) {
-            console.log("ShellController.switchView: 'groups' tab, group active. Showing messagesChatListPanel.");
-            panelIdToShow = 'messagesChatListPanel';
-        } else {
-            console.log("ShellController.switchView: 'groups' tab, no group active. Showing groupsFiltersPanel.");
-            panelIdToShow = 'groupsFiltersPanel';
-        }
-    } else if (targetTab === 'friends') { // <<< THIS IS THE FIX
-        console.log("ShellController.switchView: 'friends' tab. Showing friendsFiltersPanel.");
-        panelIdToShow = 'friendsFiltersPanel'; // <<< THIS IS THE FIX
-    } else if (targetTab === 'messages') {
-
-        console.log("ShellController.switchView: 'messages' tab. Showing messagesChatListPanel.");
-        panelIdToShow = 'messagesChatListPanel';
-    } else if (targetTab === 'summary') {
-        console.log("ShellController.switchView: 'summary' tab. Showing summaryChatListPanel.");
-        panelIdToShow = 'summaryChatListPanel';
-    } else if (targetTab === 'home') {
-        console.log("ShellController.switchView: 'home' tab. No right sidebar panel.");
-        panelIdToShow = null; // No panel for home
-    } else {
-        console.warn(`ShellController.switchView: Unknown targetTab '${targetTab}' for right sidebar logic.`);
-        panelIdToShow = null;
-    }
-
-    // 3. Show the determined panel
-    if (panelIdToShow) {
-        // It's safer to query from a known common ancestor like appShell or document body,
-        // as rightSidebarPanels might not be direct children of rightSidebar if structure changes.
-        // However, if domElements.rightSidebarPanels correctly lists all of them, we can find it there.
-        let panelToShowElement: HTMLElement | null = null;
-        for (const panel of Array.from(domElements.rightSidebarPanels)) {
-            if (panel.id === panelIdToShow) {
-                panelToShowElement = panel as HTMLElement;
-                break;
-            }
-        }
-
-        if (panelToShowElement) {
-            panelToShowElement.classList.add('active-panel');
-            console.log(`ShellController.switchView: Activated right sidebar panel '#${panelIdToShow}'.`);
-
-            // 4. If messagesChatListPanel is shown, refresh its content
-            if (panelIdToShow === 'messagesChatListPanel') {
-                if (chatManager?.renderCombinedActiveChatsList) {
-                    console.log("ShellController.switchView: Refreshing messagesChatListPanel content.");
-                    chatManager.renderCombinedActiveChatsList();
-                } else {
-                    console.warn("ShellController.switchView: chatManager.renderCombinedActiveChatsList not available.");
-                }
-            }
-            // Note: summaryChatListPanel shows session history, not active chats,
-            // so renderCombinedActiveChatsList() is not needed for it here.
-        } else {
-            console.warn(`ShellController.switchView: Right sidebar panel with ID '${panelIdToShow}' not found in domElements.rightSidebarPanels.`);
-        }
-    }
-} else {
-    console.warn("ShellController.switchView: domElements.rightSidebarPanels or domElements.appShell not found, cannot manage right sidebar panels.");
+    console.log(`%c[Shell Switch] View switched successfully to '${targetTab}'.`, 'color: white; background: #198754; padding: 2px 5px; border-radius: 3px;');
 }
-// --- END: Right Sidebar Panel Logic (Managed by ShellController) ---
 
+function setupMasterViewCoordinator(initialTab: string) {
+    console.log('[Shell Coordinator] Setting up master event listener.');
 
-    // --- END: Right Sidebar Panel Logic ---
-    console.log(`ShellController: switchView - Performing tab-specific content actions for tab: '${targetTab}'`);
-    if (targetTab === 'friends') { // <<< THIS IS THE FIX
-        console.log("ShellController: switchView - Calling applyFindFilters() for 'friends' tab.");
-        applyFindFilters(); // applyFindFilters is now smart enough to handle the sub-tabs
-    } else if (targetTab === 'groups') {
-        console.log("ShellController: switchView - Handling content for 'groups' tab.");
-        const currentGroupData = groupManager?.getCurrentGroupData?.();
-        if (currentGroupData) {
-            // A group is active, groupUiHandler should have already shown the chat interface.
-            // We might not need to do anything here for the main view,
-            // or ensure the group list container is hidden and chat interface is visible.
-            console.log("ShellController (switchView/'groups' content): Group is active. Ensuring chat UI is primary.");
-            if (domElements.groupListContainer) domElements.groupListContainer.style.display = 'none';
-            if (domElements.groupChatInterfaceDiv) domElements.groupChatInterfaceDiv.style.display = 'flex'; // or 'block'
-        } else {
-            // No group active, show the list of available groups.
-            console.log("ShellController (switchView/'groups' content): No group active. Showing available groups list.");
-            if (domElements.groupChatInterfaceDiv) domElements.groupChatInterfaceDiv.style.display = 'none';
-            if (domElements.groupListContainer) domElements.groupListContainer.style.display = 'block';
-            applyGroupFilters();
+    // This is the function that will run every time a tab is switched.
+    const handleViewChange = (tabName: string) => {
+        console.log(`%c[Shell Coordinator] Coordinating view for tab: '${tabName}'`, 'color: #198754; font-weight: bold;');
+
+        // Get fresh dependencies every time
+        const { filterController, groupManager, chatManager, sessionHistoryManager, uiUpdater, sidebarPanelManager } = getDeps();
+
+        // Step 1: Tell ShellController to handle the basic UI switch
+        switchView(tabName);
+
+        // Step 2: Tell the Sidebar to update its panel for the new tab
+        sidebarPanelManager?.updatePanelForCurrentTab(tabName);
+
+        // Step 3: Call the specific content-loading function for the new tab
+        if (tabName === 'home') {
+            populateHomepageTips();
+        } else if (tabName === 'friends') {
+            filterController?.applyFindConnectorsFilters?.();
+        } else if (tabName === 'groups') {
+            groupManager?.loadAvailableGroups?.();
+        } else if (tabName === 'messages') {
+            chatManager?.handleMessagesTabActive?.();
+        } else if (tabName === 'summary') {
+            sessionHistoryManager?.updateSummaryListUI?.();
+            uiUpdater?.displaySummaryInView?.(null);
         }
-    } else if (targetTab === 'messages') {
-        console.log("ShellController: switchView - Calling chatManager.handleMessagesTabActive() for 'messages' tab.");
-        chatManager?.handleMessagesTabActive?.();
-   } else if (targetTab === 'summary') {
-    console.log("ShellController: switchView - Processing 'summary' tab.");
-    const currentSessionManager = window.sessionManager as SessionManager | undefined;
-    const currentListRenderer = window.listRenderer as ListRenderer | undefined;
-    const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+    };
 
-    if (currentSessionManager && typeof currentSessionManager.getCompletedSessions === 'function' && 
-        typeof currentSessionManager.showSessionRecapInView === 'function' &&
-        currentListRenderer && typeof currentListRenderer.renderSummaryList === 'function') {
-        console.log("ShellController: switchView (summary) - Rendering summary list.");
-        const completedSessions = currentSessionManager.getCompletedSessions(); // <<< Needs to return data
-        currentListRenderer.renderSummaryList(completedSessions || [], currentSessionManager.showSessionRecapInView);
-    } else {
-            console.warn("ShellController: switchView (summary) - sessionManager or listRenderer not fully functional for summary list.");
+    // Listen for all future tab switches
+    document.addEventListener('tabSwitched', (e: Event) => {
+        const newTab = (e as CustomEvent).detail?.newTab;
+        if (newTab) {
+            handleViewChange(newTab);
         }
-        if (currentUiUpdater && typeof currentUiUpdater.displaySummaryInView === 'function') {
-            console.log("ShellController: switchView (summary) - Displaying placeholder in main summary view.");
-            currentUiUpdater.displaySummaryInView(null);
-        } else {
-            console.warn("ShellController: switchView (summary) - uiUpdater.displaySummaryInView not available.");
-        }
-   } else if (targetTab === 'home') {
-        console.log("ShellController: switchView (home tab) - START actions for 'home'.");
-        console.log("ShellController: switchView (home tab) - About to call populateHomepageTips().");
-        populateHomepageTips();
-        console.log("ShellController: switchView (home tab) - Returned from populateHomepageTips().");
-        console.log("ShellController: switchView (home tab) - FINISHED actions for 'home'.");
-    }
+    });
 
-    if (previousTab === 'groups' && targetTab !== 'groups') {
-        const currentGroupData = groupManager?.getCurrentGroupData?.();
-        if (currentGroupData) {
-            console.log(`ShellController: Navigated away from groups tab. Silently leaving group: ${currentGroupData.id}`);
-            // The (false, false) arguments stop UI reloads, we just want to stop the background process.
-            groupManager?.leaveCurrentGroup?.(false, false);
-        }
-    }
-
-    console.log("ShellController: switchView - Calling updateEmptyListMessages().");
-    updateEmptyListMessages();
-    console.log(`ShellController: switchView - END for targetTab: '${targetTab}'.`);
-
-            const activeViewElement = domElements.mainContainer?.querySelector(`#${targetTab}-view.active-view`) as HTMLElement | null;
-    if (activeViewElement) {
-        const styles = window.getComputedStyle(activeViewElement);
-        console.log(`ShellController: switchView - VERIFY ACTIVE VIEW: Element '#${targetTab}-view' found. Display: ${styles.display}, Visibility: ${styles.visibility}, Opacity: ${styles.opacity}, Children: ${activeViewElement.children.length}`);
-        if (targetTab === 'home' && domElements.homepageTipsList) {
-            console.log(`ShellController: switchView (home) - Homepage tips list UL innerHTML:`, domElements.homepageTipsList.innerHTML.substring(0,100) + "...");
-            console.log(`ShellController: switchView (home) - Homepage tips list UL child count:`, domElements.homepageTipsList.children.length);
-        }
-    } else {
-        console.error(`ShellController: switchView - VERIFY ACTIVE VIEW: Element '#${targetTab}-view.active-view' NOT FOUND after switch.`);
-    }
-
-
-
-
+    // Immediately handle the initial tab load
+    console.log(`[Shell Coordinator] Performing initial coordination for tab: '${initialTab}'`);
+    handleViewChange(initialTab);
 }
+
+function handleSubTabViewSwitch(mainView: 'friends' | 'groups', subView: 'my-friends' | 'discover' | 'my-groups') {
+    console.log(`ShellController: Handling sub-tab switch for ${mainView}, new sub-view: ${subView}`);
+
+    if (mainView === 'friends') {
+        const myFriendsBtn = document.getElementById('my-friends-tab-btn');
+        const discoverFriendsBtn = document.getElementById('discover-friends-tab-btn');
+        myFriendsBtn?.classList.toggle('active', subView === 'my-friends');
+        discoverFriendsBtn?.classList.toggle('active', subView === 'discover');
+
+        // Call the main filter/render function, which should now be smart enough
+        // to check which sub-tab is active.
+        applyFindFilters();
+
+    } else if (mainView === 'groups') {
+        const myGroupsBtn = document.getElementById('my-groups-tab-btn');
+        const discoverGroupsBtn = document.getElementById('discover-groups-tab-btn');
+        myGroupsBtn?.classList.toggle('active', subView === 'my-groups');
+        discoverGroupsBtn?.classList.toggle('active', subView === 'discover');
+
+        // Call the main filter/render function for groups
+        applyGroupFilters();
+    }
+}
+
 
        // --- START OF MODIFICATION for populateHomepageTips (SC.DEBUG.3) ---
 function populateHomepageTips(): void {
@@ -520,7 +364,7 @@ function populateHomepageTips(): void {
         }
         return;
     }
-    
+
     const tipsListElement = domElements.homepageTipsList as HTMLUListElement | null;
     if (!tipsListElement) {
         console.error("ShellController: populateHomepageTips - domElements.homepageTipsList not found!");
@@ -560,7 +404,7 @@ function populateHomepageTips(): void {
 }
 }
 // --- END OF MODIFICATION for populateHomepageTips (SC.DEBUG.3) ---
-        function initializeTheme(): void { /* ... Your original logic, using getDeps ... */ 
+        function initializeTheme(): void { /* ... Your original logic, using getDeps ... */
             const { domElements, polyglotHelpers } = getDeps();
             if (!domElements || !polyglotHelpers) return;
             const savedTheme = polyglotHelpers.loadFromLocalStorage('polyglotConnectTheme') as string || 'light';
@@ -571,7 +415,7 @@ function populateHomepageTips(): void {
                 themeBtn.setAttribute('aria-label', savedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
             }
         }
-        function toggleTheme(): void { /* ... Your original logic, using getDeps ... */ 
+        function toggleTheme(): void { /* ... Your original logic, using getDeps ... */
              const { domElements, polyglotHelpers } = getDeps();
             if (!domElements || !polyglotHelpers) return;
             document.body.classList.toggle('dark-mode');
@@ -593,13 +437,13 @@ function populateHomepageTips(): void {
             (domElements.personaModalName as HTMLElement).textContent = polyglotHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Unknown');
             // ... rest of this function from original
         }
-        function cleanupModalData(): void { /* ... Your original logic, using getDeps ... */ 
+        function cleanupModalData(): void { /* ... Your original logic, using getDeps ... */
             const { domElements } = getDeps();
             if (domElements?.detailedPersonaModal) {
                 (domElements.detailedPersonaModal as HTMLElement).dataset.connectorId = '';
             }
         }
-        function handlePersonaModalAction(actionType: string): void { /* ... Your original logic, using getDeps ... */ 
+        function handlePersonaModalAction(actionType: string): void { /* ... Your original logic, using getDeps ... */
              const { domElements, modalHandler } = getDeps();
             if (!domElements?.detailedPersonaModal || !modalHandler) return;
             const connectorId = (domElements.detailedPersonaModal as HTMLElement).dataset.connectorId;
@@ -612,52 +456,48 @@ function populateHomepageTips(): void {
         }
         function updateEmptyListMessages(): void { /* ... Your original logic, using getDeps ... */ }
        // --- START OF REPLACEMENT for applyFindFilters function (SC.REVISE.1) ---
-function applyFindFilters(): void {
-    console.log("ShellController: applyFindFilters - Attempting to apply find filters via FilterController.");
-    // We no longer need to get 'chatManager' here for this specific action.
-    // We also don't need to construct the 'filters' object here, as
-    // filterController.applyFindConnectorsFilters will read them from the DOM.
-    const { domElements } = getDeps(); // Still useful for console logs or potential fallbacks.
-    
-    const currentFilterController = window.filterController; 
-
-    if (!currentFilterController || typeof currentFilterController.applyFindConnectorsFilters !== 'function') {
-        console.error("ShellController: applyFindFilters - window.filterController or its applyFindConnectorsFilters method is not available.");
-        if (domElements?.connectorHubGrid) {
-            domElements.connectorHubGrid.innerHTML = '<p class="error-message">Filter functionality is currently unavailable (controller missing).</p>';
-        }
-        return;
-    }
-    
-    // filterController.applyFindConnectorsFilters() should now internally:
-    // 1. Get domElements.filterLanguageSelect.value and domElements.filterRoleSelect.value
-    // 2. Call the local filterAndDisplayConnectors() function (which you added in filter_controller.ts in FC.1)
-    currentFilterController.applyFindConnectorsFilters();
-    console.log("ShellController: applyFindFilters - Called filterController.applyFindConnectorsFilters().");
-}
-// --- END OF REPLACEMENT for applyFindFilters function (SC.REVISE.1) ---
-      // --- CONFIRM THIS FUNCTION (SC.INTEGRATE.2) ---
-      function applyGroupFilters(): void {
-        const { domElements, groupManager } = getDeps();
-        console.log("ShellController: applyGroupFilters - Called (Revised to read all filters).");
-
-        if (!domElements || !groupManager?.loadAvailableGroups) {
-            console.warn("ShellController: applyGroupFilters - Missing domElements or groupManager.loadAvailableGroups.");
-            groupManager?.loadAvailableGroups?.(null, null, null); // Fallback with 3 nulls
+       function applyFindFilters(): void {
+        const { domElements } = getDeps();
+        const currentFilterController = window.filterController;
+        if (!currentFilterController) {
+            console.error("ShellController: filterController not available.");
             return;
         }
 
-        // Read ALL relevant filter values from the DOM elements that filter_controller populates/manages
+        // NEW: Check which sub-tab is active
+        const myFriendsBtn = document.getElementById('my-friends-tab-btn');
+        console.log("ShellController: applyFindFilters - Calling filterController.applyFindConnectorsFilters().");
+
+        // Delegate the actual filtering and rendering to the filter controller.
+        // The filter controller itself will be responsible for checking the active sub-tab.
+        currentFilterController.applyFindConnectorsFilters();
+    }
+// --- END OF REPLACEMENT for applyFindFilters function (SC.REVISE.1) ---
+      // --- CONFIRM THIS FUNCTION (SC.INTEGRATE.2) ---
+    // Replace the existing applyGroupFilters function
+    function applyGroupFilters(): void {
+        const { domElements, groupManager } = getDeps();
+        if (!groupManager?.loadAvailableGroups) {
+            console.warn("ShellController: groupManager.loadAvailableGroups not available.");
+            return;
+        }
+
+        // NEW: Check which sub-tab is active
+        const myGroupsBtn = document.getElementById('my-groups-tab-btn');
+        const activeGroupsView = myGroupsBtn?.classList.contains('active') ? 'my-groups' : 'discover';
+
+        console.log(`ShellController: applyGroupFilters called for sub-view: ${activeGroupsView}`);
+
         const langFilter = domElements.filterGroupLanguageSelect?.value || 'all';
-        const categoryFilter = domElements.filterGroupCategorySelect?.value || 'all'; // Assumes filterGroupCategorySelect is in YourDomElements
-        const nameSearch = (domElements.filterGroupNameInput as HTMLInputElement)?.value.trim() || ''; // Assumes filterGroupNameInput is in YourDomElements
+        const categoryFilter = domElements.filterGroupCategorySelect?.value || 'all';
+        const nameSearch = domElements.filterGroupNameInput?.value.trim() || '';
 
-        console.log("ShellController: applyGroupFilters - Read from DOM - Lang:", langFilter, "Cat:", categoryFilter, "Name:", nameSearch);
-
+        // Pass the active view type to the group manager
         groupManager.loadAvailableGroups(
             langFilter === 'all' ? null : langFilter,
             categoryFilter === 'all' ? null : categoryFilter,
-            nameSearch === '' ? null : nameSearch.toLowerCase() // Pass lowercase or handle in GDM
+            nameSearch === '' ? null : nameSearch.toLowerCase(),
+            { viewType: activeGroupsView } // Pass the context here
         );
     }
 // --- END OF CONFIRMATION (SC.INTEGRATE.2) ---
@@ -679,7 +519,7 @@ function populateFilterDropdowns(): void {
 
     // Helper function from your JS, now typed and within scope
     const populateSelect = (
-        selectEl: HTMLSelectElement | null, 
+        selectEl: HTMLSelectElement | null,
         options: Array<{ value: string; name: string; flagCode?: string | null }>, // Matches LanguageFilterItem and RoleFilterItem structure
         includeFlag: boolean
     ) => {
@@ -717,51 +557,21 @@ function populateFilterDropdowns(): void {
     if (domElements.filterGroupLanguageSelect) {
         populateSelect(domElements.filterGroupLanguageSelect, languages, true);
     } else { console.warn("ShellController: domElements.filterGroupLanguageSelect not found."); }
-    
+
     if (domElements.filterRoleSelect) {
         populateSelect(domElements.filterRoleSelect, roles, false);
     } else { console.warn("ShellController: domElements.filterRoleSelect not found."); }
-    
+
     console.log("ShellController: populateFilterDropdowns - FINISHED.");
 }
 // --- END OF REPLACEMENT for populateFilterDropdowns (SC.INTEGRATE.1) ---
-     function handleSendGroupMessage(): void { 
+     function handleSendGroupMessage(): void {
     console.log("ShellController: handleSendGroupMessage - Called."); // Added log
-    getDeps().groupManager?.handleUserMessageInGroup?.(); 
+    getDeps().groupManager?.handleUserMessageInGroup?.();
 }
        // --- START OF REPLACEMENT for handleSendEmbeddedMessage (SC.INTEGRATE.4) ---
        function handleSendEmbeddedMessage(): void {
         console.warn("ShellController: handleSendEmbeddedMessage - Called. DEBUG: Action deliberately PREVENTED to test for duplicate send triggers.");
-        // const { domElements, chatManager } = getDeps(); 
-        // const textInput = domElements?.embeddedMessageTextInput as HTMLInputElement | null;
-        // const text = textInput?.value.trim();
-        // console.log(`ShellController (DEBUG): Original text would have been: "${text}"`);
-    
-        // if (text) {
-        //     // ACTUAL SENDING LOGIC IS COMMENTED OUT
-        //     // const tmh = chatManager?.getTextMessageHandler?.();
-        //     // if (tmh && typeof tmh.sendEmbeddedTextMessage === 'function') {
-        //     //     const currentTargetId = chatManager?.getCurrentEmbeddedChatTargetId?.();
-        //     //     if (currentTargetId) {
-        //     //         // tmh.sendEmbeddedTextMessage(text, currentTargetId); 
-        //     //         if (textInput) textInput.value = ""; 
-        //     //     } else {
-        //     //         console.warn("ShellController (DEBUG): No current embedded chat target ID if it were to send.");
-        //     //     }
-        //     // } else {
-        //     //     console.error("ShellController (DEBUG): TextMessageHandler or its sendEmbeddedTextMessage method not available if it were to send.");
-        //     // }
-        // }
-        
-        // For testing, we might still want to clear the input to mimic user expectation,
-        // but only if this function IS the one that should be clearing it.
-        // Let's leave it commented for now to see if another handler clears it.
-        // const { domElements } = getDeps();
-        // const textInput = domElements?.embeddedMessageTextInput as HTMLInputElement | null;
-        // if (textInput) {
-        //      console.log("ShellController (DEBUG): Intentionally NOT clearing input from this function for testing.");
-        //      // textInput.value = ""; 
-        // }
         return; // Explicitly return to do nothing further.
     }
 // --- END OF REPLACEMENT for handleSendEmbeddedMessage (SC.INTEGRATE.4) ---
@@ -769,7 +579,7 @@ function populateFilterDropdowns(): void {
 function handleEmbeddedImageUploadEvent(event: Event): void {
     console.log("ShellController: handleEmbeddedImageUploadEvent - Called."); // Added log
     const { chatManager } = getDeps(); // chatManager is chatOrchestrator
-    
+
     const tmh = chatManager?.getTextMessageHandler?.();
     if (tmh && typeof tmh.handleEmbeddedImageUpload === 'function') {
         const currentTargetId = chatManager?.getCurrentEmbeddedChatTargetId?.();
@@ -795,12 +605,12 @@ function showEmbeddedChat(connector: Connector): void {
         console.error("ShellController.showEmbeddedChat: ABORTING - Missing critical elements or connector.");
         return;
     }
-    
+
     chatActiveTargetManager.setEmbeddedChatTargetId(connector.id); // Set the target
 
     domElements.messagesPlaceholder.style.display = 'none';
     domElements.embeddedChatContainer.style.display = 'flex';
-    
+
     if (typeof uiUpdater.updateEmbeddedChatHeader === 'function') {
          uiUpdater.updateEmbeddedChatHeader(connector);
     } else { console.warn("ShellController: uiUpdater.updateEmbeddedChatHeader is not a function");}
@@ -811,13 +621,13 @@ function showEmbeddedChat(connector: Connector): void {
     if (typeof uiUpdater.clearEmbeddedChatInput === 'function') {
          uiUpdater.clearEmbeddedChatInput();
     }
-    
+
     if (domElements.embeddedMessageTextInput) {
          domElements.embeddedMessageTextInput.focus();
     }
     console.log("ShellController: showEmbeddedChat - UI updated for connector:", connector.id);
 }
-// --- END OF REPLACEMENT ---
+
         function hideEmbeddedChat(): void { /* ... Your original logic ... */ }
         function showGroupChatInterface(groupName: string, members: Connector[]): void { /* ... Your original logic ... */ }
         function hideGroupChatInterface(): void { /* ... Your original logic ... */ }
@@ -837,40 +647,38 @@ function showEmbeddedChat(connector: Connector): void {
         };
     })(); // End of IIFE
 
-   // --- START OF REPLACEMENT (APP.X1) ---
 } // End of initializeActualShellController
 
-
-// --- START OF NEW DEPENDENCY MANAGEMENT for ShellController (SC.1) ---
-// --- START OF NEW DEPENDENCY MANAGEMENT for ShellController (SC.IMPLEMENT_DEPS) ---
 const SC_DEPENDENCIES: { eventName: string, windowObjectKey: keyof Window, keyFunction?: string }[] = [
     // Core structural dependencies needed by almost all methods in shell_controller
     { eventName: 'domElementsReady', windowObjectKey: 'domElements', keyFunction: 'appShell' },
     { eventName: 'polyglotHelpersReady', windowObjectKey: 'polyglotHelpers', keyFunction: 'sanitizeTextForDisplay' },
     { eventName: 'modalHandlerReady', windowObjectKey: 'modalHandler', keyFunction: 'open' },
-    
+
     // Functional dependencies for specific methods. ShellController initializes UI, so it needs many things ready.
     { eventName: 'cardRendererReady', windowObjectKey: 'cardRenderer', keyFunction: 'renderCards' },
     { eventName: 'listRendererReady', windowObjectKey: 'listRenderer', keyFunction: 'renderActiveChatList' },
     { eventName: 'activityManagerReady', windowObjectKey: 'activityManager', keyFunction: 'isConnectorActive' },
     { eventName: 'uiUpdaterReady', windowObjectKey: 'uiUpdater', keyFunction: 'appendToVoiceChatLog' }, // Check a representative method
-    { eventName: 'chatOrchestratorReady', windowObjectKey: 'chatOrchestrator', keyFunction: 'initialize' }, 
-    { eventName: 'groupManagerReady', windowObjectKey: 'groupManager', keyFunction: 'initialize' }, 
-    { eventName: 'sessionManagerReady', windowObjectKey: 'sessionManager', keyFunction: 'initialize' }, 
+    { eventName: 'chatOrchestratorReady', windowObjectKey: 'chatOrchestrator', keyFunction: 'initialize' },
+    { eventName: 'groupManagerReady', windowObjectKey: 'groupManager', keyFunction: 'initialize' },
+    { eventName: 'sessionManagerReady', windowObjectKey: 'sessionManager', keyFunction: 'initialize' },
     { eventName: 'polyglotSharedContentReady', windowObjectKey: 'polyglotSharedContent', keyFunction: 'homepageTips' }, // Check property existence
     { eventName: 'tabManagerReady', windowObjectKey: 'tabManager', keyFunction: 'switchToTab' }, // For switchView
-    { 
+    {
         eventName: 'filterControllerReady',                 // <<<< IMPORTANT
-        windowObjectKey: 'filterController', 
+        windowObjectKey: 'filterController',
         keyFunction: 'applyFindConnectorsFilters'           // <<<< IMPORTANT
     },
     { eventName: 'polyglotDataReady', windowObjectKey: 'polyglotFilterLanguages' } , // For populateFilterDropdowns (polyglotFilterLanguages is from polyglotDataReady)
-   { 
-    eventName: 'chatActiveTargetManagerReady', 
-    windowObjectKey: 'chatActiveTargetManager', 
+
+    { eventName: 'sidebarPanelManagerReady', windowObjectKey: 'sidebarPanelManager', keyFunction: 'initialize' },
+
+    {
+    eventName: 'chatActiveTargetManagerReady',
+    windowObjectKey: 'chatActiveTargetManager',
     keyFunction: 'setEmbeddedChatTargetId' // Or another key method like getEmbeddedChatTargetId
 },
-    // Add ChatUiManager if it's used directly by shell_controller and not just via other managers
 ];
 
 const scModuleReadyStatus: { [key: string]: boolean } = {};
@@ -878,7 +686,7 @@ SC_DEPENDENCIES.forEach(dep => scModuleReadyStatus[dep.eventName] = false);
 let scCoreModulesReadyCount = 0;
 
 function scMarkModuleAsReady(eventName: string) {
-    if (scModuleReadyStatus[eventName]) return; 
+    if (scModuleReadyStatus[eventName]) return;
 
     scModuleReadyStatus[eventName] = true;
     scCoreModulesReadyCount++;
@@ -886,7 +694,7 @@ function scMarkModuleAsReady(eventName: string) {
 
     if (scCoreModulesReadyCount === SC_DEPENDENCIES.length) {
         console.log(`SHELL_CONTROLLER_DEPS: All ${SC_DEPENDENCIES.length} dependencies for ShellController are now ready. Initializing actual ShellController.`);
-        initializeActualShellController(); 
+        initializeActualShellController();
 
       if (window.shellController && typeof window.shellController.initializeAppShell === 'function') {
     console.log("shell_controller.ts: ShellController object is populated. Now calling its initializeAppShell method.");
@@ -925,5 +733,4 @@ SC_DEPENDENCIES.forEach(depInfo => {
     }
 });
 console.log("js/ui/shell_controller.ts: Script execution finished. New dependency logic in place.");
-// --- END OF NEW DEPENDENCY MANAGEMENT for ShellController (SC.IMPLEMENT_DEPS) ---
 console.log("js/ui/shell_controller.ts: Script execution finished. Initialization is event-driven or direct.");

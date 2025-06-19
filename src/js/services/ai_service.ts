@@ -13,15 +13,15 @@ import type {
 } from '../types/global.d.ts';
 
 console.log("ai_service.ts: Script execution STARTED (TS Facade).");
-
 export interface AiServiceModule {
     generateTextMessage: ( 
         promptOrText: string,
         connector: Connector, 
         history: GeminiChatItem[] | null | undefined, 
         preferredProvider?: string,
-        expectJson?: boolean ,
-        context?: 'group-chat' | 'one-on-one' // <<< ADD THIS NEW PARAMETER
+        expectJson?: boolean,
+        context?: 'group-chat' | 'one-on-one',
+        abortSignal?: AbortSignal // <<< ADDED THIS
     ) => Promise<string | null | object>;
       
     generateTextFromImageAndText: ( 
@@ -30,7 +30,8 @@ export interface AiServiceModule {
         connector: Connector, 
         history: GeminiChatItem[] | null | undefined, 
         prompt?: string, 
-        preferredProvider?: string
+        preferredProvider?: string,
+        abortSignal?: AbortSignal // <<< ADDED THIS
     ) => Promise<string | null | object>;
 
     getTTSAudio: ( 
@@ -320,27 +321,25 @@ Cleaned and Re-ordered Dialogue:`;
         const service: AiServiceModule = {
             cleanAndReconstructTranscriptLLM: cleanAndReconstructTranscriptLLM_internal,
             
-            generateTextMessage: async (
-                promptOrText: string, 
-                connector: Connector, 
-                history: GeminiChatItem[] | null | undefined, 
-                preferredProvider = safeProviders.GROQ,
-                expectJson: boolean = false,
-                context: 'group-chat' | 'one-on-one' = 'one-on-one' // <<< ADD IT HERE with a default
-            ): Promise<string | null | object> => {
-                const currentDeps = getDeps();
-                const subService = currentDeps.aiTextGenerationService;
-                if (!subService?.generateTextMessage) {
-                    console.error("AI Facade (TS): aiTextGenerationService.generateTextMessage unavailable.");
-                    return getRandomHumanError();
-                }
-                try {
-                    return await subService.generateTextMessage(promptOrText, connector, history || [], preferredProvider, expectJson);
-                } catch (e: any) { 
-                    console.error("AI Facade (TS): generateTextMessage failed:", e.message);
-                    return getRandomHumanError();
-                }
-            },
+          // Replace with this in ai_service.ts
+          generateTextMessage: async (
+            promptOrText: string, 
+            connector: Connector, 
+            history: GeminiChatItem[] | null | undefined, 
+            preferredProvider = safeProviders.GROQ,
+            expectJson: boolean = false,
+            context: 'group-chat' | 'one-on-one' = 'one-on-one',
+            abortSignal?: AbortSignal // <<< ADDED
+        ): Promise<string | null | object> => {
+            const currentDeps = getDeps();
+            const subService = currentDeps.aiTextGenerationService;
+            if (!subService?.generateTextMessage) {
+                console.error("AI Facade (TS): aiTextGenerationService.generateTextMessage unavailable.");
+                return getRandomHumanError();
+            }
+            // Let AbortError bubble up to the caller (text_message_handler)
+            return await subService.generateTextMessage(promptOrText, connector, history || [], preferredProvider, expectJson, context, abortSignal); // <<< PASS IT HERE
+        },
 
             generateTextForCallModal: async (userText, connector, modalCallHistory) => {
                 const currentDeps = getDeps();
@@ -357,7 +356,7 @@ Cleaned and Re-ordered Dialogue:`;
                 }
             },
 
-            generateTextFromImageAndText: async (base64Data, mimeType, connector, history, prompt) => {
+            generateTextFromImageAndText: async (base64Data, mimeType, connector, history, prompt, preferredProvider, abortSignal) => { // <<< ADD abortSignal
                 const functionName = "[AI_Facade][ImageToText]";
                 console.groupCollapsed(`%c🖼️ [Image Carousel] S+ Request Started`, 'color: #4caf50; font-weight: bold; font-size: 14px;');
 
@@ -379,9 +378,9 @@ Cleaned and Re-ordered Dialogue:`;
                         let response: string | null | object = null;
                         
                         if (provider === 'together' && openAiVisionService?.generateTextFromImageAndTextOpenAI) {
-                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together');
+                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together', abortSignal); // <<< PASS IT HERE
                         } else if (provider === 'gemini' && mmService?.generateTextFromImageAndText) {
-                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt);
+                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt, undefined, abortSignal); // <<< PASS IT HERE
                         }
 
                         if (typeof response === 'string' && response.trim() !== "" && !response.includes("An unexpected AI error")) {

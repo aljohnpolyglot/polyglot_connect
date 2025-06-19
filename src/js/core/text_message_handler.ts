@@ -15,6 +15,42 @@ import type {
 } from '../types/global.d.ts';
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
+// =================== START: NEW CANCELLATION LOGIC ===================
+
+// Map to track ongoing AI generation calls for each conversation.
+// Key: targetId (string), Value: AbortController
+const activeAiOperations = new Map<string, AbortController>();
+const activeTypingIndicators = new Map<string, HTMLElement>();
+/**
+ * Interrupts any ongoing AI operation for a specific conversation and prepares a new AbortController.
+ * This is the core of the responsive cancellation feature.
+ * @param {string} targetId The ID of the conversation (e.g., a connector's ID).
+ * @returns {AbortController} A new AbortController for the upcoming operation.
+ */
+function interruptAndTrackAiOperation(targetId: string): AbortController {
+    // 1. Check if there's an existing operation for this chat and cancel it.
+    if (activeAiOperations.has(targetId)) {
+        console.log(`%c[Interrupt] User sent new message. Cancelling previous AI request for conversation ${targetId}.`, 'color: #ff6347; font-weight: bold;');
+        const existingController = activeAiOperations.get(targetId);
+        existingController?.abort(); // Send the abort signal
+        activeAiOperations.delete(targetId); // Clean up immediately
+    }
+
+    // 2. Create a new controller for the new operation.
+    const newController = new AbortController();
+
+    // 3. Track the new controller.
+    activeAiOperations.set(targetId, newController);
+
+    // 4. Return the new controller so its signal can be used by the AI call.
+    return newController;
+}
+
+
+
+
+
+
 
 export interface TextMessageHandlerModule {
     sendEmbeddedTextMessage: (
@@ -235,6 +271,34 @@ function intelligentlySeparateText(
 
 // ===================  END: REPLACE WITH THIS LANGUAGE-AWARE FUNCTION  ===================
 // ===================  END: ADD THIS ENTIRE NEW HELPER FUNCTION  ===================
+function showTypingIndicatorFor(targetId: string, context: 'embedded' | 'modal') {
+    const { activityManager, conversationManager } = getSafeDeps("showTypingIndicatorFor")!;
+    if (!activityManager || !conversationManager) return;
+
+    // First, clear any existing indicator for this chat to prevent duplicates.
+    clearTypingIndicatorFor(targetId);
+
+    const connector = conversationManager.getConversationById(targetId)?.connector;
+    if (!connector) return;
+
+    const chatTypeForManager = context === 'modal' ? 'modal_message' : 'embedded';
+    const indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
+
+    if (indicatorElement) {
+        activeTypingIndicators.set(targetId, indicatorElement);
+    }
+}
+
+function clearTypingIndicatorFor(targetId: string) {
+    if (activeTypingIndicators.has(targetId)) {
+        const indicatorElement = activeTypingIndicators.get(targetId);
+        indicatorElement?.remove();
+        activeTypingIndicators.delete(targetId);
+    }
+}
+
+
+
 
 
 
@@ -247,84 +311,53 @@ function intelligentlySeparateText(
  * @param connector The full Connector object for the AI persona.
  * @param context 'embedded' or 'modal' to direct the UI updates.
  */
+// Replace with this new, simplified version
+// REPLACE WITH THIS BLOCK
 
+/**
+ * Renders a sequence of AI messages with realistic, paced delays and typing
+ * indicators for each individual message bubble in a 1v1 chat.
+ * @param lines The array of message strings from the AI.
+ * @param targetId The ID of the connector receiving the messages.
+ * @param connector The full Connector object for the AI persona.
+ * @param context 'embedded' or 'modal' to direct the UI updates.
+ */
 async function playAiResponseScene(
     lines: string[],
     targetId: string,
     connector: Connector,
     context: 'embedded' | 'modal'
 ): Promise<void> {
-    const { uiUpdater, conversationManager, activityManager } = getSafeDeps("playAiResponseScene")!;
+    const { uiUpdater, conversationManager } = getSafeDeps("playAiResponseScene")!;
     const appendToLog = context === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal;
-    const chatTypeForManager = context === 'modal' ? 'modal_message' : 'embedded';
 
-    console.log(`%c[1v1 ScenePlayer] BATCH START for ${connector.profileName}. Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
-    
     for (const [index, line] of lines.entries()) {
         let text = line.trim();
         if (!text) continue;
 
+        // 1. Show the typing indicator. The helper handles clearing any previous one.
+        showTypingIndicatorFor(targetId, context);
+
+        // 2. Calculate a realistic typing delay for the current line.
+        const words = text.split(/\s+/).length;
+        // Use a base delay plus a per-word delay to feel natural.
+        // Min 1.2s, max ~5s to keep it from being too long or too short.
+        const typingDurationMs = Math.max(1200, Math.min(800 + (words * 150) + (Math.random() * 500), 5000));
+        
+        console.log(`%c[ScenePlayer] Line ${index + 1} for ${connector.profileName}. Words: ${words}. Typing: ${(typingDurationMs / 1000).toFixed(1)}s`, 'color: #8a2be2;');
+
+        // 3. Wait for the typing to "finish".
+        await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+
+        // 4. Clear the typing indicator right before showing the message.
+        clearTypingIndicatorFor(targetId);
+
+        // 5. Clean up text for naturalism (e.g., remove trailing period on short replies).
         if (text.length < 12 && text.endsWith('.') && !text.endsWith('..')) {
             text = text.slice(0, -1);
         }
 
-        const wordCount = text.split(/\s+/).length;
-        const isFirstMessageOfBatch = index === 0;
-        const CHANCE_TO_DISAPPEAR = 0.20;
-        
-        let thinkingPauseMs: number;
-        let typingDurationMs: number;
-        let disappearDurationMs = 0;
-
-        const calculateTypingDuration = (wc: number) => Math.max(900, Math.min(600 + (wc * 650) + (Math.random() * 600), 22000));
-
-        if (isFirstMessageOfBatch) {
-            // The "thinking" was done during the AI call. This is just a brief pause before typing.
-            thinkingPauseMs = 200 + Math.random() * 300; // 0.2s to 0.5s
-        } else {
-            // The longer, human pause between consecutive bubbles remains.
-            thinkingPauseMs = 1200 + Math.random() * 1100;
-        }
-        typingDurationMs = calculateTypingDuration(wordCount) * (isFirstMessageOfBatch ? 1.0 : 0.8);
-        
-        if (wordCount > 4 && Math.random() < CHANCE_TO_DISAPPEAR) {
-            disappearDurationMs = 900 + Math.random() * 1200;
-        }
-
-        console.log(
-            `%c[1v1 ScenePlayer] Msg ${index + 1}/${lines.length} | Words: ${wordCount} | Thinking: ${(thinkingPauseMs / 1000).toFixed(1)}s, Disappear: ${(disappearDurationMs / 1000).toFixed(1)}s, Typing: ${(typingDurationMs / 1000).toFixed(1)}s | Text: "${text.substring(0, 40)}..."`,
-            'color: #007bff;'
-        );
-
-        await new Promise(resolve => setTimeout(resolve, thinkingPauseMs));
-        
-        let indicatorElement: HTMLElement | null = null;
-
-        if (disappearDurationMs > 0) {
-            const typingBurst = typingDurationMs * (0.3 + Math.random() * 0.3);
-            indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
-            await new Promise(resolve => setTimeout(resolve, typingBurst));
-            
-            // Now we use the simpler clear function
-            activityManager.clearAiTypingIndicator(connector.id, chatTypeForManager, indicatorElement);
-            await new Promise(resolve => setTimeout(resolve, disappearDurationMs));
-
-            indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
-            await new Promise(resolve => setTimeout(resolve, typingDurationMs - typingBurst));
-        } else {
-            indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
-            await new Promise(resolve => setTimeout(resolve, typingDurationMs));
-        }
-
-        activityManager.clearAiTypingIndicator(connector.id, chatTypeForManager, indicatorElement);
-        
-        // ======================= NEW DEBUGGING LOGS =======================
-        console.log(`%c[ScenePlayer DEBUG] About to append message. Is 'appendToLog' a function? ${typeof appendToLog === 'function'}`, 'color: #ffc107; font-weight: bold;');
-        if (typeof appendToLog !== 'function') {
-            console.error("[ScenePlayer CRITICAL] 'appendToLog' is NOT a function. This is why the message is not rendering. Check uiUpdater dependency.", { uiUpdater: window.uiUpdater });
-        }
-        // ======================= END DEBUGGING LOGS =======================
-
+        // 6. Append the actual message bubble to the UI and save to history.
         appendToLog?.(text, 'connector', {
             avatarUrl: connector.avatarModern,
             senderName: connector.profileName,
@@ -332,12 +365,15 @@ async function playAiResponseScene(
             connectorId: connector.id
         });
         await conversationManager.addModelResponseMessage(targetId, text);
+
+        // 7. Add a short "reading" pause before the next loop, if there are more messages.
+        // This prevents the next typing indicator from appearing instantly.
+        if (index < lines.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
+        }
     }
-    console.log(`%c[1v1 ScenePlayer] BATCH FINISHED for ${connector.profileName}.`, 'color: #8a2be2; font-weight: bold;');
+    console.log(`%c[ScenePlayer] SCENE FINISHED for ${connector.profileName}.`, 'color: #8a2be2; font-weight: bold;');
 }
-
-
-
 
 
 
@@ -393,6 +429,7 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
             } = {}
         ): Promise<void> {
             const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend, messageId: optionsMessageId, timestamp: optionsTimestamp } = options;
+            if (currentEmbeddedChatTargetId) clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
             const functionName = "sendEmbeddedTextMessage";
             const text = textFromInput?.trim() || "";
 
@@ -532,8 +569,8 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 uiUpdater.toggleEmbeddedSendButton?.(false); // Disable send button while AI thinks
             }
             let aiRespondedSuccessfully = false; // <<< ADD THIS LINE// --- NEW: Show an immediate "thinking" indicator while we wait for the AI ---
+            const controller = interruptAndTrackAiOperation(currentEmbeddedChatTargetId);
             try {
-             
           
                 let promptForAI: string;
                 let aiResponseObject: string | null | object; // Declare response object here
@@ -547,9 +584,25 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     } else {
                       promptForAI += ` They did not provide any accompanying text.`;
                     }
-                    promptForAI += ` Your response MUST have two distinct parts:\n             Part 1: Your Conversational Comment (as ${currentConnector.profileName}):\n- Start with a natural and engaging observation or question about THE CURRENT IMAGE.\n- If the user provided text/caption ("${userProvidedTextWithImage || 'none'}"), acknowledge it naturally.\n- Your comment should be suitable for a 1-on-1 chat in ${currentConnector.language}.\n- This conversational part comes FIRST.\nSpeak ONLY in ${currentConnector.language}.\n                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:\n                    [IMAGE_DESCRIPTION_START]\n                A concise, factual, and objective description of the visual content of the image itself. If previous images were discussed, IGNORE THEM for this factual description. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.\n                    [IMAGE_DESCRIPTION_END]\n                    Example: "That's a cool picture! What were you doing there? [IMAGE_DESCRIPTION_START]A photo of a person standing on a mountain peak with a blue sky in the background.[IMAGE_DESCRIPTION_END]"\n                    Speak ONLY in ${currentConnector.language}. Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-                    // (The long prompt string above is taken directly from your file for the image case)
+                    promptForAI += ` Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
 
+                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - AVOID generic phrases like "That's a cool picture."
+                    - INSTEAD, try one of these persona-driven approaches:
+                      - Make a creative observation that reflects your personality (e.g., a 'passionate' person might say "The energy in this photo is incredible!").
+                      - Ask a question driven by your curiosity and interests.
+                      - Share a brief, relevant memory or thought from your own life experiences.
+                    - If the user wrote a caption ("${userProvidedTextWithImage || 'none'}"), weave it into your comment naturally.
+                    
+                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+                    [IMAGE_DESCRIPTION_START]
+                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+                    [IMAGE_DESCRIPTION_END]
+                    
+                    Example: "This has such a great vibe, reminds me of a little cafe I love. [IMAGE_DESCRIPTION_START]A photo of a person sitting at an outdoor cafe with a cup of coffee.[IMAGE_DESCRIPTION_END]"
+                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
                     if (imagePartsForGemini && imagePartsForGemini[0]?.inlineData?.data) {
                         console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply.`);
                         aiResponseObject = await (aiService.generateTextFromImageAndText as any)(
@@ -558,7 +611,8 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                             currentConnector,
                             getHistoryForAiCall(undefined, true),    // EMPTY HISTORY for image reply
                             promptForAI,
-                            aiApiConstants.PROVIDERS.TOGETHER 
+                            aiApiConstants.PROVIDERS.TOGETHER,
+                            controller.signal // <<< ADD THIS
                         );
                     } else {
                         console.error(`TMH.${functionName}: imageFile present but imagePartsForGemini data missing.`);
@@ -590,7 +644,9 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                         currentConnector,
                         historyForAiCall, // Use the (potentially modified) history
                         aiApiConstants.PROVIDERS.GROQ,
-                        false
+                        false,
+                        'one-on-one',
+                        controller.signal // <<< ADD THIS
                     );
                 }
 
@@ -611,85 +667,93 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
 } else { // This is where the successful AI response is handled
                     
     // --- IMAGE RESPONSE PATH FOR MODAL ---
-    if (imageFile && typeof aiResponseText === 'string') {
-        let conversationalReply = aiResponseText;
-        let extractedImageDescription: string | undefined = undefined;
-        const descStartTag = "[IMAGE_DESCRIPTION_START]";
-        const descEndTag = "[IMAGE_DESCRIPTION_END]";
-        const startIndex = aiResponseText.indexOf(descStartTag);
-        const endIndex = aiResponseText.indexOf(descEndTag);
-        
-        if (startIndex !== -1 && endIndex > startIndex) {
-            extractedImageDescription = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
-            conversationalReply = aiResponseText.substring(0, startIndex).trim();
-        }
+  // REPLACE WITH THIS BLOCK
+// REPLACE WITH THIS BLOCK
 
-        // 1. Append the AI's chat message to the UI
-        uiUpdater.appendToMessageLogModal?.(conversationalReply, 'connector', {
-            avatarUrl: currentConnector.avatarModern, 
-            senderName: currentConnector.profileName, 
-            timestamp: Date.now() 
-        });
-        // 2. Add the AI's message to the conversation history store
-        await conversationManager.addModelResponseMessage(currentConnector.id, conversationalReply);
+// --- IMAGE RESPONSE PATH FOR EMBEDDED CHAT ---
+if (imageFile && typeof aiResponseText === 'string') {
+    let conversationalReply = aiResponseText;
+    let extractedImageDescription: string | undefined = undefined;
+    const descStartTag = "[IMAGE_DESCRIPTION_START]";
+    const descEndTag = "[IMAGE_DESCRIPTION_END]";
+    const startIndex = aiResponseText.indexOf(descStartTag);
+    const endIndex = aiResponseText.indexOf(descEndTag);
+    
+    if (startIndex !== -1 && endIndex > startIndex) {
+        extractedImageDescription = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
+        conversationalReply = aiResponseText.substring(0, startIndex).trim();
+    }
 
-        // 3. Update the *original user message* with the new AI-generated image description
-        if (extractedImageDescription && userMessageId) {
-            const convoRecordForUpdate = conversationManager.getConversationById(currentConnector.id);
-            if (convoRecordForUpdate?.messages) {
-                // Add the correct type for 'm' to satisfy TypeScript
-                const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
-                if (msgIndex !== -1) {
-                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription;
-                    window.convoStore?.updateConversationProperty(currentConnector.id, 'messages', [...convoRecordForUpdate.messages]);
-                    window.convoStore?.saveAllConversationsToStorage();
-                }
+    // Manually find and update the message in the store
+    if (extractedImageDescription && userMessageId) {
+        const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId);
+        if (convoRecordForUpdate?.messages) {
+            const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
+            if (msgIndex !== -1) {
+                // Update the property on the message object
+                convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription;
+                // Save the entire updated messages array back to the store
+                window.convoStore?.updateConversationProperty(currentEmbeddedChatTargetId, 'messages', [...convoRecordForUpdate.messages]);
+                window.convoStore?.saveAllConversationsToStorage();
             }
         }
+    }
+    
+    // THIS IS THE ANSWER TO YOUR QUESTION:
+    // The AI's chat comment ('conversationalReply') is now treated just like a regular text message.
+    // 1. It gets processed for multiple bubbles.
+    const processedText = intelligentlySeparateText(conversationalReply, currentConnector, { probability: 1.0 });
+    const responseLines = processedText.split('\n').filter(line => line.trim());
+    
+    // 2. It's sent to the scene player, which handles typing indicators and delays.
+    await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
 
-    // --- TEXT-ONLY RESPONSE PATH FOR MODAL ---
-// Inside sendModalTextMessage(...)
-
-// ... after image handling `if` block
+// --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED CHAT ---
 } else if (aiResponseText) {
-    // --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED ---
     console.log(`[Auto-Separator] Raw AI Text (Embedded): "${aiResponseText}"`);
     const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
     console.log(`[Auto-Separator] Processed Text (Embedded): "${processedText.replace(/\n/g, '\\n')}"`);
     
     const responseLines = processedText.split('\n').filter(line => line.trim());
-
-    // CORRECT: Use the currentEmbeddedChatTargetId variable and 'embedded' context
     await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
-    aiRespondedSuccessfully = true; // <<< ADD THIS LINE
 }
+aiRespondedSuccessfully = true;
 }
 // ...
-} catch (e: any) {
-    // The line "if (thinkingMsg?.remove)..." has been deleted.
-    const displayError = polyglotHelpers.sanitizeTextForDisplay(e.message) || "An unexpected error occurred.";
-    if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(displayError, 'connector-error', { /* ... */ });
-}finally {
-               
-              
-               
-               
-                if (domElements.embeddedMessageSendBtn) {
-                    domElements.embeddedMessageSendBtn.disabled = false;
-                }
 
-                if (aiRespondedSuccessfully) {
-                    const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
-                    if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && currentEmbeddedChatTargetId) {
-                        try {
-                            await window.memoryService.markInteraction(currentEmbeddedChatTargetId, currentUserId);
-                        } catch (e) {
-                            console.error(`TMH.${functionName}: Error marking interaction for ${currentEmbeddedChatTargetId}:`, e);
-                        }
-                    }
-                }
-                getChatOrchestrator()?.notifyNewActivityInConversation?.(currentEmbeddedChatTargetId);
+} catch (e: any) {
+    clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
+    if (e.name === 'AbortError') {
+        // This is not a real error. It's the expected result of our cancellation.
+        console.log(`%c[Interrupt] AI request for ${currentEmbeddedChatTargetId} was successfully aborted by a new message.`, 'color: #ff9800;');
+    } else {
+        // This is a real, unexpected error.
+        console.error(`TMH.${functionName}: Error during AI response generation:`, e);
+        const displayError = polyglotHelpers.sanitizeTextForDisplay(e.message) || "An unexpected error occurred.";
+        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(displayError, 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
+    }
+} finally {
+    // Clean up the controller from the map if it's the one we created for this operation.
+    if (activeAiOperations.get(currentEmbeddedChatTargetId) === controller) {
+        activeAiOperations.delete(currentEmbeddedChatTargetId);
+    }
+
+    // The rest of your existing finally block
+    if (domElements.embeddedMessageSendBtn) {
+        domElements.embeddedMessageSendBtn.disabled = false;
+    }
+    if (aiRespondedSuccessfully) {
+        const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
+        if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && currentEmbeddedChatTargetId) {
+            try {
+                await window.memoryService.markInteraction(currentEmbeddedChatTargetId, currentUserId);
+            } catch (e) {
+                console.error(`TMH.${functionName}: Error marking interaction for ${currentEmbeddedChatTargetId}:`, e);
             }
+        }
+    }
+    getChatOrchestrator()?.notifyNewActivityInConversation?.(currentEmbeddedChatTargetId);
+}
         } // End of sendEmbeddedTextMessage
 
         async function handleEmbeddedImageUpload(event: Event, currentEmbeddedChatTargetId: string | null): Promise<void> {
@@ -872,6 +936,8 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
             } = {}
         ): Promise<void> {
             const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend } = options;
+            if (currentModalMessageTargetConnector?.id) clearTypingIndicatorFor(currentModalMessageTargetConnector.id); // <<< ADD THIS LINE
+        
             const functionName = "sendModalTextMessage";
             const text = textFromInput?.trim() || ""; // Ensure text is always a string
     
@@ -1019,6 +1085,7 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
             const thinkingMsg = uiUpdater.appendToMessageLogModal?.(`${thinkingMsgOptions.senderName || 'Partner'} is typing...`, 'connector-thinking', thinkingMsgOptions);
     
             let aiRespondedSuccessfully = false;
+            const controller = interruptAndTrackAiOperation(targetId);
             try {
                 // Determine prompt for AI, considering potential image context
                 let promptForAI_modal: string;
@@ -1033,9 +1100,25 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                     } else {
                         promptForAI_modal += ` They did not provide any accompanying text.`;
                     }
-                    promptForAI_modal += ` Your response MUST have two distinct parts:\n    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):\n- Start with a natural and engaging observation or question about THE CURRENT IMAGE.\n- If the user provided text/caption ("${userProvidedTextWithImage_modal || 'none'}"), acknowledge it naturally.\n- Your comment should be suitable for a 1-on-1 chat in ${currentConnector.language}.\n- This conversational part comes FIRST.\nSpeak ONLY in ${currentConnector.language}.\n        Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:\n        [IMAGE_DESCRIPTION_START]\n           A concise, factual, and objective description of the visual content of the image itself.Describe only what you visually see in THIS SPECIFIC IMAGE. If previous images were discussed, IGNORE THEM for this factual description. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.\n        [IMAGE_DESCRIPTION_END]\n        Example: "That's a cool picture! What were you doing there? [IMAGE_DESCRIPTION_START]A photo of a person standing on a mountain peak with a blue sky in the background.[IMAGE_DESCRIPTION_END]"\n        Speak ONLY in ${currentConnector.language}. Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-                    // (The long prompt string above is taken directly from your file for the image case)
+                    promptForAI_modal += ` Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
 
+                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - AVOID generic phrases like "That's a cool picture."
+                    - INSTEAD, try one of these persona-driven approaches:
+                      - Make a creative observation that reflects your personality (e.g., a 'passionate' person might say "The energy in this photo is incredible!").
+                      - Ask a question driven by your curiosity and interests.
+                      - Share a brief, relevant memory or thought from your own life experiences.
+                    - If the user wrote a caption ("${userProvidedTextWithImage_modal || 'none'}"), weave it into your comment naturally.
+                    
+                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+                    [IMAGE_DESCRIPTION_START]
+                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+                    [IMAGE_DESCRIPTION_END]
+                    
+                    Example: "This has such a great vibe, reminds me of a little cafe I love. [IMAGE_DESCRIPTION_START]A photo of a person sitting at an outdoor cafe with a cup of coffee.[IMAGE_DESCRIPTION_END]"
+                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
                     if (imagePartsForGemini_modal && imagePartsForGemini_modal[0]?.inlineData?.data) {
                         console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply (modal).`);
                         aiResponse = await (aiService.generateTextFromImageAndText as any)(
@@ -1044,7 +1127,8 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                             currentConnector,
                             getHistoryForAiCall(undefined, true),    // EMPTY HISTORY for image reply
                             promptForAI_modal,
-                            aiApiConstants.PROVIDERS.TOGETHER
+                            aiApiConstants.PROVIDERS.TOGETHER,
+                            controller.signal // <<< ADD THIS
                         );
                     } else {
                         console.error(`TMH.${functionName}: imageFile present but imagePartsForGemini_modal data missing.`);
@@ -1076,7 +1160,9 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                         currentConnector,
                         historyForAiCall, // Use the (potentially modified) history
                         aiApiConstants.PROVIDERS.GROQ,
-                        false
+                        false,
+                        'one-on-one',
+                        controller.signal // <<< ADD THIS
                     );
                 }
                 const aiResponseText = typeof aiResponse === 'string' ? aiResponse : null;
@@ -1142,13 +1228,24 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                     aiRespondedSuccessfully = true;
                 }
             } catch (e: any) {
-                if (thinkingMsg?.remove) thinkingMsg.remove();
-                uiUpdater.appendToMessageLogModal?.(`Error: ${polyglotHelpers.sanitizeTextForDisplay(e.message)}`, 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
+                clearTypingIndicatorFor(targetId); // <<< ADD THIS LINE
+                if (e.name === 'AbortError') {
+                    console.log(`%c[Interrupt] AI request for modal chat ${targetId} was successfully aborted.`, 'color: #ff9800;');
+                } else {
+                    console.error(`TMH.${functionName}: Error during AI response generation (modal):`, e);
+                    uiUpdater.appendToMessageLogModal?.(`Error: ${polyglotHelpers.sanitizeTextForDisplay(e.message)}`, 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
+                }
+                if (thinkingMsg?.remove) thinkingMsg.remove(); // Remove thinking message in both cases
             } finally {
+                // Clean up the controller from the map
+                if (activeAiOperations.get(targetId) === controller) {
+                    activeAiOperations.delete(targetId);
+                }
+
+                // The rest of your existing finally block
                 if (!skipUiAppend) {
                     if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
                 }
-    
                 if (aiRespondedSuccessfully) {
                     const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
                     if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && targetId) {
@@ -1210,22 +1307,34 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
 
                 try {
                     // Re-using the detailed prompt from handleEmbeddedImageUpload for consistency and better descriptions
-                    const promptForImageAndDescription = // <<< CORRECTED: Was += in your snippet
-                    `The user has just sent an image. Your response MUST have two distinct parts:
-                    Part 1: A natural, conversational comment or question about the image, suitable for a 1-on-1 chat in ${currentConnector.language}. If the user provided text, acknowledge or incorporate it naturally into your comment. This part comes FIRST.
-                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
-                    [IMAGE_DESCRIPTION_START]
-                       A concise, factual, and objective description of the visual content of the image itself.Describe only what you visually see in THIS SPECIFIC IMAGE. If previous images were discussed, IGNORE THEM for this factual description. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
-                    [IMAGE_DESCRIPTION_END]
-                    Example: "That's a cool picture! What were you doing there? [IMAGE_DESCRIPTION_START]A photo of a person standing on a mountain peak with a blue sky in the background.[IMAGE_DESCRIPTION_END]"
-                    Speak ONLY in ${currentConnector.language}. Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
+                  // REPLACE WITH THIS BLOCK
+
+const PromptForImageAndDescription =
+`The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+
+Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+- React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+- Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+- AVOID generic phrases like "What's this?" or "Nice photo."
+- Your goal is to start a conversation. Try one of these persona-driven approaches:
+- Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
+- Ask an open-ended question driven by your curiosity and interests.
+- Share a brief, relevant memory or thought from your own life experiences that the image sparks.
+
+Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+[IMAGE_DESCRIPTION_START]
+A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+[IMAGE_DESCRIPTION_END]
+
+Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
+Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
                     const relevantHistoryForAi = getHistoryForAiCall(undefined, true); // <<< CORRECTED
                     const aiResponse = await (aiService.generateTextFromImageAndText as any)(
                         base64DataForApi, 
                         file.type, 
                         currentConnector, 
                         relevantHistoryForAi, 
-                        promptForImageAndDescription, 
+                        PromptForImageAndDescription, 
                         aiApiConstants.PROVIDERS.TOGETHER
                     );
                     if (thinkingMsg?.remove) thinkingMsg.remove();

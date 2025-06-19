@@ -15,13 +15,14 @@ window.domElements = {
     rightSidebar: document.getElementById('right-sidebar') as HTMLElement | null,
     rightSidebarPanels: document.querySelectorAll('#right-sidebar .sidebar-panel') as NodeListOf<HTMLElement>,
     themeToggleButton: document.getElementById('toggle-theme-btn') as HTMLButtonElement | null,
-
+    universalJumpButtons: document.getElementById('universal-jump-buttons') as HTMLElement | null,
     // Home View
     homepageTipsList: document.getElementById('homepage-tips-list') as HTMLUListElement | null,
 
     // Find Someone View
     friendsView: document.getElementById('friends-view') as HTMLElement | null,
     connectorHubGrid: document.getElementById('connector-hub') as HTMLElement | null,
+    friendsEmptyPlaceholder: document.getElementById('friends-empty-placeholder') as HTMLElement | null,
     friendsFiltersPanel: document.getElementById('friendsFiltersPanel') as HTMLElement | null, // Match HTML id // HTML ID is find-filters
     filterLanguageSelect: document.getElementById('filter-language') as HTMLSelectElement | null,
     filterRoleSelect: document.getElementById('filter-role') as HTMLSelectElement | null,
@@ -31,6 +32,7 @@ window.domElements = {
   groupsView: document.getElementById('groups-view') as HTMLElement | null,
   groupListContainer: document.getElementById('group-list-container') as HTMLElement | null,
   availableGroupsUl: document.getElementById('available-groups-ul') as HTMLUListElement | null,
+  groupsEmptyPlaceholder: document.getElementById('groups-empty-placeholder') as HTMLElement | null,
   groupLoadingMessage: document.getElementById('group-loading-message') as HTMLElement | null,
   groupChatInterfaceDiv: document.getElementById('group-chat-interface') as HTMLElement | null,
   activeGroupNameHeader: document.getElementById('active-group-name') as HTMLElement | null,

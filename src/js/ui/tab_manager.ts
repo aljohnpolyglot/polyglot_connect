@@ -83,45 +83,34 @@ function initializeActualTabManager(): void {
             }
         }
 
-        function switchToTab(targetTab: string, isInitialLoad: boolean = false): void {
-            console.log(`TabManager: Switching to tab '${targetTab}'. Initial load: ${isInitialLoad}`);
-            const previousTab = currentActiveTab;
-            
-            if (previousTab === targetTab && !isInitialLoad) {
-                console.log("TabManager: Already on the target tab. No switch needed.");
-                return;
-            }
+              // ----- REPLACE THIS ENTIRE FUNCTION -----
+           // PASTE THIS ENTIRE BLOCK INTO tab_manager.ts
+
+        // ----- REPLACE THIS ENTIRE FUNCTION -----
+               // ----- REPLACE THIS ENTIRE FUNCTION -----
+               function switchToTab(targetTab: string, isInitialLoad: boolean = false): void {
+                console.log(`TabManager: Switching to tab '${targetTab}'. Initial load: ${isInitialLoad}`);
+                const previousTab = currentActiveTab;
+                
+                // This prevents the event from firing if the tab was already active.
+                if (!isInitialLoad && previousTab === targetTab) {
+                    console.log(`TabManager: Already on tab '${targetTab}'. No switch needed.`);
+                    return;
+                }
     
-            currentActiveTab = targetTab;
-            polyglotHelpers.saveToLocalStorage(LAST_ACTIVE_TAB_KEY, currentActiveTab);
-    
-            // --- THIS IS THE FIX ---
-            // Let ShellController handle all view and panel switching logic.
-            // It's the central authority for what is visible.
-            const shellController = window.shellController as import('../types/global').ShellController | undefined;
-            if (shellController && typeof shellController.switchView === 'function') {
-                shellController.switchView(targetTab);
-            } else {
-                // Fallback to old method if shellController isn't ready
-                // This maintains basic functionality during startup race conditions.
-                console.warn("TabManager: shellController not ready, falling back to direct UI update.");
-                domElements.mainNavItems.forEach(i => i.classList.toggle('active', i.dataset.tab === targetTab));
-                domElements.mainViews.forEach(view => {
-                    view.classList.toggle('active-view', view.id === `${targetTab}-view`);
-                });
-            }
-    
-            // The event dispatch is still useful for any other modules that might care about tab changes.
-            document.dispatchEvent(new CustomEvent('tabSwitched', { 
-                detail: { 
-                    newTab: targetTab, 
-                    previousTab: previousTab,
-                    isInitialLoad: isInitialLoad 
-                } 
-            }));
-            console.log(`TabManager: Dispatched 'tabSwitched' event for tab: ${targetTab}`);
-        }
+                currentActiveTab = targetTab;
+                polyglotHelpers.saveToLocalStorage(LAST_ACTIVE_TAB_KEY, currentActiveTab);
         
+                // Dispatch the event. This is the signal that other modules listen for.
+                document.dispatchEvent(new CustomEvent('tabSwitched', { 
+                    detail: { 
+                        newTab: targetTab, 
+                        previousTab: previousTab,
+                        isInitialLoad: isInitialLoad 
+                    } 
+                }));
+                console.log(`TabManager: Dispatched 'tabSwitched' event for tab: ${targetTab}`);
+            }
         function initialize(initialTabOverride?: string): void {
             console.log("TabManager: initialize() called.");
             const savedTab = polyglotHelpers.loadFromLocalStorage(LAST_ACTIVE_TAB_KEY) as string | null;
@@ -129,13 +118,12 @@ function initializeActualTabManager(): void {
             
             setupNavigationEventListeners();
             
-            console.log(`TabManager: Initial active tab set to '${currentActiveTab}'. Performing initial UI update.`);
-            domElements.mainNavItems.forEach(i => i.classList.toggle('active', i.dataset.tab === currentActiveTab));
-            domElements.mainViews.forEach(view => {
-                view.classList.toggle('active-view', view.id === `${currentActiveTab}-view`);
-            });
+            console.log(`TabManager: Initial active tab set to '${currentActiveTab}'.`);
+
+            // The old UI update logic was removed from here. The ShellController
+            // will handle the initial UI setup when it receives the 'tabSwitched' event below.
             
-            document.dispatchEvent(new CustomEvent('tabSwitched', { 
+            document.dispatchEvent(new CustomEvent('tabSwitched', {
                 detail: { 
                     newTab: currentActiveTab, 
                     previousTab: null, 
@@ -156,6 +144,12 @@ function initializeActualTabManager(): void {
 
     if (window.tabManager && typeof window.tabManager.initialize === 'function') {
         console.log("tab_manager.ts: SUCCESSFULLY assigned and populated window.tabManager.");
+        
+        // ======================================================================
+        // ==  THE QUICK FIX: Call initialize() immediately after creation.    ==
+        // ======================================================================
+        window.tabManager.initialize();
+
     } else {
         console.error("tab_manager.ts: CRITICAL ERROR - window.tabManager population FAILED.");
     }

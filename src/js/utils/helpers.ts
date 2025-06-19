@@ -41,7 +41,7 @@ const helpersModuleInstance: HelpersModuleInterface = (() => {
             reader.onerror = error => reject(error);
         });
     };           
-    const isConnectorCurrentlyActive = (connector: Connector | null | undefined): boolean => {
+    const isConnectorCurrentlyActive = (connector: Partial<Connector> | null | undefined): boolean => {
         if (!connector?.sleepSchedule?.wake || !connector.sleepSchedule.sleep) {
             return true;
         }
@@ -328,7 +328,49 @@ const formatReadableList = (items?: string[], conjunction: string = "and", defau
       if (!countries || countries.length === 0) return "places you know from your background";
       return `experiences from places you've visited like '${countries.slice(0, 2).map(c => c.country).join("', '")}' (mention a relevant detail if it fits the conversation)`;
   };
+ // ----- START OF PASTE -----
+ const getPersonaLocalTimeDetails = (timezone: string): { 
+    localTime: string; 
+    localDate: string; 
+    dayOfWeek: string; 
+    timeOfDay: 'morning' | 'afternoon' | 'evening' | 'late night' | 'early morning';
+  } => {
+      try {
+          const now = new Date();
+          const options: Intl.DateTimeFormatOptions = { timeZone: timezone };
 
+          const localTime = now.toLocaleTimeString('en-GB', { ...options, hour: '2-digit', minute: '2-digit', hour12: false });
+          const localDate = now.toLocaleDateString('en-CA', { ...options }); // YYYY-MM-DD format
+          const dayOfWeek = now.toLocaleDateString('en-US', { ...options, weekday: 'long' });
+
+          const hour = parseInt(now.toLocaleTimeString('en-GB', { ...options, hour: '2-digit', hour12: false }).split(':')[0], 10);
+          
+          let timeOfDay: 'morning' | 'afternoon' | 'evening' | 'late night' | 'early morning';
+          if (hour >= 5 && hour < 12) {
+              timeOfDay = 'morning';
+          } else if (hour >= 12 && hour < 17) {
+              timeOfDay = 'afternoon';
+          } else if (hour >= 17 && hour < 22) {
+              timeOfDay = 'evening';
+          } else if (hour >= 22 || hour < 1) {
+              timeOfDay = 'late night';
+          } else { // 1 to 4
+              timeOfDay = 'early morning';
+          }
+
+          return { localTime, localDate, dayOfWeek, timeOfDay };
+
+      } catch (error) {
+          console.error(`[getPersonaLocalTimeDetails] Error processing timezone "${timezone}":`, error);
+          // Return a sensible default if the timezone is invalid
+          return { 
+              localTime: '12:00', 
+              localDate: '2024-01-01', 
+              dayOfWeek: 'Monday',
+              timeOfDay: 'afternoon'
+          };
+      }
+  };
 
 // Add this fun
     console.log("js/utils/helpers.ts: IIFE FINISHED, returning exports.");
@@ -352,7 +394,8 @@ const formatReadableList = (items?: string[], conjunction: string = "and", defau
         formatReadableList,
         formatStructuredInterestsForPrompt,
         formatKeyLifeEventsForPrompt,
-        formatCountriesVisitedForPrompt
+        formatCountriesVisitedForPrompt,
+        getPersonaLocalTimeDetails
     };
 })();
 

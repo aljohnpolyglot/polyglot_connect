@@ -1,19 +1,11 @@
 // D:\polyglot_connect\src\js\app.ts
-// Main application entry point and orchestrator.
-// D:\polyglot_connect\src\js\app.ts
 
-// ... rest of your app.ts imports and code ...
-// Import types for objects that will be on the window
-// Path is from src/js/app.ts to src/js/types/global.d.ts
 import type {
     Connector,
     PolyglotApp, // For window.polyglotApp
-    // Import types for all managers that criticalModules checks or app.js uses
-    // These should all be EXPORTED from global.d.ts
     PolyglotHelpersOnWindow as PolyglotHelpers,
     FlagLoader,
     PersonaDataSourceItem, // For window.polyglotPersonasDataSource
-    // Connector is already imported (for polyglotConnectors)
     Group, // For window.polyglotGroupsData
     LanguageFilterItem, RoleFilterItem, Minigame, SharedContent,
     AIService, GeminiLiveApiService, ActivityManager, GroupManager,
@@ -40,19 +32,16 @@ if (!(window as any).polyglotApp) { // Check if it's not already set by another 
         console.log('app.ts: Existing window.polyglotApp seems to be a placeholder, "polyglotAppPlaceholderReady" event dispatched.');
     }
 }
-// --- Core Module Readiness Aggregator ---
-// --- START OF REPLACEMENT for Core Module Readiness Aggregator (APP.3) ---
 const CORE_MODULES_TO_WAIT_FOR: { eventName: string, windowObjectKey: keyof Window, keyFunction?: string }[] = [
     { eventName: 'shellSetupReady', windowObjectKey: 'shellSetup', keyFunction: 'initializeAppCore' },
-    { eventName: 'shellControllerReady', windowObjectKey: 'shellController', keyFunction: 'initializeAppShell' },
+    { eventName: 'jumpButtonManagerReady', windowObjectKey: 'jumpButtonManager', keyFunction: 'initialize' },
     { eventName: 'tabManagerReady', windowObjectKey: 'tabManager', keyFunction: 'initialize' },
     { eventName: 'sidebarPanelManagerReady', windowObjectKey: 'sidebarPanelManager', keyFunction: 'initialize' },
     { eventName: 'viewActionCoordinatorReady', windowObjectKey: 'viewActionCoordinator', keyFunction: 'initialize' },
     { eventName: 'titleNotifierReady', windowObjectKey: 'titleNotifier', keyFunction: 'initialize' },
-    { eventName: 'chatOrchestratorReady', windowObjectKey: 'chatOrchestrator', keyFunction: 'initialize' }, 
+    { eventName: 'chatOrchestratorReady', windowObjectKey: 'chatOrchestrator', keyFunction: 'initialize' },
     { eventName: 'groupManagerReady', windowObjectKey: 'groupManager', keyFunction: 'initialize' },
     { eventName: 'sessionManagerReady', windowObjectKey: 'sessionManager', keyFunction: 'initialize' },
-    // { eventName: 'chatEventListenersReady', windowObjectKey: 'chatEventListeners', keyFunction: 'initializeEventListeners' }, // <<< REMOVED
     { eventName: 'filterControllerReady', windowObjectKey: 'filterController', keyFunction: 'initializeFilters' },
 { eventName: 'geminiLiveApiServiceReady', windowObjectKey: 'geminiLiveApiService', keyFunction: 'connect' }
 
@@ -84,7 +73,7 @@ CORE_MODULES_TO_WAIT_FOR.forEach(moduleInfo => {
             isAlreadyReady = typeof moduleObject[moduleInfo.keyFunction] === 'function';
         } else {
             // If no keyFunction, presence of the object is enough for this check
-            isAlreadyReady = true; 
+            isAlreadyReady = true;
         }
     }
 
@@ -94,11 +83,16 @@ CORE_MODULES_TO_WAIT_FOR.forEach(moduleInfo => {
     } else {
         console.log(`APP_CORE_READY_CHECK: Pre-check - Module for '${moduleInfo.eventName}' not yet ready. Adding listener.`);
         document.addEventListener(moduleInfo.eventName, () => markModuleAsReady(moduleInfo.eventName), { once: true });
+     // =================== ADD THIS BLOCK ===================
+     if (moduleInfo.eventName === 'jumpButtonManagerReady') {
+        document.addEventListener('jumpButtonManagerReady', () => {
+            console.log('%c[APP] EVENT HEARD: "jumpButtonManagerReady"!', 'color: white; background: #fd7e14; font-size: 14px; padding: 4px;');
+        }, { once: true });
+    }
+   
+   
     }
 });
-// --- End of Aggregator ---
-// --- End of Aggregator ---
-
 
 console.log("app.ts: TOP LEVEL - Script executing."); // Changed from .js
 console.log("app.ts TOP LEVEL: VITE_TEST_VAR from import.meta.env is:", import.meta.env?.VITE_TEST_VAR);
@@ -122,9 +116,6 @@ console.log("app.ts: window.TOGETHER_API_KEY set to:", window.TOGETHER_API_KEY);
 console.log("app.ts: API keys set on window object.");
 
 if (window.GEMINI_API_KEY) console.log("app.ts: CONFIRMED - window.GEMINI_API_KEY has been set."); else console.warn("app.ts: CONFIRMED - window.GEMINI_API_KEY is UNDEFINED.");
-// ... (other API key confirmation logs)
-
-// D:\polyglot_connect\src\js\app.ts
 
 interface CriticalModuleDef { // Ensure this interface is defined if not already globally
     name: string;
@@ -136,7 +127,7 @@ interface CriticalModuleDef { // Ensure this interface is defined if not already
 function initializeAppLogic(): void {
     console.log('APP_DEBUG: ========== initializeAppLogic - ENTERED ==========');
     console.log('APP_DEBUG: initializeAppLogic - ENTERED. Timestamp:', Date.now());
-    
+
     console.log('app.ts: initializeAppLogic CALLED (after allCoreModulesReady).'); // Changed comment
 
     if (!window.polyglotApp) {
@@ -149,7 +140,6 @@ function initializeAppLogic(): void {
     console.log('app.ts: Starting critical module checks (within initializeAppLogic)...');
     const criticalModules: CriticalModuleDef[] = [
         { name: 'GEMINI_API_KEY', obj: window.GEMINI_API_KEY, isKey: true },
-        // { name: 'GROQ_API_KEY', obj: window.GROQ_API_KEY, isKey: true },
         { name: 'TOGETHER_API_KEY', obj: window.TOGETHER_API_KEY, isKey: true },
 
         { name: 'polyglotHelpers', obj: window.polyglotHelpers as PolyglotHelpers | undefined, keyFn: 'sanitizeTextForDisplay'},
@@ -187,7 +177,6 @@ function initializeAppLogic(): void {
         { name: 'filterController', obj: window.filterController as FilterController | undefined, keyFn: 'initializeFilters' },
         { name: 'personaModalManager', obj: window.personaModalManager as PersonaModalManager | undefined, keyFn: 'openDetailedPersonaModal' },
         { name: 'chatUiManager', obj: window.chatUiManager as ChatUiManager | undefined, keyFn: 'showEmbeddedChatInterface' },
-        // { name: 'chatEventListeners', obj: window.chatEventListeners as ChatEventListeners | undefined /*, keyFn: 'initializeEventListeners' */ },
     ];
 
     let allChecksPassedInternal = true;
@@ -201,8 +190,7 @@ function initializeAppLogic(): void {
                 console.error(errorMsg, "Current value for", mod.name, ":", mod.obj);
                 document.body.innerHTML = `<p>Application Error: API Key (${mod.name}) invalid.</p>`;
                 allChecksPassedInternal = false;
-                // return; // Exit initializeAppLogic - We will check allChecksPassedInternal after the loop
-                break; // Exit the loop as a critical error occurred
+                break;
             }
         } else {
             const isPropertyCheck = mod.keyFn === 'appShell' || mod.keyFn === 'homepageTips';
@@ -211,7 +199,7 @@ function initializeAppLogic(): void {
                                         (isPropertyCheck && typeof currentModuleObject[mod.keyFn] === 'undefined') || // Property missing
                                         (!isPropertyCheck && typeof currentModuleObject[mod.keyFn] !== 'function')   // Function missing
                                     ));
-            
+
             if (isInvalidModule) {
                 const errorMsg = `APP INIT ERROR (initializeAppLogic): Module '${mod.name}' missing/invalid. Halting.`;
                 console.error(errorMsg, `Module (window.${mod.name}) is:`, currentModuleObject);
@@ -222,18 +210,55 @@ function initializeAppLogic(): void {
                 }
                 document.body.innerHTML = `<p>Application Error: Module ${mod.name} invalid. Check console.</p>`;
                 allChecksPassedInternal = false;
-                // return; // Exit initializeAppLogic - We will check allChecksPassedInternal after the loop
-                break; // Exit the loop as a critical error occurred
+                break;
             }
         }
         console.log(`APP_DEBUG: Module '${mod.name}' check PASSED.`);
-    } // End of for...of loop
+    }
 
     if (!allChecksPassedInternal) {
         console.error("APP_DEBUG: initializeAppLogic - Not all critical module checks passed. Exiting before polyglotApp finalization.");
         return; // Exit initializeAppLogic if any check failed
     }
     console.log('APP_DEBUG: initializeAppLogic - Critical module checks PASSED.'); // This line was here before, keeping it.
+   
+    const tabManager = window.tabManager as TabManagerModule | undefined;
+    const jumpButtonManager = window.jumpButtonManager as JumpButtonManagerModule | undefined;
+    const titleNotifier = window.titleNotifier as import('./types/global').TitleNotifierModule | undefined;
+    const shellSetup = window.shellSetup as import('./types/global').ShellSetup | undefined;
+    
+    // --- Initialize Core UI Controllers ---
+    console.log('[APP INIT] Initializing core UI controllers...');
+    
+    if (shellSetup) {
+        shellSetup.initializeAppCore();
+        console.log('[APP INIT] shellSetup.initializeAppCore() called.');
+    } else {
+        console.error('[APP INIT] CRITICAL: shellSetup not found.');
+    }
+    
+    if (tabManager) {
+        tabManager.initialize();
+        console.log('[APP INIT] tabManager.initialize() called.');
+    } else {
+        console.error('[APP INIT] CRITICAL: tabManager not found.');
+    }
+    
+    if (jumpButtonManager && tabManager) {
+        const initialTab = tabManager.getCurrentActiveTab();
+        jumpButtonManager.initialize(initialTab);
+        console.log(`[APP INIT] jumpButtonManager.initialize('${initialTab}') called.`);
+    } else {
+        console.error('[APP INIT] FAILED: Could not initialize Jump Button Manager. Dependencies missing.');
+    }
+    
+    if (titleNotifier) {
+        titleNotifier.initialize();
+        console.log('[APP INIT] titleNotifier.initialize() called.');
+    }
+    
+   
+   
     console.log(`app.ts: All critical module checks complete successfully (within initializeAppLogic).`);
 
     // Assign chatManager alias
@@ -243,22 +268,19 @@ function initializeAppLogic(): void {
         console.log("app.ts (initializeAppLogic): window.chatManager aliased to chatOrchestrator.");
     } else {
         console.error("app.ts (initializeAppLogic): CRITICAL - chatOrchestrator not found! window.chatManager will be undefined.");
-        // This could be a critical failure point depending on how `chatManager` is used later.
     }
-    
-    const titleNotifier = window.titleNotifier as TitleNotifierModule | undefined;
+
+   
     if (titleNotifier) {
         titleNotifier.initialize();
         console.log("app.ts (initializeAppLogic): Title Notifier has been initialized.");
     }
 
-
-
-
     (window.polyglotApp as PolyglotApp).initiateSession = (connector: Connector, sessionTypeWithContext: string): void => {
         console.log(`APP_TS_DEBUG: polyglotApp.initiateSession for connector ID: ${connector?.id}, type: ${sessionTypeWithContext}`);
-        
+
         const tabManager = window.tabManager as TabManagerModule | undefined;
+        const jumpButtonManager = window.jumpButtonManager as JumpButtonManagerModule | undefined; // <<< ADD THIS
         const chatManagerRef = window.chatManager as ChatOrchestrator | undefined; // Use chatManager alias
         const sessionManagerRef = window.sessionManager as SessionManager | undefined;
 
@@ -271,7 +293,30 @@ function initializeAppLogic(): void {
             });
             return;
         }
+     // =================== REPLACE THE JBM INITIALIZATION BLOCK IN app.ts WITH THIS ===================
 
+console.log('%c[APP INIT] Preparing to initialize Jump Button Manager...', 'color: white; background: purple; padding: 2px;');
+
+console.log(`[APP INIT] JBM Check: Is jumpButtonManager object available? ${!!jumpButtonManager}`);
+console.log(`[APP INIT] JBM Check: Is tabManager object available? ${!!tabManager}`);
+
+if (jumpButtonManager && tabManager) {
+    const initialTab = tabManager.getCurrentActiveTab();
+    console.log(`[APP INIT] JBM: Got initial tab: '${initialTab}'. Calling jumpButtonManager.initialize().`);
+
+    try {
+        jumpButtonManager.initialize(initialTab);
+        console.log('%c[APP INIT] SUCCESS: Jump Button Manager has been initialized.', 'color: white; background: green; padding: 2px;');
+    } catch (error) {
+        console.error('%c[APP INIT] FATAL ERROR during jumpButtonManager.initialize() call:', 'color: white; background: red; padding: 2px;', error);
+    }
+    
+} else {
+    console.error('%c[APP INIT] FAILED: Could not initialize Jump Button Manager. One or more dependencies were missing on the window object.', 'color: white; background: red; padding: 2px;');
+    console.error(`[APP INIT] FAILED Details: jumpButtonManager: ${!!jumpButtonManager}, tabManager: ${!!tabManager}`);
+}
+
+// =================================== END OF REPLACEMENT BLOCK ===================================
         switch (sessionTypeWithContext) {
             case "message":
                 console.log("APP_TS_DEBUG: initiateSession - case 'message'. Calling chatManager.openConversation for:", connector?.id);
@@ -306,11 +351,11 @@ function initializeAppLogic(): void {
             console.error("App.ts (setupGlobalModalButtonListeners): Missing core dependencies! dom:", !!dom, "sm:", !!sm, "mh:", !!mh);
             return;
         }
-        
+
         console.log("APP_DEBUG: setupGlobalModalButtonListeners - dom.closeRecapBtn:", dom.closeRecapBtn);
         dom.closeRecapBtn?.addEventListener('click', () => {
             console.log("APP_DEBUG: Close Recap Button CLICKED.");
-            
+
             // --- THIS IS THE FIX ---
             const tabManager = window.tabManager as TabManagerModule | undefined;
             if (dom.sessionRecapScreen) {
@@ -342,8 +387,6 @@ function initializeAppLogic(): void {
     console.log("Polyglot Connect Application Initialized! (app.ts: initializeAppLogic end)");
     console.log('APP_DEBUG: ========== initializeAppLogic - EXITED SUCCESSFULLY ==========');
 } // End of initializeAppLogic
-// D:\polyglot_connect\src\js\app.ts
-// ... (your existing CORE_MODULES_TO_WAIT_FOR aggregator logic is above this) ...
 
 let _allCoreModulesReadyFired = false;
 let _appLogicInitialized = false;
@@ -361,22 +404,15 @@ function tryInitializeApp() {
 }
 
 // Listener for the aggregated "all core modules ready" event
-// This listener is set up immediately at script parse time.
 document.addEventListener('allCoreModulesReady', () => {
     console.log("app.ts: Event 'allCoreModulesReady' RECEIVED by top-level listener.");
     _allCoreModulesReadyFired = true;
-    // It's possible DOMContentLoaded hasn't fired yet, or it has.
-    // tryInitializeApp will handle it.
     tryInitializeApp();
 }, { once: true });
 
 // DOMContentLoaded listener
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.ts: DOMContentLoaded event fired.');
-    // By the time DOMContentLoaded fires, allCoreModulesReady might have already fired
-    // (if all modules load very quickly before DOM is fully parsed).
-    // Or, we might still be waiting for it.
-    // tryInitializeApp will ensure logic runs once both conditions are met.
     tryInitializeApp();
 });
 

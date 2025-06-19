@@ -158,66 +158,19 @@ function initializeActualViewActionCoordinator(): void {
         }
         // --- End of copied functions ---
 
-        function handleTabSwitched(event: Event): void {
-            const customEvent = event as CustomEvent;
-            const newTab = customEvent.detail?.newTab as string | undefined;
-            // const isInitialLoad = customEvent.detail?.isInitialLoad as boolean | undefined;
-            console.log(`VAC: 'tabSwitched' event received. New tab: ${newTab}`);
+              // ----- REPLACE THIS ENTIRE FUNCTION -----
+          
+      
 
-            if (!newTab) return;
-
-            // Re-fetch dependencies or assume they are ready from initial check
-            // For safety, it's good to use optional chaining when calling them.
-            
-            if (newTab === 'home') {
-                populateHomepageTips();
-            } else if (newTab === 'find') {
-                filterController?.applyFindConnectorsFilters?.();
-            } else if (newTab === 'groups') {
-                const currentGroup = groupManager?.getCurrentGroupData?.();
-                // This logic is now data-driven, not based on brittle style checks.
-                if (currentGroup) {
-                    // A group is active. Ensure the chat interface for it is shown.
-                    const members = groupManager?.getFullCurrentGroupMembers?.() || [];
-                    chatUiManager?.showGroupChatView?.(currentGroup.name, members as Connector[]);
-                } else {
-                    // No group is active, so show the list of available groups.
-                    chatUiManager?.hideGroupChatView?.();
-                    groupManager?.loadAvailableGroups?.();
-                }
-            } else if (newTab === 'messages') {
-                chatOrchestrator?.handleMessagesTabActive?.();
-            } else if (newTab === 'summary') {
-                sessionHistoryManager?.updateSummaryListUI?.();
-                // The main summary view display is handled by clicking an item in the list,
-                // or if you want to auto-display the latest summary:
-                // const sessions = sessionHistoryManager?.getCompletedSessions?.();
-                // if (sessions && sessions.length > 0) {
-                //     uiUpdater?.displaySummaryInView?.(sessions[0]);
-                // } else {
-                     uiUpdater?.displaySummaryInView?.(null); // Show placeholder
-                // }
-            }
-            updateEmptyListMessages(); // Call after any tab-specific list rendering
-        }
-
-        function initialize(): void {
-            console.log("ViewActionCoordinator: Initializing and listening for 'tabSwitched' event.");
-            document.addEventListener('tabSwitched', handleTabSwitched);
-            // If tabManager's initial 'tabSwitched' event might be missed because VAC initializes later,
-            // explicitly call handleTabSwitched for the current tab.
-            const initialTab = window.tabManager?.getCurrentActiveTab?.();
-            if(initialTab) {
-                console.log("VAC: Triggering initial action for tab:", initialTab);
-                handleTabSwitched(new CustomEvent('tabSwitched', {detail: {newTab: initialTab, isInitialLoad: true}}));
-            }
-        }
-
-        return {
-            initialize,
-             displaySessionSummaryInMainView // <<< ADD THIS
-        };
-    })();
+            return {
+    initialize: function (): void {
+        throw new Error('Function not implemented.');
+    },
+    displaySessionSummaryInMainView: function (sessionData: SessionData | null): void {
+        throw new Error('Function not implemented.');
+    }
+};
+        })();
 
     
 // REMOVE THE FOLLOWING LINE IF IT EXISTS - IT'S THE SOURCE OF THE ERROR
