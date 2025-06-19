@@ -436,9 +436,7 @@ body.dark-mode #chat-list-ul .list-item-base.group-chat-list-item .list-item-ava
   This rule targets the placeholder paragraph *only when the chat log is empty*.
   It centers the placeholder text within the min-height area.
 */
-#embedded-chat-log:empty + footer {
-    /* Optional: slightly different style when log is empty */
-}
+
 #embedded-chat-log:empty::before {
     content: "No messages yet. Send one to start the conversation!";
     display: flex;
@@ -499,4 +497,5 @@ body.dark-mode #chat-list-ul .list-item-base.group-chat-list-item .list-item-ava
         /* Slightly smaller text in the input field */
         font-size: 0.95em;
     }
+    
 }

@@ -1,0 +1,74 @@
+/* =================== REPLACE THIS ENTIRE FILE: css/components/jump_buttons.css =================== */
+
+.jump-button-container {
+    /* Base styles that are always active */
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 500;
+    cursor: grab;
+    transition: opacity 0.3s ease;
+    
+    /* By default, it is COMPLETELY HIDDEN, regardless of classes */
+    display: none; 
+}
+
+/* --- Media Query for Mobile and Tablet --- */
+/* This rule applies ONLY when the screen width is 768px or less. */
+@media (max-width: 768px) {
+    /*
+     * THE KEY RULE:
+     * On a small screen, IF the container has the .active class (added by JS),
+     * THEN we make it visible by setting its display property.
+    */
+    .jump-button-container.active {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
+
+/* --- The rest of the styling remains the same --- */
+
+.jump-button-container.dragging {
+    cursor: grabbing;
+    opacity: 0.8; 
+}
+
+.jump-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer; 
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.2s, transform 0.2s ease-out;
+    font-size: 1.1rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.jump-button:hover {
+    background-color: var(--primary-color-dark);
+    transform: scale(1.05);
+}
+
+.jump-button:active {
+    transform: scale(0.95);
+}
+
+/* Dark mode adjustments */
+body.dark-mode .jump-button {
+    background-color: var(--primary-color-lighter);
+    color: var(--background-color-dark);
+}
+
+body.dark-mode .jump-button:hover {
+    background-color: var(--primary-color);
+}

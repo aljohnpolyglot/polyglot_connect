@@ -26,11 +26,13 @@
   <link rel="stylesheet" href="/polyglot_connect/css/components/card.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/chat_bubbles.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/lists.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/jump_buttons.css"> 
   <link rel="stylesheet" href="/polyglot_connect/css/components/modal_call.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/modal_message.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/modal_persona.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/modal_recap.css">
   <link rel="stylesheet" href="/polyglot_connect/css/components/modal_group_members.css">
+  <link rel="stylesheet" href="/polyglot_connect/css/components/placeholders.css">
   <!-- Views CSS -->
   <link rel="stylesheet" href="/polyglot_connect/css/views/view_find.css">
   <link rel="stylesheet" href="/polyglot_connect/css/views/view_groups.css">
@@ -48,7 +50,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <script type="module" crossorigin src="/polyglot_connect/assets/main-D4xCjJi0.js"></script>
+  <script type="module" crossorigin src="/polyglot_connect/assets/main-BD-5szty.js"></script>
 </head>
 <body>
   <div id="polyglot-connect-app-shell">
@@ -85,21 +87,36 @@
         <!-- Find Someone View -->
      <!-- AFTER -->
 <!-- Friends View -->
+<!-- Friends View -->
+<!-- Friends View -->
+<!-- Friends View -->
 <div id="friends-view" class="view">
-    <header class="view-header"><h1>Friends & Connections</h1><p>Find new partners or chat with your friends.</p></header>
+    <header class="view-header">
+        <h1>Friends & Connections</h1>
+        <p>Find new partners or chat with your friends.</p>
+    </header>
     <div class="view-content">
 
-        <div class="friends-view-toggle-container">
-            <button id="my-friends-tab-btn" class="friends-view-toggle-btn active" data-view="my-friends">My Friends</button>
-            <button id="discover-friends-tab-btn" class="friends-view-toggle-btn" data-view="discover">Discover</button>
+        <!-- Unified class for the tab container -->
+        <div class="group-view-toggle-container">
+            <button id="my-friends-tab-btn" class="group-view-toggle-btn active" data-view="my-friends">My Friends</button>
+            <button id="discover-friends-tab-btn" class="group-view-toggle-btn" data-view="discover">Discover</button>
         </div>
-    
-        <div id="connector-hub" class="connector-grid">
-            <p class="loading-message">Loading Connectors...</p>
+
+        <!-- Unified class for the main content area -->
+        <div class="group-list-container group-list-view">
+            <div id="connector-hub" class="connector-grid">
+                <!-- Connector cards will be rendered here by JS -->
+            </div>
+            <div id="friends-empty-placeholder" class="view-content-placeholder">
+                <!-- JS will populate and show this if the grid is empty -->
+            </div>
         </div>
+
+      
+
     </div>
 </div>
-
         <!-- Groups View -->
         <div id="groups-view" class="view">
             <header class="view-header"><h1>Language Practice Groups</h1><p>Join simulated group chats with learners and tutors.</p></header>
@@ -111,8 +128,12 @@
                 </div>
 
                 <div id="group-list-container" class="group-list-view">
-                    <p class="loading-message" id="group-loading-message">Loading groups...</p>
-                    <ul id="available-groups-ul" class="available-groups-list"></ul>
+                    <ul id="available-groups-ul" class="available-groups-list">
+                        <!-- Group list will be rendered here by JS -->
+                    </ul>
+                    <div id="groups-empty-placeholder" class="view-content-placeholder">
+                        <!-- JS will populate and show this -->
+                    </div>
                 </div>
                 <div id="group-chat-interface" style="display:none;" class="group-chat-container">
                     <header class="group-chat-header">
@@ -125,6 +146,9 @@
                     </header>
                     <div id="group-chat-log" class="chat-log-area styled-scrollbar"></div>
                 
+
+
+
                     <footer class="group-chat-footer">
                     
                         <div class="chat-input-previews-container">
@@ -189,6 +213,7 @@
                     </footer>
                 </div>
             </div>
+         
         </div>
 
         <!-- Summary View -->
@@ -452,6 +477,11 @@
 
   </div> <!-- End #polyglot-connect-app-shell -->
 
+
+<!-- ===== START: ADD THIS UNIVERSAL JUMP BUTTON CONTAINER ===== -->
+<div class="jump-button-container" id="universal-jump-buttons">
+    <!-- Buttons will be populated here by JavaScript -->
+</div>
   <!-- Configuration -->
 <!-- Configuration -->
  

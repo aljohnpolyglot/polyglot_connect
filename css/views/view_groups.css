@@ -7,7 +7,7 @@
 */
 
 /* --- Modern Clean Variables (Scoped for this View) --- */
-#groups-view {
+#groups-view, #friends-view {
     /* Light Mode Defaults - Reverted to Original "Modern Clean" */
     --view-groups-bg-page: #e9eef2;                     /* Page background */
     --view-groups-text-primary: #212529;
@@ -42,7 +42,7 @@
     --group-chat-ui-header-footer-bg: #f8f9fa; /* Header/footer background - MUST BE OPAQUE */
 }
 
-body.dark-mode #groups-view {
+body.dark-mode #groups-view, body.dark-mode #friends-view {
     /* Dark Mode Overrides */
     --view-groups-bg-page: #1a1b1e;
     --view-groups-text-primary: #f8f9fa;
@@ -68,7 +68,7 @@ body.dark-mode #groups-view {
 }
 
 /* --- Base View Structure for Groups View --- */
-#groups-view .view-header {
+#groups-view .view-header, #friends-view .view-header {
     margin-bottom: var(--spacing-lg, 24px);
     padding: 0 var(--spacing-md, 16px);
     border-bottom: 1px solid var(--view-groups-border-light);
@@ -76,7 +76,7 @@ body.dark-mode #groups-view {
 #groups-view .view-header h1 { color: var(--view-groups-text-primary); }
 #groups-view .view-header p { color: var(--view-groups-text-secondary); }
 
-#groups-view .view-content {
+#groups-view .view-content, #friends-view .view-content {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -98,14 +98,17 @@ body.dark-mode #groups-view {
 }
 
 /* Container for the grid of available groups (styles unchanged, assumed correct) */
-#groups-view #group-list-container {
-    flex-grow: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--spacing-md, 16px);
-    -ms-overflow-style: none; scrollbar-width: none;
+#groups-view #group-list-container, #friends-view .group-list-container {
+    flex-grow: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--spacing-md, 16px);align-items: center;
+    -ms-overflow-style: none; scrollbar-width: none; 
 }
 #groups-view #group-list-container::-webkit-scrollbar { display: none; }
-#groups-view #available-groups-ul {
+
+
+#groups-view #available-groups-ul,
+#friends-view #connector-hub {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--group-card-min-width), 1fr));
-    gap: var(--group-card-gap); list-style: none; padding: var(--spacing-xs, 4px); margin: 0;
+    gap: var(--group-card-gap); list-style: none; padding: var(--spacing-xs, 4px); margin: 0; 
 }
 #groups-view #group-loading-message {
     grid-column: 1 / -1; color: var(--view-groups-text-muted);
@@ -113,7 +116,8 @@ body.dark-mode #groups-view {
 
 /* --- Group Card Styles (Grid Item: .group-discovery-list-item) --- */
 /* (Styles unchanged from previous correct version, assumed correct) */
-#groups-view .group-discovery-list-item {
+#groups-view .group-discovery-list-item,
+#friends-view .group-discovery-list-item {
     display: flex; flex-direction: column; align-items: center; text-align: center;
     padding: var(--group-card-padding); background-color: var(--group-card-bg);
     border-radius: var(--view-groups-border-radius-card); border: 1px solid var(--view-groups-border-light);
@@ -126,7 +130,8 @@ body.dark-mode #groups-view {
     justify-content: flex-start; /* This stops it from stretching vertically */
 }
 
-#groups-view .group-discovery-list-item:hover {
+#groups-view .group-discovery-list-item:hover,
+#friends-view .connector-card:hover {
     transform: translateY(-4px); box-shadow: var(--view-groups-shadow-card-hover);
 }
 #groups-view .group-discovery-list-item .group-card-avatar {
@@ -380,7 +385,7 @@ body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn:hove
 
 @media (max-width: 768px) { /* Mobile */
     #groups-view { --group-card-aspect-ratio: 4 / 5; }
-    #groups-view .view-content { padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px); }
+    #groups-view .view-content { padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);  }
     #groups-view #available-groups-ul {
         grid-template-columns: repeat(auto-fill, minmax(calc(var(--group-card-min-width) - 70px), 1fr));
         gap: var(--spacing-md, 16px);
@@ -407,11 +412,15 @@ body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn:hove
     #groups-view #group-chat-interface #group-chat-members-avatars { order: 3; margin: 0; }
     #groups-view #group-chat-interface #group-chat-members-avatars .member-avatar-small,
     #groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-more {
-        width: 24px; height: 24px; margin-left: -6px; font-size: 0.65em;
+        width: 20px; height: 20px; margin-left: -6px; font-size: 0.65em;
     }
     #groups-view #group-chat-interface footer.group-chat-footer { padding: var(--spacing-sm, 10px); gap: var(--spacing-xs, 6px); }
     #groups-view #group-chat-interface #group-chat-input { padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px); font-size: 0.9em; }
     #groups-view #group-chat-interface #send-group-message-btn { padding: var(--spacing-xs, 8px) var(--spacing-md, 14px); }
+
+
+
+    
 }
 
 @media (max-width: 480px) { /* Very Small Screens */
@@ -425,10 +434,23 @@ body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn:hove
     #groups-view .group-discovery-list-item .group-card-subtext { font-size: 0.75em; height: calc(1.3em * 2); line-height: 1.3;}
     
     #groups-view #group-chat-interface header.group-chat-header { justify-content: center; }
-    #groups-view #group-chat-interface #active-group-name { font-size: 1em; width: 100%; text-align: center; margin-bottom: var(--spacing-xs, 4px); }
-    #groups-view #group-chat-interface #leave-group-btn { font-size: 0.8em; padding: 6px 8px; }
+    #groups-view #group-chat-interface #active-group-name {
+        font-size: 0.86em;
+        width: 100%;
+        text-align: left;
+        margin-top: var(--spacing-xs,12px);
+       
+    }
+    #groups-view #group-chat-interface #leave-group-btn { font-size: 0.5em; padding: 6px 8px; margin: 2px; }
     #groups-view #group-chat-interface #leave-group-btn .button-text { display: none; }
     #groups-view #group-chat-interface #leave-group-btn i { margin-right: 0; }
+
+    #groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-small{
+        width: 20px; height: 20px;
+    }
+
+
+
 }/* ===== START: ADD THIS ENTIRE CSS BLOCK ===== */
 
 /* --- Group View Toggle Tabs --- */
@@ -514,7 +536,7 @@ body.dark-mode .group-view-toggle-btn.active {
     #groups-view #available-groups-ul {
         gap: 1.25rem;
     }
-
+  
     /* Make the avatar significantly larger relative to the card */
     #groups-view .group-discovery-list-item .group-card-avatar {
         width: 80px;
