@@ -50,7 +50,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <script type="module" crossorigin src="/polyglot_connect/assets/main-BD-5szty.js"></script>
+
+
+
+  
+  <script type="module" crossorigin src="/polyglot_connect/assets/main-CbWvSxxA.js"></script>
 </head>
 <body>
   <div id="polyglot-connect-app-shell">
@@ -281,6 +285,28 @@
     </aside>
 
     <!-- MODALS -->
+    <div id="processing-call-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content processing-modal">
+            <div class="processing-icon">
+                <i class="fas fa-brain fa-spin"></i>
+            </div>
+            <h2 id="processing-call-title" class="modal-title">Analyzing Call...</h2>
+            <!-- Find this line: -->
+            <p id="processing-call-subtitle" class="modal-subtitle">The System is processing your conversation. Please don't close this window.</p>
+            
+            <!-- ADD THIS NEW LINE RIGHT AFTER: -->
+            <!-- =================== START: ADDITION =================== -->
+            <p id="processing-call-step" class="modal-subtitle-small"></p>
+            <!-- ===================  END: ADDITION  =================== -->
+    
+            <div class="processing-animation">
+                <!-- ... -->
+            </div>
+        </div>
+    </div>
+
+
+
      <!-- MODAL for Group Members List -->
 <div id="group-members-modal" class="modal-overlay" style="display: none;">
     <div class="modal-content group-members-modal-content">
@@ -534,5 +560,9 @@
     <!-- PHASE 6: UI Event Listeners (Often last, as they need all UI and managers to be ready) -->
     <!-- ===================================================================== -->
   
+
+
+
+    
 </body>
 </html>

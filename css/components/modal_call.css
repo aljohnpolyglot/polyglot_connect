@@ -250,3 +250,73 @@ body.dark-mode .activity-area-style {
     background-color: var(--bg-dark-tertiary);
     border-color: var(--border-color-dark);
 }
+/* ADD THIS TO THE BOTTOM OF css/components/modal_call.css */
+/* =================== START: ADD NEW STYLES =================== */
+
+/* Processing Modal Specifics */
+.modal-content.processing-modal {
+    text-align: center;
+    max-width: 400px;
+    background-color: var(--bg-dark-secondary); /* Use a slightly different bg for focus */
+    color: var(--text-color-light);
+    padding: var(--spacing-xl) var(--spacing-lg);
+  }
+  
+  .processing-icon {
+    font-size: 3rem; /* 48px */
+    color: var(--primary-color);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .processing-modal .modal-title {
+    margin-bottom: var(--spacing-sm);
+  }
+  
+  .processing-modal .modal-subtitle {
+    color: var(--secondary-color-lighter);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  /* Re-using the calling animation for consistency */
+  .processing-animation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    height: 20px;
+  }
+  
+  .processing-dot {
+    width: 10px;
+    height: 10px;
+    background-color: var(--primary-color-lighter);
+    border-radius: 50%;
+    animation: processing-pulse 1.4s infinite ease-in-out both;
+  }
+  
+  .processing-dot:nth-child(1) { animation-delay: -0.32s; }
+  .processing-dot:nth-child(2) { animation-delay: -0.16s; }
+  
+  @keyframes processing-pulse {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1.0); }
+  }
+  
+  /* Spinning animation for Font Awesome icon */
+  .fa-spin {
+      animation: fa-spin 2s infinite linear;
+  }
+  
+  @keyframes fa-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+  }.modal-subtitle-small {
+    font-size: 0.8rem;
+    color: var(--secondary-color-lighter);
+    opacity: 0.8;
+    margin-top: -12px; /* Pull it up a bit */
+    margin-bottom: var(--spacing-lg);
+    min-height: 1.2em; /* Prevent layout shift */
+  }
+  /* ===================  END: ADD NEW STYLES  =================== */
