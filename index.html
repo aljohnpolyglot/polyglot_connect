@@ -51,15 +51,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
 
 
-  <script type="module">
-    if (import.meta.env.MODE === 'development') {
-        console.log('%cDEV MODE ACTIVE: Loading Cerebrum Inspector...', 'color: white; background: #6f42c1; padding: 2px 5px; border-radius: 3px;');
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = '/css/dev/dev_tools.css';
-        document.head.appendChild(link);
-    }
-</script>
 
 
   
@@ -620,6 +611,7 @@
     <script type="module" src="/src/js/ui/card_renderer.ts"></script>
     <script type="module" src="/src/js/ui/persona_modal_manager.ts"></script>
     <script type="module" src="/src/js/ui/chat_ui_manager.ts"></script>
+    <script type="module" src="/src/js/ui/reaction_handler.ts"></script>
     <script type="module" src="/src/js/ui/filter_controller.ts"></script>
     <script type="module" src="/src/js/ui/sidebar_panel_manager.ts"></script>
     <script type="module" src="/src/js/ui/tab_manager.ts"></script> <!-- Tab manager used by shell & VAC -->

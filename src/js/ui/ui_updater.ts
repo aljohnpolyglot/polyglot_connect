@@ -628,6 +628,39 @@ if (isFirstMessageInLog) {
         // Add the message bubble next to the avatar (or by itself).
         messageWrapper.appendChild(messageDiv);
     }
+  // =================== START: NEW REACTION FEATURE ===================
+    // This logic runs for ALL message types (text, image, voice memo) except system events.
+    if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
+        const messageBubble = messageWrapper.querySelector('.chat-message-ui');
+        if (messageBubble) {
+            // 1. Create the reaction picker and hide it by default.
+            const reactionPicker = document.createElement('div');
+            reactionPicker.className = 'reaction-picker';
+            
+            // Define the emojis you want to offer.
+            const EMOJIS = ['👍', '❤️', '😂', '😯', '😢', '😡'];
+            EMOJIS.forEach(emoji => {
+                const button = document.createElement('button');
+                button.className = 'reaction-btn';
+                button.type = 'button';
+                button.textContent = emoji;
+                button.setAttribute('aria-label', `React with ${emoji}`);
+                reactionPicker.appendChild(button);
+            });
+            
+            // Add the picker inside the message bubble itself for easy positioning.
+            messageBubble.appendChild(reactionPicker);
+
+            // 2. Add a container below the bubble where selected reactions will be displayed.
+            const reactionsContainer = document.createElement('div');
+            reactionsContainer.className = 'message-reactions';
+            messageWrapper.appendChild(reactionsContainer); // Append to the outer wrapper, below the bubble.
+        }
+    }
+
+
+
+
 
     logElement.appendChild(messageWrapper);
 

@@ -539,7 +539,8 @@ function createSendHandler(
             }
         };
 
-
+      
+        // ===================  END: ADD THIS ENTIRE NEW FUNCTION  ===================
 
 
         
@@ -874,7 +875,7 @@ function createSendHandler(
             
             setupAllChatInteractionListeners(); 
             setupChatAvatarClickListeners(); // <<< ADD THIS 
-            
+            window.reactionHandler?.initialize(domElements);
 
 
          // =================== START: ADD NEW RECAP CLOSE LISTENER ===================
@@ -906,6 +907,19 @@ addSafeListener(domElements.closeRecapBtn, 'click', async () => {
     // 2. Explicitly switch the main view to 'messages'.
     window.shellController?.switchView('messages');
 });
+
+
+if (domElements.embeddedChatLog) {
+    domElements.embeddedChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
+}
+if (domElements.messageChatLog) { 
+    domElements.messageChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
+}
+listenersInitialized = true; 
+
+
+
+
 // ===================  END: ADD NEW RECAP CLOSE LISTENER  ===================
             console.log("CEL_TS_DEBUG_FLOW: Checking embeddedChatLog for attaching call button listener:", domElements.embeddedChatLog);
             if (domElements.embeddedChatLog) {
@@ -1010,7 +1024,8 @@ const dependenciesForCEL: string[] = [
     'sessionHistoryManagerReady', 
     'uiUpdaterReady',
     'modalHandlerReady',
-    'polyglotDataReady'
+    'polyglotDataReady',
+    'reactionHandlerReady'
 ];
 
 const celMetDependenciesLog: { [key: string]: boolean } = {};
@@ -1038,6 +1053,8 @@ function checkAndInitCEL(receivedEventName?: string): void {
             case 'uiUpdaterReady': verified = !!window.uiUpdater?.populateRecapModal; break;
             case 'modalHandlerReady': verified = !!window.modalHandler?.open; break;
             case 'polyglotDataReady': verified = !!(window.polyglotConnectors && Array.isArray(window.polyglotConnectors)); break;
+          
+            case 'reactionHandlerReady': verified = !!window.reactionHandler?.initialize; break; // <<< ADD THIS LINE
             default: console.warn(`CEL_EVENT: Unknown event '${receivedEventName}'`); return;
         }
 
@@ -1083,6 +1100,7 @@ dependenciesForCEL.forEach((eventName: string) => {
         case 'modalHandlerReady': isReadyNow = !!window.modalHandler; isVerifiedNow = isReadyNow && !!window.modalHandler?.open; break;
         case 'polyglotDataReady': isReadyNow = !!window.polyglotConnectors; isVerifiedNow = isReadyNow && Array.isArray(window.polyglotConnectors); break;
         // Removed the duplicate 'polyglotAppReady' check that was only checking for existence
+        case 'reactionHandlerReady': isReadyNow = !!window.reactionHandler; isVerifiedNow = isReadyNow && !!window.reactionHandler?.initialize; break;
         default: console.warn(`CEL_PRECHECK: Unknown dependency: ${eventName}`); isVerifiedNow = false; break;
     }
 

@@ -1474,6 +1474,7 @@ declare global {
     groupManager?: GroupManager; // Uses the exported GroupManager
     listRenderer?: ListRenderer;
     shellSetup?: ShellSetup;
+    reactionHandler?: ReactionHandlerModule; // <<< ADD THIS LINE
    liveApiMicInput?: LiveApiMicInput;
 liveApiAudioOutput?: LiveApiAudioOutput;
 liveApiTextCoordinator?: LiveApiTextCoordinator;
