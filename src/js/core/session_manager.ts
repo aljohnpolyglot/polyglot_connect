@@ -136,10 +136,10 @@ function initializeActualSessionManager(): void {
             }
         }
 
-        function endCurrentModalSession(generateRecap: boolean = true): void {
+        async function endCurrentModalSession(generateRecap: boolean = true): Promise<void> {
             console.log("SessionManager (TS Facade): endCurrentModalSession called.");
             if (sessionStateManager.isSessionActive()) {
-                liveCallHandler.endLiveCall(generateRecap);
+                await liveCallHandler.endLiveCall(generateRecap); // <<< THIS IS THE FIX
             } else {
                 console.warn("SessionManager (TS Facade): No active session to end.");
             }

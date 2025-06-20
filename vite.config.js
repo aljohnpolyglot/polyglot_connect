@@ -1,11 +1,17 @@
 // D:\polyglot_connect\vite.config.js
 import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl'; // <<< ADD THIS IMPORT
+import path from 'path'; // <<< ADD THIS LINE
 
 export default defineConfig({
-  plugins: [ // <<< ADD PLUGINS ARRAY IF NOT PRESENT
-    basicSsl() // <<< ADD THE SSL PLUGIN
+  plugins: [
+    basicSsl()
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -18,8 +24,6 @@ export default defineConfig({
   base: '/polyglot_connect/',
   server: {
     open: true,
-    https: true // <<< ENABLE HTTPS
-    // You can optionally specify a port if needed, e.g., port: 3000 or 5173
-    // host: true, // Optional: if you want to access it from other devices on your network
+    https: true
   }
 });

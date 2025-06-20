@@ -11,16 +11,15 @@ import type {
 } from '../types/global.d.ts';
 
 console.log('session_history_manager.ts: Script loaded, waiting for core dependencies.');
-
 interface SessionHistoryManagerModule {
     initializeHistory: () => void;
     addCompletedSession: (sessionData: SessionData) => void;
     getCompletedSessions: () => SessionData[];
     getSessionById: (sessionId: string) => SessionData | null;
+    getLastSession: () => SessionData | null; // <<< ADD THIS LINE
     downloadTranscript: (sessionId: string) => void;
     updateSummaryListUI: () => void;
 }
-
 // Placeholder
 window.sessionHistoryManager = {} as SessionHistoryManagerModule;
 console.log('session_history_manager.ts: Placeholder window.sessionHistoryManager assigned.');
@@ -70,7 +69,10 @@ const getSafeDeps = (): VerifiedDeps | null => {
             getCompletedSessions: () => { console.error("SHM Dummy: getCompletedSessions"); return []; },
             getSessionById: () => { console.error("SHM Dummy: getSessionById"); return null; },
             downloadTranscript: () => console.error("SHM Dummy: downloadTranscript"),
-            updateSummaryListUI: () => console.error("SHM Dummy: updateSummaryListUI")
+            updateSummaryListUI: () => console.error("SHM Dummy: updateSummaryListUI"),
+            getLastSession: function (): SessionData | null {
+                throw new Error('Function not implemented.');
+            }
         };
         Object.assign(window.sessionHistoryManager!, dummyMethods);
         document.dispatchEvent(new CustomEvent('sessionHistoryManagerReady'));
@@ -130,12 +132,28 @@ const getSafeDeps = (): VerifiedDeps | null => {
         }
 
         const getSessionById = (sessionId: string): SessionData | null => {
+
             console.log(`SHM_DEBUG: getSessionById called for ID: '${sessionId}'.`);
             const session = completedSessions[sessionId] || null;
             console.log(`SHM_DEBUG: Session found for ID '${sessionId}':`, session ? 'Exists' : "NOT FOUND");
             return session;
         }
-
+        // ADD THIS ENTIRE NEW FUNCTION:
+// =================== START: ADD NEW HELPER FUNCTION ===================
+/**
+ * Returns the most recently added session object from the history.
+ * This is useful for getting context immediately after a call ends.
+ * @returns {SessionData | null} The most recent session data, or null if history is empty.
+ */
+function getLastSession(): SessionData | null {
+    const sessionsArray = Object.values(completedSessions).sort((a, b) => {
+        const timeA = a.startTimeISO ? new Date(a.startTimeISO).getTime() : 0;
+        const timeB = b.startTimeISO ? new Date(b.startTimeISO).getTime() : 0;
+        return timeB - timeA;
+    });
+    return sessionsArray.length > 0 ? sessionsArray[0] : null;
+}
+// ===================  END: ADD NEW HELPER FUNCTION  ===================
         function downloadTranscript(sessionId: string): void {
             const session = getSessionById(sessionId);
             if (!session?.rawTranscript || session.rawTranscript.length === 0) {
@@ -198,6 +216,7 @@ function updateSummaryListUI(): void {
             addCompletedSession,
             getCompletedSessions,
             getSessionById,
+            getLastSession, // <<< ADD THIS LINE
             downloadTranscript,
             updateSummaryListUI
         };

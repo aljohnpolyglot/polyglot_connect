@@ -21,7 +21,7 @@ export interface AiServiceModule {
         preferredProvider?: string,
         expectJson?: boolean,
         context?: 'group-chat' | 'one-on-one',
-        abortSignal?: AbortSignal // <<< ADDED THIS
+        abortSignal?: AbortSignal
     ) => Promise<string | null | object>;
       
     generateTextFromImageAndText: ( 
@@ -31,7 +31,7 @@ export interface AiServiceModule {
         history: GeminiChatItem[] | null | undefined, 
         prompt?: string, 
         preferredProvider?: string,
-        abortSignal?: AbortSignal // <<< ADDED THIS
+        abortSignal?: AbortSignal
     ) => Promise<string | null | object>;
 
     getTTSAudio: ( 
@@ -47,10 +47,9 @@ export interface AiServiceModule {
         modalCallHistory: GeminiChatItem[] | null | undefined
     ) => Promise<string | null>;
     
-    generateSessionRecap: ( 
-        fullCallTranscript: TranscriptTurn[], 
-        connector: Connector, 
-        preferredProvider?: string
+    generateSessionRecap: ( // <<< THIS IS THE CORRECTED SIGNATURE
+        cleanedTranscriptText: string, 
+        connector: Connector
     ) => Promise<RecapData>; 
 
     transcribeAudioToText?: ( 
@@ -406,101 +405,62 @@ Cleaned and Re-ordered Dialogue:`;
 
 // <<< START OF REPLACEMENT FUNCTION >>>
 // in src/js/services/ai_service.
+
 generateSessionRecap: async (
-    fullCallTranscript: TranscriptTurn[],
+    cleanedTranscriptText: string,
     connector: Connector
 ): Promise<RecapData> => {
     const functionName = "[AI_Facade][generateSessionRecap]";
     console.groupCollapsed(`%c📝 [Smart Recap Router] Request Started`, 'color: #007bff; font-weight: bold; font-size: 14px;');
 
     const currentDeps = getDeps();
-    const minTurns = localMinTurnsForRecap;
+    // Use a safe fallback for constants if they are not ready
+    const minTurns = currentDeps._aiApiConstants?.MIN_TRANSCRIPT_TURNS_FOR_RECAP || 4;
+    const safeProviders = currentDeps._aiApiConstants?.PROVIDERS || { GROQ: 'groq', TOGETHER: 'together' };
 
-    // --- 1. Initial validation ---
-    if (!currentDeps.aiRecapService?.generateSessionRecap || !currentDeps.geminiRecapService?.generateSessionRecap || !connector?.id) {
-        console.error(`${functionName}: ABORT. Critical sub-service missing.`);
+    // It's already cleaned, so we just check if it's empty.
+    if (!cleanedTranscriptText.trim()) {
+        console.warn(`${functionName}: Transcript is empty. Returning minimal structure.`);
         console.groupEnd();
-        return defaultRecapStructure("Internal Service Configuration Error");
-    }
-    if (!fullCallTranscript || fullCallTranscript.length < minTurns) {
-        console.warn(`${functionName}: Transcript too short. Returning minimal structure.`);
-        console.groupEnd();
-        // This is the correct place to return your minimal structure for short calls
-        return {
-            conversationSummary: "The conversation was too short to generate a detailed summary.",
-            keyTopicsDiscussed: ["N/A - Short conversation"],
-            newVocabularyAndPhrases: [], goodUsageHighlights: [], areasForImprovement: [],
-            suggestedPracticeActivities: ["Continue practicing!"],
-            overallEncouragement: "Keep up the great work! Try a longer chat next time for a more detailed debrief!",
-            sessionId: `short-convo-${connector.id}-${Date.now()}`,
-            connectorId: connector.id, connectorName: connector.profileName,
-            date: new Date().toLocaleDateString(), duration: "N/A (short)", startTimeISO: null
-        };
+        return defaultRecapStructure("Empty Transcript");
     }
 
-    // --- 2. Clean the transcript once ---
-    let cleanedTranscriptText: string;
-    try {
-        console.log(`${functionName}: STEP 1 - Cleaning transcript...`);
-        cleanedTranscriptText = await cleanAndReconstructTranscriptLLM_internal(fullCallTranscript, connector, "User");
-        console.log(`%cCleaned Transcript Preview:`, 'color: #6c757d;', `"${cleanedTranscriptText.substring(0, 150)}..."`);
-    } catch (cleanError: any) {
-        console.warn(`${functionName}: LLM cleaning failed. Using basic formatter.`);
-        cleanedTranscriptText = currentDeps.polyglotHelpers?.formatTranscriptForLLM(fullCallTranscript, connector.profileName || "Partner", "User") || "Transcript formatting failed.";
-    }
+    console.log(`%cCleaned Transcript Preview:`, 'color: #6c757d;', `"${cleanedTranscriptText.substring(0, 150)}..."`);
 
-    // --- 3. The CORRECT "Gemini x3 First" Provider Sequence ---
+    // The rest of the logic remains the same, as it already uses cleanedTranscriptText
     let providerSequence: string[];
-                const turnCount = fullCallTranscript.length;
+    const turnApproximation = cleanedTranscriptText.split('\n').length;
 
-                if (turnCount <= 10) { // If the conversation is short (<= 10 turns)
-                    console.log(`%cROUTING: Short conversation (${turnCount} turns). Prioritizing Groq for speed.`, 'color: #00D09B; font-weight: bold;');
-                    // Try Groq first, but have a full 3-key Gemini fleet as backup.
-                    providerSequence = [safeProviders.GROQ, 'gemini', 'gemini', 'gemini', 'gemini'];
-                } else { // For longer, more detailed conversations
-                    console.log(`%cROUTING: Long conversation (${turnCount} turns). Prioritizing Gemini for quality.`, 'color: #4285F4; font-weight: bold;');
-                    // Try the full Gemini fleet first, then failover to the other big models.
-                    providerSequence = ['gemini', 'gemini', 'gemini', safeProviders.TOGETHER, safeProviders.GROQ];
-                }
-                
-                console.log('%cFull Recap Provider Plan:', 'color: #007bff; font-weight: bold;', providerSequence.join(' ➔ '));
+    if (turnApproximation <= 10) {
+        console.log(`%cROUTING: Short conversation (~${turnApproximation} turns). Prioritizing Groq.`, 'color: #00D09B;');
+        providerSequence = [safeProviders.GROQ, 'gemini', 'gemini', 'gemini'];
+    } else {
+        console.log(`%cROUTING: Long conversation (~${turnApproximation} turns). Prioritizing Gemini.`, 'color: #4285F4;');
+        providerSequence = ['gemini', 'gemini', 'gemini', safeProviders.TOGETHER, safeProviders.GROQ];
+    }
     
-    // --- 4. Run the Carousel ---
+    console.log('%cFull Recap Provider Plan:', 'color: #007bff; font-weight: bold;', providerSequence.join(' ➔ '));
+
     for (const provider of providerSequence) {
         console.log(`%c--> ATTEMPTING recap with [${provider}]`, 'color: #17a2b8; font-weight: bold;');
         try {
             let recapResult: RecapData | null = null;
 
-            if (provider === 'gemini') {
-                // This service now returns { recapData, nickname }
+            if (provider === 'gemini' && currentDeps.geminiRecapService) {
                 const geminiResult = await currentDeps.geminiRecapService.generateSessionRecap(cleanedTranscriptText, connector);
-                recapResult = geminiResult.recapData; // Assign the data to recapResult
-                
-                // Log the success with the nickname
+                recapResult = geminiResult.recapData;
                 console.log(`%c...recap analysis by: ${geminiResult.nickname}!`, 'color: #34A853;');
-            }
-            
-            
-            else {
+            } else if (currentDeps.aiRecapService) {
                 recapResult = await currentDeps.aiRecapService.generateSessionRecap(cleanedTranscriptText, connector, provider);
             }
 
             if (recapResult && recapResult.conversationSummary) {
                 console.log(`%c<-- SUCCESS! Recap generated with [${provider}].`, 'color: #28a745; font-weight: bold;');
-                if (provider === 'gemini') {
-                    const lastUsedKeyIndex = ((window as any).currentGeminiKeyIndex === 0) ? (window as any).GEMINI_API_KEYS.length - 1 : (window as any).currentGeminiKeyIndex - 1;
-                    const successNickname = ((window as any).GEMINI_KEY_NICKNAMES || [])[lastUsedKeyIndex] || 'The Rookie';
-                    console.log(`%c...recap analysis by: ${successNickname}!`, 'color: #34A853;');
-                }
-           
                 console.groupEnd();
-                // This is the correct place to return the final, complete object
                 return {
-                    ...defaultRecapStructure(provider),
-                    ...recapResult,
+                    ...defaultRecapStructure(provider), ...recapResult,
                     sessionId: `recap-${connector.id}-${Date.now()}`,
-                    connectorId: connector.id,
-                    connectorName: connector.profileName,
+                    connectorId: connector.id, connectorName: connector.profileName,
                     date: new Date().toLocaleDateString()
                 };
             }
@@ -512,7 +472,6 @@ generateSessionRecap: async (
         }
     }
 
-    // --- 5. This part is only reached if ALL providers fail ---
     console.error(`${functionName}: FINAL ERROR. All recap provider attempts failed.`);
     console.groupEnd();
     return defaultRecapStructure("All Recap Services");

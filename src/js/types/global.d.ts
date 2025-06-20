@@ -373,7 +373,7 @@ export interface GeminiRecapService { // Or GeminiRecapServiceModule
 }
 export interface GroupInteractionLogic {
     initialize: (members: Connector[], tutor: Connector) => void;
-    startConversationFlow: () => Promise<void>; // It's async
+    startConversationFlow: (forceImmediateGeneration?: boolean) => void; // <<< This is the fix
     stopConversationFlow: () => void; // This is the missing piece
     setUserTypingStatus: (isTyping: boolean) => void;
     handleUserMessage: (text: string | undefined, options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }) => Promise<void>;
@@ -567,6 +567,9 @@ export interface YourDomElements { // Ensure EXPORT
     gmmMembersListUl: HTMLUListElement | null;  // New
     gmmModalFooter: HTMLElement | null;         // New
     gmmCtaBtn: HTMLButtonElement | null;         // New
+    processingCallModal?: HTMLElement | null;    // <<< ADD THIS LINE
+
+
     // Messages View (Embedded Chat)
     messagesView: HTMLElement | null;
     embeddedChatHeaderAvatar: HTMLImageElement | null;
@@ -1050,26 +1053,46 @@ export interface IdentityServiceModule {
 }
 
 // --- NEW MEMORY SERVICE TYPES ---
-export interface PersonaUserMemory {
+// PASTE THIS INTO global.d.ts, REPLACING THE OLD MEMORY INTERFACES
+
+// --- NEW MEMORY SERVICE & CEREBRUM TYPES ---
+export interface MemoryFact {
+  key: string;
+  value: any;
+  type: 'CORE' | 'EPISODIC' | 'FRAGILE';
+  timestamp: number;
+  initialConfidence: number;
+  source_context: 'one_on_one' | 'group' | 'live_call' | 'manual' | 'ai_invention';
+  source_persona_id: string;
+  participating_persona_ids?: string[];
+  confidenceBoost?: number; // For Scribe's contextual reinforcement
+}
+
+export interface MemoryBank {
+  core: MemoryFact[];
+  episodic: MemoryFact[];
+  fragile: MemoryFact[];
+}
+
+export interface CerebrumMemoryLedger {
   userId: string;
-  personaId: string;
-  hasInteracted: boolean;
-  lastInteractionTimestamp?: number;
-  // Future fields:
-  // lastInteractionSummary?: string;
-  // keyFactsLearnedAboutUser?: string[];
-  // userPreferencesWithPersona?: Record<string, any>;
+  user_memory: MemoryBank;
+  ai_memory: {
+      [personaId: string]: MemoryBank;
+  };
+  last_updated: number;
 }
 
 export interface MemoryServiceModule {
-  initialize: () => Promise<void>; // For potential async setup in the future
+  initialize: () => Promise<void>;
+  processNewUserMessage: (text: string, personaIds: string | string[], context: 'one_on_one' | 'group' | 'live_call' | 'ai_invention', history?: MessageInStore[]) => Promise<void>; // <<< 
+  getMemoryForPrompt: (personaId: string) => Promise<{prompt: string, facts: MemoryFact[]}>; // <<< THIS IS THE FIX
+  
+  // --- Deprecated functions for compatibility during transition ---
   hasInteractedBefore: (personaId: string, userId: string) => Promise<boolean>;
   markInteraction: (personaId: string, userId: string) => Promise<void>;
-  getMemory: (personaId: string, userId: string) => Promise<PersonaUserMemory | null>; // Added for flexibility
-  updateMemory: (personaId: string, userId: string, memoryData: Partial<Omit<PersonaUserMemory, 'userId' | 'personaId'>>) => Promise<void>; // Added for flexibility
-  // For future use:
-  // getShortTermMemorySummary: (personaId: string, userId: string) => Promise<string | null>;
-  // updateShortTermMemorySummary: (personaId: string, userId: string, summary: string) => Promise<void>;
+  getMemory: (personaId: string, userId: string) => Promise<any | null>;
+  updateMemory: (personaId: string, userId: string, memoryData: any) => Promise<void>;
 }
 export interface ChatActiveTargetManager {
   getEmbeddedChatTargetId: () => string | null;
@@ -1144,6 +1167,7 @@ export interface ChatOrchestrator {
   openConversation: (connector: Connector) => void;
   openMessageModal: (connector: Connector) => void;
   handleMessagesTabActive: () => void;
+  handleGroupsTabActive: () => void; // <<< ADD THIS LINE
   // filterAndDisplayConnectors is correctly removed from the implementation, so it must be removed here too.
   renderCombinedActiveChatsList: () => void;
   notifyNewActivityInConversation: (connectorId: string) => void;
@@ -1170,9 +1194,10 @@ export interface ChatUiManager {
 
 export interface SessionHistoryManager {
   initializeHistory: () => void;
-  addCompletedSession: (sessionData: SessionData) => void; // Use SessionData type
-  getCompletedSessions: () => SessionData[]; // Returns an array of SessionData
+  addCompletedSession: (sessionData: SessionData) => void;
+  getCompletedSessions: () => SessionData[];
   getSessionById: (sessionId: string) => SessionData | null;
+  getLastSession: () => SessionData | null; // <<< ADD THIS LINE
   downloadTranscript: (sessionId: string) => void;
   updateSummaryListUI: () => void;
 }
@@ -1214,11 +1239,10 @@ export interface AIService {
       modalCallHistory: GeminiChatItem[] | null | undefined
   ) => Promise<string | null>;
   
-  generateSessionRecap: ( // Added from your JS facade
-      fullCallTranscript: TranscriptTurn[], 
-      connector: Connector, 
-      preferredProvider?: string
-  ) => Promise<RecapData>; // Assuming RecapData is robust for errors too
+  generateSessionRecap: ( 
+    cleanedTranscriptText: string, 
+    connector: Connector
+) => Promise<RecapData>;
 
   transcribeAudioToText?: ( // Added from your JS facade
       base64Audio: string, // Changed from Blob to match your JS facade usage
@@ -1342,10 +1366,11 @@ export interface GeminiServiceModule {
   ) => Promise<{ audioBase64: string; mimeType: string } | null >;
 
   generateTextMessage: (
-      userText: string,
-      connector: Connector,
-      existingGeminiHistory: GeminiChatItem[]
-  ) => Promise<string | null>;
+    userText: string,
+    connector: Connector,
+    existingGeminiHistory: GeminiChatItem[]
+) => Promise<string | object | null>; // <<< THIS IS THE FIX
+
 
   generateTextForCallModal?: ( // This was optional
       userText: string,

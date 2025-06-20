@@ -431,6 +431,9 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
             const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend, messageId: optionsMessageId, timestamp: optionsTimestamp } = options;
             if (currentEmbeddedChatTargetId) clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
             const functionName = "sendEmbeddedTextMessage";
+
+           
+            
             const text = textFromInput?.trim() || "";
 
             const userMessageTimestamp = optionsTimestamp || Date.now();
@@ -568,8 +571,39 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
             if (!skipUiAppend && uiUpdater) {
                 uiUpdater.toggleEmbeddedSendButton?.(false); // Disable send button while AI thinks
             }
+          // =================== TWIN TAG: EMBEDDED-USER ===================
+          
+      
+          
+          if (window.memoryService && window.memoryService.processNewUserMessage) {
+                const userTextToProcess = textForDisplayAndStore || (captionText || "");
+                if (userTextToProcess.trim()) {
+                    console.log(`[CEREBRUM_WRITE] ✍️ Sending USER'S message to memory service for analysis...`);
+                    // We now AWAIT this, forcing it to complete before proceeding.
+                 
+                    if (window.conversationManager) { // <<< SAFETY CHECK
+                        const convoRecord = await window.conversationManager.getConversationById(currentEmbeddedChatTargetId);
+                        const recentHistory = convoRecord?.messages.slice(-10) || []; // Increased slice for better context
+                        await window.memoryService.processNewUserMessage(
+                            userTextToProcess,
+                            currentEmbeddedChatTargetId,
+                            'one_on_one',
+                            recentHistory
+                        );
+                    }
+                    console.log(`[CEREBRUM_WRITE] ✅ USER'S message analysis complete.`);
+                }
+            }
+          
+          
+          
+          
             let aiRespondedSuccessfully = false; // <<< ADD THIS LINE// --- NEW: Show an immediate "thinking" indicator while we wait for the AI ---
             const controller = interruptAndTrackAiOperation(currentEmbeddedChatTargetId);
+          
+          
+          
+          
             try {
           
                 let promptForAI: string;
@@ -621,10 +655,24 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 } else { // User sent TEXT-ONLY
                     promptForAI = textForDisplayAndStore; // This is the user's text message
                     console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply.`);
-    
-                    // --- START: CONTEXT INJECTION FOR CALLS ---
-                    let historyForAiCall = getHistoryForAiCall(convo.geminiHistory || [], false); // Get a copy
-
+                
+                    // --- THIS IS THE FIX: Rebuild history right before the AI call ---
+                    console.log(`%c[TMH Pre-AI] 🧠 Rebuilding prompt with latest memories for [${currentEmbeddedChatTargetId}]...`, 'color: #6610f2; font-weight: bold;');
+                    let historyForAiCall = await conversationManager.getGeminiHistoryForConnector(currentEmbeddedChatTargetId);
+                    console.log(`%c[TMH Pre-AI] ✅ Prompt rebuild complete.`, 'color: #28a745; font-weight: bold;');
+                
+                    // Check if the PREVIOUS message in the store was a call event.
+                    // The user's current message is at index (length - 1), so we check (length - 2).
+                    if (convo.messages.length >= 2) {
+                        const secondToLastMessage = convo.messages[convo.messages.length - 2];
+                        if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
+                            console.log("TMH: Call event detected as the PREVIOUS message. Injecting context into AI history.");
+                            historyForAiCall.push({
+                                role: 'user',
+                                parts: [{ text: "[A voice call took place between you and the user.]" }]
+                            });
+                        }
+                    }
                 // Check if the PREVIOUS message in the store was a call event.
                 // The user's current message is at index (length - 1), so we check (length - 2).
                 if (convo.messages.length >= 2) {
@@ -710,6 +758,19 @@ if (imageFile && typeof aiResponseText === 'string') {
 
 // --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED CHAT ---
 } else if (aiResponseText) {
+  // =================== TWIN TAG: EMBEDDED-AI ===================
+    if (window.memoryService && window.memoryService.processNewUserMessage) {
+        console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis...`);
+        window.memoryService.processNewUserMessage(
+            aiResponseText,
+            currentEmbeddedChatTargetId,
+            'ai_invention'
+        );
+   }
+  
+  
+  
+  
     console.log(`[Auto-Separator] Raw AI Text (Embedded): "${aiResponseText}"`);
     const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
     console.log(`[Auto-Separator] Processed Text (Embedded): "${processedText.replace(/\n/g, '\\n')}"`);
@@ -1083,7 +1144,30 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
             };
             // Ensure thinking message is appended to modal log
             const thinkingMsg = uiUpdater.appendToMessageLogModal?.(`${thinkingMsgOptions.senderName || 'Partner'} is typing...`, 'connector-thinking', thinkingMsgOptions);
-    
+
+            // =================== TWIN TAG: MODAL-USER ===================
+            if (window.conversationManager && window.memoryService?.processNewUserMessage) {
+                const userTextToProcess = textForDisplayAndStore || (captionText || "");
+                if (userTextToProcess.trim()) {
+                    console.log(`[CEREBRUM_WRITE] ✍️ Sending USER'S message to memory service for analysis (modal)...`);
+                    
+                    // Fetch history for modal context
+                    const convoRecord = await window.conversationManager.getConversationById(targetId);
+                    const recentHistory = convoRecord?.messages.slice(-10) || []; // Increased slice for better context
+            
+                    await window.memoryService.processNewUserMessage(
+                        userTextToProcess,
+                        targetId,
+                        'one_on_one',
+                        recentHistory
+                    );
+                    console.log(`[CEREBRUM_WRITE] ✅ USER'S message analysis complete (modal).`);
+                }
+            }
+
+
+
+
             let aiRespondedSuccessfully = false;
             const controller = interruptAndTrackAiOperation(targetId);
             try {
@@ -1137,12 +1221,13 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 } else { // User sent TEXT-ONLY
                     promptForAI_modal = textForDisplayAndStore; // This is the user's text message
                     console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply (modal).`);
-    
-                    // --- START: CONTEXT INJECTION FOR CALLS ---
-                    let historyForAiCall = getHistoryForAiCall(convo.geminiHistory || [], false); // Get a copy
-
+                
+                    // --- THIS IS THE FIX: Rebuild history right before the AI call ---
+                    console.log(`%c[TMH Pre-AI] 🧠 Rebuilding prompt with latest memories for [${targetId}] (modal)...`, 'color: #6610f2; font-weight: bold;');
+                    let historyForAiCall = await conversationManager.getGeminiHistoryForConnector(targetId);
+                    console.log(`%c[TMH Pre-AI] ✅ Prompt rebuild complete (modal).`, 'color: #28a745; font-weight: bold;');
+                
                     // Check if the PREVIOUS message in the store was a call event.
-                    // The user's current message is at index (length - 1), so we check (length - 2).
                     if (convo.messages.length >= 2) {
                         const secondToLastMessage = convo.messages[convo.messages.length - 2];
                         if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
@@ -1214,6 +1299,19 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                             }
                         }
                     } else if (aiResponseText) {
+
+                        //  =================== TWIN TAG: MODAL-AI ===================
+                        if (window.memoryService && window.memoryService.processNewUserMessage) {
+                            console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis (modal)...`);
+                            window.memoryService.processNewUserMessage(
+                                aiResponseText,
+                                targetId, // Correct ID for modal
+                                'ai_invention'
+                            );
+                       }
+
+
+
                         // --- MODAL TEXT-ONLY PATH ---
                         console.log(`[Auto-Separator] Raw AI Text (Modal): "${aiResponseText}"`);
                         const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });

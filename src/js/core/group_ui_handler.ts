@@ -194,79 +194,65 @@ function initializeActualGroupUiHandler(): void {
             modalHandler.open(domElements.groupMembersModal);
         }
 
-        function initialize(): void {
-            console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            console.error("GUH.initialize: TOP OF INITIALIZE FUNCTION EXECUTED");
-            console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+      // =================== START: REPLACEMENT ===================
+function initialize(): void {
+    console.log("GUH.initialize: GroupUiHandler.ts: Initializing event listeners...");
 
-            console.log("GUH.initialize: GroupUiHandler.ts: Initializing event listeners..."); // Changed log for clarity
+    // Get dependencies needed for the listeners
+    const { domElements, modalHandler, groupDataManager } = resolvedDeps!;
     
-            // Uses domElements, modalHandler from the IIFE's top-level destructuring
-    
-            if (domElements.groupHeaderInfoTrigger) {
-                console.log("GUH.initialize: Found groupHeaderInfoTrigger. Attaching click listener to open Group Members Modal.");
-                domElements.groupHeaderInfoTrigger.addEventListener('click', () => {
-                    console.log("GUH.initialize: groupHeaderInfoTrigger CLICKED!"); // <<< DEBUG CLICK
-                    openGroupMembersModalInternal();
-                });
-            } else {
-                console.warn("GUH.initialize: groupHeaderInfoTrigger not found in DOM.");
+    // --- Listener 1: For the Group Discovery Page (the cards) ---
+    // This listener is on the main list container.
+    if (domElements.availableGroupsUl) {
+        domElements.availableGroupsUl.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement;
+            const infoButton = target.closest('.group-card-info-btn');
+
+            if (infoButton) {
+                event.stopPropagation(); // Prevent other clicks
+                const groupId = infoButton.getAttribute('data-group-id');
+                if (groupId) {
+                    console.log(`GUH: Group card 'Info' button clicked for group ID: ${groupId}`);
+                    const groupData = groupDataManager.getGroupDefinitionById(groupId);
+                    if (groupData) {
+                        // This correctly calls the function to show the info/join modal
+                        openGroupInfoModal(groupData);
+                    }
+                }
             }
+            // Note: The 'Join' and 'View Chat' button listeners are attached dynamically
+            // in list_renderer.ts, so we don't handle them here. This is correct.
+        });
+        console.log("GUH: Delegated listener for group card 'Info' buttons attached.");
+    }
+
+    // --- Listener 2: For the Active Group Chat Header ---
+    // This listener is specifically on the header trigger element.
+    if (domElements.groupHeaderInfoTrigger) {
+        domElements.groupHeaderInfoTrigger.addEventListener('click', (event) => {
+            console.log("GUH: Group chat header area clicked.");
+            // This correctly calls the function to show the list of members
+            openGroupMembersModalInternal();
+        });
+        console.log("GUH: Listener for active group chat header attached.");
+    }
+
+    // --- Listener 3: For the Close Button on the Members Modal ---
+    if (domElements.closeGroupMembersModalBtn && domElements.groupMembersModal) {
+        domElements.closeGroupMembersModalBtn.addEventListener('click', () => {
+            modalHandler.close(domElements.groupMembersModal);
+        });
         
-            if (domElements.closeGroupMembersModalBtn && domElements.groupMembersModal) {
-                console.log("GUH.initialize: Found closeGroupMembersModalBtn. Attaching click listener.");
-                domElements.closeGroupMembersModalBtn.addEventListener('click', () => {
-                    console.log("GUH.initialize: closeGroupMembersModalBtn CLICKED!"); // <<< DEBUG CLICK
-                    modalHandler.close(domElements.groupMembersModal);
-                });
-                
-                console.log("GUH.initialize: Found groupMembersModal. Attaching overlay click listener.");
-                domElements.groupMembersModal.addEventListener('click', (event: MouseEvent) => {
-                    if (event.target === domElements.groupMembersModal) {
-                        console.log("GUH.initialize: groupMembersModal OVERLAY CLICKED!"); // <<< DEBUG CLICK
-                        modalHandler.close(domElements.groupMembersModal);
-                    }
-                });
-            } else {
-                if (!domElements.closeGroupMembersModalBtn) console.warn("GUH.initialize: closeGroupMembersModalBtn not found.");
-                if (!domElements.groupMembersModal) console.warn("GUH.initialize: groupMembersModal not found.");
+        // Also close when clicking the overlay
+        domElements.groupMembersModal.addEventListener('click', (event) => {
+            if (event.target === domElements.groupMembersModal) {
+                modalHandler.close(domElements.groupMembersModal);
             }
-    
-            const currentPersonaModalManager = window.personaModalManager;
-            const currentPolyglotConnectors = window.polyglotConnectors;
-    
-            if (domElements.groupChatMembersAvatarsDiv && currentPersonaModalManager && currentPolyglotConnectors) {
-                console.log("GUH.initialize: Found groupChatMembersAvatarsDiv. Attaching delegated click listener for member avatars and 'more' badge.");
-                domElements.groupChatMembersAvatarsDiv.addEventListener('click', (event: MouseEvent) => {
-                    console.log("GUH.initialize: Click detected inside groupChatMembersAvatarsDiv.");
-                    const target = event.target as HTMLElement;
-                    
-                    if (target.classList.contains('clickable-group-header-avatar') && target.dataset.connectorId) {
-                        event.stopPropagation(); // <<< ADD THIS
-                        const connectorId = target.dataset.connectorId;
-                        console.log(`GUH.initialize: Clickable avatar with ID '${connectorId}' CLICKED! (Propagation stopped)`);
-                        const connector = currentPolyglotConnectors.find(c => c.id === connectorId);
-                        if (connector) {
-                            currentPersonaModalManager.openDetailedPersonaModal(connector);
-                        } else {
-                            console.warn(`GUH.initialize: Connector not found for ID '${connectorId}' from avatar click.`);
-                        }
-                    } else if (target.classList.contains('group-member-avatar-more')) {
-                         event.stopPropagation(); // <<< ADD THIS
-                         console.log("GUH.initialize: '+N More' badge CLICKED! (Propagation stopped)");
-                         openGroupMembersModalInternal();
-                    } else {
-                        console.log("GUH.initialize: Click in groupChatMembersAvatarsDiv was not on a recognized element (avatar or more badge). Target:", target);
-                        // Do not stop propagation here, allow click on general div to bubble to groupHeaderInfoTrigger
-                    }
-                });
-            } else {
-                if (!domElements.groupChatMembersAvatarsDiv) console.warn("GUH.initialize: groupChatMembersAvatarsDiv not found.");
-                if (!currentPersonaModalManager) console.warn("GUH.initialize: personaModalManager not available for avatar clicks.");
-                if (!currentPolyglotConnectors) console.warn("GUH.initialize: polyglotConnectors not available for avatar clicks.");
-            }
-            console.log("GUH.initialize: Event listener setup process FINISHED.");
-        }
+        });
+        console.log("GUH: Listeners for closing the group members modal attached.");
+    }
+}
+// ===================  END: REPLACEMENT  ===================
 
              // =================== START: REPLACE THE ENTIRE FUNCTION WITH THIS ===================
            // =================== START: REPLACE THE ENTIRE FUNCTION WITH THIS ===================

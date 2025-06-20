@@ -293,10 +293,56 @@ return `# SECTION 2: SPECIALIZED RULES - COMMUNITY HANGOUT (Topic: ${hangoutTopi
 
     // --- MASTER PROMPT BUILDER ---
 
-    function buildMasterPrompt(group: Group, groupMembers: Connector[], helpers: PolyglotHelpersOnWindow): string {
+    async function buildMasterPrompt(group: Group, groupMembers: Connector[], helpers: PolyglotHelpersOnWindow): Promise<string> {
         const memberList = helpers.formatReadableList(groupMembers.map(m => m.profileName), "and");
-      
-      
+        
+        // --- THIS IS THE FIX: Build a comprehensive memory packet for the group ---
+        let combinedMemoryPacket = "// CEREBRUM MEMORY PACKET (GROUP)\n";
+
+        // Start the console group unconditionally
+        console.groupCollapsed(`%c[CEREBRUM_GROUP_INJECT] 🧠 Retrieving memory packets for all ${groupMembers.length} group members...`, 'color: #6610f2; font-weight: bold;');
+        
+        for (const member of groupMembers) {
+            // --- THIS IS THE FIX ---
+            // Check for memoryService right before we use it.
+            if (window.memoryService && typeof window.memoryService.getMemoryForPrompt === 'function') {
+                const memoryResponse = await window.memoryService.getMemoryForPrompt(member.id);
+                
+                if (memoryResponse.facts.length > 0) {
+                    console.log(`%c[Limbic System] Thalamus recalled ${memoryResponse.facts.length} memory fact(s) for group member [${member.profileName}]:`, 'color: #17a2b8; font-weight: bold;');
+                    console.table(memoryResponse.facts.map((fact) => ({
+                        key: fact.key,
+                        value: fact.value,
+                        type: fact.type,
+                        confidence: fact.initialConfidence.toFixed(2),
+                        source: fact.source_context
+                    })));
+                    if (memoryResponse.prompt && !memoryResponse.prompt.includes("No relevant memories")) {
+                        combinedMemoryPacket += `// Memories recalled for ${member.profileName}:\n${memoryResponse.prompt}\n\n`;
+                    }
+                } else {
+                    console.log(`%c[Limbic System] No relevant memories recalled by Thalamus for [${member.profileName}].`, 'color: #6c757d;');
+                }
+            } else {
+                // Log if the memory service isn't available, to avoid silent failures
+                console.warn(`[CEREBRUM_GROUP_INJECT] Memory service not available for member [${member.profileName}].`);
+            }
+        }
+        
+        console.groupEnd(); // Close the console group
+// ===================  END: REPLACEMENT 1  ===================
+        
+        const memorySection = `
+    # SECTION 0: CEREBRUM MEMORY PACKET (Your Group's Shared Long-Term Memory)
+    This contains facts you have learned about the user. You MUST refer to it to create a continuous, personal conversation.
+    MEMORY INTERPRETATION RULES:
+    user.key: A fact about the user. Example: user.userName = "Alex".
+    [persona_id]: A private fact only that persona and the user share.
+    confidence=X.XX: How certain you are of a memory. Low confidence means you should be hesitant (e.g., "I think you mentioned...?").
+    --- MEMORY START ---
+    ${combinedMemoryPacket.trim()}
+    --- MEMORY END ---
+    `;
       
    // --- NEW: Get User Profile Summary ---
    const convoStore = window.convoStore;
@@ -629,7 +675,16 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         
         const historyItem: GroupChatHistoryItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
         lastMessageTimestamp = historyItem.timestamp;
-        
+        if (window.memoryService && typeof window.memoryService.processNewUserMessage === 'function') {
+            console.log(`[CEREBRUM_SELF_WRITE] ✍️ Sending [${speaker.profileName}]'s own message for self-analysis...`);
+            // Now this call is safely inside the check
+            window.memoryService.processNewUserMessage(
+                responseText,
+                speaker.id,
+                'ai_invention',
+                []
+            );
+        }
      // --- THIS IS THE BAND-AID FIX ---
 // @ts-ignore - We are forcing this call because we know the function signature in group_data_manager is correct, even if TS is stuck.
 groupDataManager.addMessageToCurrentGroupHistory(historyItem, { triggerListUpdate: true });
@@ -659,6 +714,9 @@ lastSpeakerIdInBatch = speaker.id;
 
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 // <<< CHANGE THE RETURN TYPE >>>
+
+
+
 async function generateAiTextResponse(
     engineTriggered: boolean = false, 
     isGrandOpening: boolean = false, 
@@ -667,17 +725,19 @@ async function generateAiTextResponse(
     abortSignal?: AbortSignal // <<< ADD THIS
 ): Promise<string[]> {
    
-    if (!conversationFlowActive) return []; // FIX 1
-    const { groupDataManager, polyglotHelpers, aiService, groupUiHandler, activityManager } = getDeps();
+    if (!conversationFlowActive) return [];
+    const { groupDataManager, polyglotHelpers, aiService, tutor } = getDeps();
     const currentGroup = groupDataManager.getCurrentGroupData();
     if (!currentGroup || !tutor) {
         console.error("GIL: generateAiTextResponse called but currentGroup or tutor is missing.");
-        return []; // FIX 2
+        return [];
     }
-
+    
+    // --- UNIFIED PROMPT BUILDING ---
+    // 1. Always build the full master prompt at the start. This triggers the Thalamus.
+    const masterPrompt = await buildMasterPrompt(currentGroup, members, polyglotHelpers);
     let systemPrompt = '';
     let instructionText = '';
-
 
 
 
@@ -828,7 +888,7 @@ if (isGrandOpening) {
     } else {
         // --- PROMPT FOR ONGOING CONVERSATION: "You are a master puppeteer." ---
         // This is our advanced, rule-heavy prompt for when the conversation is already flowing.
-        systemPrompt = buildMasterPrompt(currentGroup, members, polyglotHelpers);
+        systemPrompt = await buildMasterPrompt(currentGroup, members, polyglotHelpers);
         
         if (engineTriggered) {
             // This is for when the user has been idle and the AI needs to talk.
@@ -1017,7 +1077,8 @@ YOUR RESPONSE:
     // --- FINAL PROMPT ASSEMBLY AND API CALL ---
 
     const finalPromptInstruction = `
-${systemPrompt}
+    ${masterPrompt} 
+    ${systemPrompt}
 
 Conversation History (if any):
 ---
@@ -1373,9 +1434,16 @@ async function conversationEngineLoop(forceImmediateGeneration: boolean = false,
     }
 
     const timeSinceLastMessage = Date.now() - (lastMessageTimestamp || 0);
-    const shouldGenerate = isFirstRunAfterJoin || (timeSinceLastMessage > 10000 && !hasProddedSinceUserSpoke);
 
+    // The new condition: Generate if it's the first run, if the user has been idle, OR if we are forcing it.
+    const shouldGenerate = forceImmediateGeneration || isFirstRunAfterJoin || (timeSinceLastMessage > 10000 && !hasProddedSinceUserSpoke);
+    
     if (shouldGenerate) {
+        if (forceImmediateGeneration) {
+            console.log(`%c[Engine] Force-generating scene on group entry...`, 'color: #fd7e14; font-weight: bold;');
+        }
+
+
         const history = groupDataManager.getLoadedChatHistory();
         const isGrandOpening = history.length === 0 && isFirstRunAfterJoin;
 
@@ -1472,12 +1540,12 @@ const groupInteractionLogic = {
         }
     },
 
-    startConversationFlow: (): void => {
+    startConversationFlow: (forceImmediateGeneration: boolean = false): void => {
         console.log("GIL (Hybrid): Conversation flow STARTED.");
         conversationFlowActive = true;
         if (conversationLoopId) clearTimeout(conversationLoopId);
         // We are now telling the engine this is the first run after joining.
-        conversationEngineLoop(false, true);
+        conversationEngineLoop(forceImmediateGeneration, true);
     },
 
    // Replace with this
@@ -1549,6 +1617,48 @@ const groupInteractionLogic = {
             console.log("GIL: User profile summary was updated.");
         }
     }
+
+// =================== START: ADD NEW BLOCK ===================
+// 5. Send the user's message to the main memory service for fact extraction.
+// This ensures facts learned in the group are available for later 1-on-1 chats.
+// =================== START: REPLACEMENT ===================
+// 5. Send the user's message to the memory service for targeted fact extraction.
+// =================== START: REPLACEMENT ===================
+// 5. Send the user's message to the memory service for targeted fact extraction.
+if (userMessageText && window.memoryService?.processNewUserMessage) {
+    const { groupDataManager } = getDeps();
+    const recentHistory = groupDataManager.getLoadedChatHistory().slice(-10); // Look at last 10 messages for context
+    const involvedAiIds = new Set<string>();
+
+    // Find AI members who spoke recently
+    recentHistory.forEach(msg => {
+        if (msg.speakerId !== 'user' && msg.speakerId) {
+            involvedAiIds.add(msg.speakerId);
+        }
+    });
+
+    // If no AI spoke recently (e.g., user is starting a topic), assume the tutor is listening.
+    if (involvedAiIds.size === 0 && tutor) {
+        involvedAiIds.add(tutor.id);
+    }
+
+    if (involvedAiIds.size > 0) {
+        const audienceIds = Array.from(involvedAiIds);
+        console.log(`[CEREBRUM_GROUP_WRITE] ✍️ User spoke. Identified audience: [${audienceIds.join(', ')}]. Sending to memory service...`);
+
+        // This is a "targeted broadcast" to the memory service.
+        // We are telling it: "This text was heard by these specific AIs."
+        await window.memoryService.processNewUserMessage(
+            userMessageText,
+            audienceIds, // Pass the array of audience IDs
+            'group',
+            []
+        );
+        console.log(`[CEREBRUM_GROUP_WRITE] ✅ Targeted memory analysis complete.`);
+    }
+}
+// ===================  END: REPLACEMENT  ===================
+
 
     // 5. Generate a new AI response (image or text)
     if (options?.userSentImage && options.imageBase64Data && options.imageMimeType) {

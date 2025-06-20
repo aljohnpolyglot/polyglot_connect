@@ -57,6 +57,9 @@ window.domElements = {
   // Group Members Modal (New)
   groupHeaderInfoTrigger: document.getElementById('group-header-info-trigger') as HTMLElement | null,
   groupMembersModal: document.getElementById('group-members-modal') as HTMLElement | null,
+ 
+ 
+ 
   closeGroupMembersModalBtn: document.getElementById('close-group-members-modal-btn') as HTMLButtonElement | null,
   gmmGroupPhoto: document.getElementById('gmm-group-photo') as HTMLImageElement | null,
   gmmGroupName: document.getElementById('gmm-group-name') as HTMLElement | null,
@@ -136,6 +139,9 @@ window.domElements = {
 
     // Virtual Calling Screen Modal
     ringtoneAudio: document.getElementById('ringtone-audio') as HTMLAudioElement | null,
+    processingCallModal: document.getElementById('processing-call-modal'),
+    
+    
     virtualCallingScreen: document.getElementById('virtual-calling-screen') as HTMLElement | null,
     callingAvatar: document.getElementById('calling-avatar') as HTMLImageElement | null,
     callingName: document.getElementById('calling-name') as HTMLElement | null,

@@ -22,6 +22,7 @@ interface SessionStateManagerModule {
     initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string) => boolean;
     markSessionAsStarted: () => boolean;
     addTurnToTranscript: (turn: TranscriptTurn) => void;
+    getRawTranscript: () => TranscriptTurn[]; // <<< ADD THIS LINE
     getCurrentTranscript: () => TranscriptTurn[];
     getCurrentSessionDetails?: () => { 
         connector?: Connector | null;
@@ -97,17 +98,21 @@ function initializeActualSessionStateManager(): void {
 
     if (!resolvedDeps) {
         const errorMsg = "SessionStateManager (TS) not initialized (missing polyglotHelpers).";
-        const dummyMethods: SessionStateManagerModule = { /* ... (your dummy methods) ... */ 
-            initializeBaseSession: () => { console.error(errorMsg); return false; },
-            markSessionAsStarted: () => { console.error(errorMsg); return false; },
-            addTurnToTranscript: () => console.error(errorMsg),
-            getCurrentTranscript: () => { console.error(errorMsg); return []; },
-            getCurrentSessionDetails: () => { console.error(errorMsg); return null; },
-            finalizeBaseSession: async () => console.error(errorMsg),
-            resetBaseSessionState: () => console.error(errorMsg),
-            isSessionActive: () => { console.error(errorMsg); return false; },
-            recordFailedCallAttempt: () => console.error(errorMsg)
-        };
+      // REPLACE LANDMARK 2 WITH THIS MODIFIED OBJECT:
+// =================== START: REPLACEMENT FOR dummyMethods ===================
+const dummyMethods: SessionStateManagerModule = {
+    initializeBaseSession: () => { console.error(errorMsg); return false; },
+    markSessionAsStarted: () => { console.error(errorMsg); return false; },
+    addTurnToTranscript: () => console.error(errorMsg),
+    getRawTranscript: () => { console.error(errorMsg); return []; }, // <<< ADD THIS LINE
+    getCurrentTranscript: () => { console.error(errorMsg); return []; },
+    getCurrentSessionDetails: () => { console.error(errorMsg); return null; },
+    finalizeBaseSession: async () => console.error(errorMsg),
+    resetBaseSessionState: () => console.error(errorMsg),
+    isSessionActive: () => { console.error(errorMsg); return false; },
+    recordFailedCallAttempt: () => console.error(errorMsg)
+};
+// ===================  END: REPLACEMENT FOR dummyMethods  ===================
         Object.assign(window.sessionStateManager!, dummyMethods);
         document.dispatchEvent(new CustomEvent('sessionStateManagerReady'));
         console.warn('session_state_manager.ts: "sessionStateManagerReady" (FAILED - polyglotHelpers missing) event dispatched.');
@@ -288,6 +293,16 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
             });
         }
 
+        function getRawTranscript(): TranscriptTurn[] {
+            if (!currentSession.sessionId) {
+                console.warn("SSM (TS): getRawTranscript called but no active session.");
+                return [];
+            }
+            // Return a copy to prevent external modification
+            return [...currentSession.transcript];
+        }
+
+
         function getCurrentTranscript(): TranscriptTurn[] {
             return currentSession.sessionId ? [...currentSession.transcript] : [];
         }
@@ -296,134 +311,116 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
             return currentSession.sessionId ? { ...currentSession, transcript: [...currentSession.transcript] } : null;
         }
 
-        async function finalizeBaseSession(generateRecap: boolean = true): Promise<void> {
-            const functionName = "finalizeBaseSession (TS)";
-            console.log(`${functionName}: Called. GenerateRecap: ${generateRecap}, Current SessionID: '${currentSession.sessionId || 'N/A'}'`);
+        async function finalizeBaseSession(generateRecap: boolean = true, transcriptOverride?: TranscriptTurn[], cleanedTranscriptForRecap?: string | null): Promise<void> {
+            const functionName = "finalizeBaseSession (TS vFinal)";
+            console.log(`${functionName}: Called. GenerateRecap: ${generateRecap}`);
             
-            if (!currentSession.connector || 
-                !currentSession.connector.id || 
-                !currentSession.sessionId || 
-                !currentSession.sessionType) {
-                console.warn(`${functionName}: No fully initialized active session (missing connector, connector.id, sessionId, or sessionType) to finalize. Current session details:`, JSON.parse(JSON.stringify(currentSession || {})));
+            if (!currentSession.connector || !currentSession.sessionId) {
+                console.warn(`${functionName}: No fully initialized session to finalize.`);
                 resetBaseSessionState(); 
                 return;
             }
-
+        
             stopRingtone();
             const callEndTime = new Date();
-
-            const connectorIdForLog = currentSession.connector.id;
-            const connectorNameForLog = currentSession.connector.profileName || currentSession.connector.name || "Partner";
-            const sessionIdForLog = currentSession.sessionId;
-            const sessionTypeForLog = currentSession.sessionType;
-            const startTimeForCalc = currentSession.startTime;
-            const transcriptForLog = [...currentSession.transcript];
-            const connectorObjectForLog = { ...currentSession.connector };
-
+        
+            // Create a snapshot of the session data before we reset it
             const sessionToFinalize: SessionData = {
-                sessionId: sessionIdForLog,
-                connectorId: connectorIdForLog,
-                connectorName: connectorNameForLog,
-                connector: connectorObjectForLog,
-                date: startTimeForCalc ? new Date(startTimeForCalc).toLocaleDateString() : new Date(callEndTime).toLocaleDateString(),
-                startTimeISO: startTimeForCalc ? startTimeForCalc.toISOString() : null,
+                sessionId: currentSession.sessionId,
+                connectorId: currentSession.connector.id,
+                connectorName: currentSession.connector.profileName,
+                connector: { ...currentSession.connector },
+                date: currentSession.startTime ? new Date(currentSession.startTime).toLocaleDateString() : new Date().toLocaleDateString(),
+                startTimeISO: currentSession.startTime ? currentSession.startTime.toISOString() : null,
                 endTimeISO: callEndTime.toISOString(),
-                duration: "Calculating...",
-                rawTranscript: transcriptForLog,
-                sessionType: sessionTypeForLog,
+                duration: "N/A",
+                rawTranscript: transcriptOverride ? [...transcriptOverride] : [...currentSession.transcript],
+                sessionType: currentSession.sessionType || undefined, // <<< THIS IS THE FIX
                 conversationSummary: generateRecap ? "Generating summary..." : "Recap not generated for this session.",
-                keyTopicsDiscussed: generateRecap ? ["Generating..."] : [],
-                newVocabularyAndPhrases: [], goodUsageHighlights: [], areasForImprovement: [],
-                suggestedPracticeActivities: [], overallEncouragement: generateRecap ? "Generating..." : "Recap was not generated."
             };
             
-            const previousSessionIdForDebug = currentSession.sessionId;
+            // Reset the global state immediately
             resetBaseSessionState(); 
-            console.log(`${functionName}: Global currentSession state reset. Finalizing data for SessionID: '${sessionToFinalize.sessionId}' (was '${previousSessionIdForDebug}')`);
-
-            if (sessionToFinalize.startTimeISO && sessionToFinalize.endTimeISO) {
-                const durationMs = new Date(sessionToFinalize.endTimeISO).getTime() - new Date(sessionToFinalize.startTimeISO).getTime();
-                if (!isNaN(durationMs) && durationMs >= 0) {
-                    const minutes = Math.floor(durationMs / 60000);
-                    const seconds = Math.round((durationMs % 60000) / 1000);
-                    sessionToFinalize.duration = `${minutes}m ${seconds}s`;
-                } else {
-                    console.warn(`${functionName}: Invalid duration calculated for SessionID '${sessionToFinalize.sessionId}'. Start: ${sessionToFinalize.startTimeISO}, End: ${sessionToFinalize.endTimeISO}. Setting duration to 'N/A'.`);
-                    sessionToFinalize.duration = "N/A";
-                }
-            } else {
-                console.warn(`${functionName}: Cannot calculate duration for SessionID '${sessionToFinalize.sessionId}' due to missing start time. Setting duration to 'N/A'.`);
-                sessionToFinalize.duration = "N/A";
+            console.log(`${functionName}: Global session state reset. Now processing data for SessionID: '${sessionToFinalize.sessionId}'`);
+        
+            // Calculate duration
+            if (sessionToFinalize.startTimeISO) {
+                const durationMs = callEndTime.getTime() - new Date(sessionToFinalize.startTimeISO).getTime();
+                const minutes = Math.floor(durationMs / 60000);
+                const seconds = Math.round((durationMs % 60000) / 1000);
+                sessionToFinalize.duration = `${minutes}m ${seconds}s`;
             }
-
-            if (sessionToFinalize.startTimeISO) { // Only log call_ended if session formally started
+            
+            // Log the end-of-call event to chat history
+            if (sessionToFinalize.startTimeISO) {
                 _logCallEventToChat(
-                    connectorIdForLog, 'call_ended', 'The call ended.',
-                    sessionToFinalize.duration, sessionIdForLog,
-                    connectorIdForLog, connectorNameForLog
+                    sessionToFinalize.connectorId!, 'call_ended', 'The call ended.',
+                    sessionToFinalize.duration, sessionToFinalize.sessionId,
+                    sessionToFinalize.connectorId, sessionToFinalize.connectorName
                 );
-            } else {
-                console.log(`SSM (${functionName}): Session '${sessionToFinalize.sessionId}' ended but never formally started. 'call_ended' event not logged to chat.`);
             }
             
             const deps = getDynamicDeps();
-            let actualGenerateRecap = generateRecap;
-
-            if (actualGenerateRecap && (!deps.aiService || !deps.sessionHistoryManager || !deps.uiUpdater || !deps.modalHandler || !deps.domElements?.sessionRecapScreen || !deps.aiApiConstants)) {
-                console.error(`${functionName}: Cannot generate recap for SessionID '${sessionToFinalize.sessionId}' (missing critical dependencies for recap). Recap generation will be skipped.`);
-                sessionToFinalize.conversationSummary = "Recap generation skipped: System components missing.";
-                actualGenerateRecap = false; 
-            }
             
-            if (actualGenerateRecap && deps.aiService && deps.sessionHistoryManager && deps.uiUpdater && deps.modalHandler && deps.domElements?.sessionRecapScreen) {
-                console.log(`${functionName}: Transcript for session '${sessionToFinalize.sessionId}' (${sessionToFinalize.rawTranscript?.length} turns) being sent for recap.`);
-                deps.uiUpdater.populateRecapModal(sessionToFinalize); 
-                deps.modalHandler.open(deps.domElements.sessionRecapScreen);
+            // Check if we should and can generate a recap
+           // REPLACE THE ENTIRE LANDMARK if/else BLOCK WITH THIS:
+// =================== START: THE DEFINITIVE REPLACEMENT ===================
+if (generateRecap && deps.aiService && deps.sessionHistoryManager && deps.uiUpdater && deps.modalHandler && deps.domElements) {
+    // This block runs if we intend to generate a recap and all systems are go.
+    console.log(`${functionName}: Preparing recap for session '${sessionToFinalize.sessionId}'.`);
+    
+    try {
+        // Update the "Spectacle" modal to show the next step
+        const stepEl = document.getElementById('processing-call-step');
+        if (stepEl) stepEl.textContent = 'Generating your session debrief...';
 
-                try {
-                    console.log(`${functionName}: Requesting recap from aiService for session: '${sessionToFinalize.sessionId}'`);
-                    const aiGeneratedRecapObject = await deps.aiService.generateSessionRecap(
-                        sessionToFinalize.rawTranscript || [],
-                        sessionToFinalize.connector!, 
-                        deps.aiApiConstants?.PROVIDERS?.GROQ 
-                    );
-                    
-                    const finalSessionDataWithRecap: SessionData = { ...sessionToFinalize, ...(aiGeneratedRecapObject || {}) };
-                    // Ensure essential IDs and data are not overwritten by a potentially partial recap object
-                    finalSessionDataWithRecap.sessionId = sessionToFinalize.sessionId; 
-                    finalSessionDataWithRecap.connectorId = sessionToFinalize.connectorId;
-                    finalSessionDataWithRecap.connectorName = sessionToFinalize.connectorName;
-                    finalSessionDataWithRecap.connector = sessionToFinalize.connector;
-                    finalSessionDataWithRecap.date = sessionToFinalize.date;
-                    finalSessionDataWithRecap.duration = sessionToFinalize.duration;
-                    finalSessionDataWithRecap.startTimeISO = sessionToFinalize.startTimeISO;
-                    finalSessionDataWithRecap.endTimeISO = sessionToFinalize.endTimeISO;
-                    finalSessionDataWithRecap.rawTranscript = sessionToFinalize.rawTranscript;
-                    finalSessionDataWithRecap.sessionType = sessionToFinalize.sessionType;
+        // Use the pre-cleaned transcript if it was passed, otherwise format the raw one as a fallback.
+        const textForRecap = cleanedTranscriptForRecap || polyglotHelpers.formatTranscriptForLLM(sessionToFinalize.rawTranscript || [], sessionToFinalize.connectorName, "User");
 
-                    deps.sessionHistoryManager.addCompletedSession(finalSessionDataWithRecap);
-                    deps.uiUpdater.populateRecapModal(finalSessionDataWithRecap);
-                    console.log(`${functionName}: Recap generated and UI updated for '${sessionToFinalize.sessionId}'.`);
+        // Call the AI service with the correct arguments.
+        const aiGeneratedRecapObject = await deps.aiService.generateSessionRecap(
+            textForRecap,
+            sessionToFinalize.connector!
+        );
+        
+        // Merge the AI's response with our session data.
+        const finalSessionDataWithRecap: SessionData = { ...sessionToFinalize, ...aiGeneratedRecapObject };
+        
+        // NOW, we close the "Spectacle" and show the final result.
+        if (deps.domElements?.processingCallModal) deps.modalHandler.close(deps.domElements.processingCallModal);
+        deps.sessionHistoryManager.addCompletedSession(finalSessionDataWithRecap);
+        deps.uiUpdater.populateRecapModal(finalSessionDataWithRecap);
+        deps.modalHandler.open(deps.domElements.sessionRecapScreen);
+        console.log(`${functionName}: Recap successfully generated and displayed for '${sessionToFinalize.sessionId}'.`);
 
-                } catch (recapError: any) { 
-                    console.error(`${functionName}: Error during aiService.generateSessionRecap for '${sessionToFinalize.sessionId}':`, recapError);
-                    const errorFallbackRecap: SessionData = {
-                        ...sessionToFinalize,
-                        conversationSummary: "An error occurred while generating the detailed debrief.",
-                        keyTopicsDiscussed: ["Details unavailable due to error"], 
-                        overallEncouragement: "Apologies, the AI debrief could not be completed."
-                    };
-                    deps.sessionHistoryManager.addCompletedSession(errorFallbackRecap);
-                    deps.uiUpdater.populateRecapModal(errorFallbackRecap);
-                }
-            } else { 
-                if (deps.sessionHistoryManager?.addCompletedSession) {
-                    console.log(`${functionName}: Recap generation was SKIPPED. Saving current session data for '${sessionToFinalize.sessionId}'.`);
-                    deps.sessionHistoryManager.addCompletedSession(sessionToFinalize);
-                } else {
-                    console.warn(`${functionName}: sessionHistoryManager not available. Session record for '${sessionToFinalize.sessionId}' NOT saved.`);
-                }
-            }
+    } catch (recapError: any) { 
+        // This block runs if the AI call fails.
+        console.error(`${functionName}: Error during aiService.generateSessionRecap for '${sessionToFinalize.sessionId}':`, recapError);
+        const errorFallbackRecap: SessionData = {
+            ...sessionToFinalize,
+            conversationSummary: "An error occurred while generating the detailed debrief.",
+            keyTopicsDiscussed: ["Details unavailable due to error"],
+        };
+        
+        // Close the "Spectacle" and show an error recap instead.
+        if (deps.domElements?.processingCallModal) deps.modalHandler.close(deps.domElements.processingCallModal);
+        // ===================  END: REPLACEMENT  ===================
+        deps.sessionHistoryManager.addCompletedSession(errorFallbackRecap);
+        deps.uiUpdater.populateRecapModal(errorFallbackRecap);
+        deps.modalHandler.open(deps.domElements.sessionRecapScreen);
+    }
+} else { 
+    // This block runs if generateRecap was false.
+    if (deps.sessionHistoryManager) {
+        console.log(`${functionName}: Recap generation was SKIPPED. Saving base session data.`);
+        deps.sessionHistoryManager.addCompletedSession(sessionToFinalize);
+    }
+    // Also ensure the processing modal is closed in this path.
+    if (deps.domElements?.processingCallModal && deps.modalHandler) {
+        deps.modalHandler.close(deps.domElements.processingCallModal);
+    }
+}
+// ===================  END: THE DEFINITIVE REPLACEMENT  ===================
         }
 
         function resetBaseSessionState(): void {
@@ -473,6 +470,7 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
             initializeBaseSession,
             markSessionAsStarted,
             addTurnToTranscript,
+            getRawTranscript, // <<< ADD THIS LINE
             getCurrentTranscript,
             getCurrentSessionDetails,
             finalizeBaseSession,

@@ -57,7 +57,7 @@ interface ChatOrchestratorModule {
     openConversation: (connector: Connector) => void;
     openMessageModal: (connector: Connector) => void;
     handleMessagesTabActive: () => void;
-    // filterAndDisplayConnectors is removed
+    handleGroupsTabActive: () => void; // <<< ADD THIS LINE
     renderCombinedActiveChatsList: () => void;
     notifyNewActivityInConversation: (connectorId: string) => void;
     getTextMessageHandler: () => TextMessageHandler | undefined;
@@ -129,7 +129,7 @@ function initializeActualChatOrchestrator(): void {
             { name: 'conversationManager', getter: () => window.conversationManager as ConversationManager | undefined, keyFn: 'getActiveConversations' },
             { name: 'groupManager', getter: () => window.groupManager as GroupManager | undefined, keyFn: 'getAllGroupDataWithLastActivity' },
             // --- START OF MODIFICATION CO.FIX.DEPS.1 ---
-            { name: 'groupDataManager', getter: () => window.groupDataManager as GroupDataManager | undefined, keyFn: 'getCurrentGroupId' }, // <<< ADDED THIS LINE
+            { name: 'groupDataManager', getter: () => window.groupDataManager as GroupDataManager | undefined, keyFn: 'getCurrentGroupId' }, // <<< ADD THIS LINE
             // --- END OF MODIFICATION CO.FIX.DEPS.1 ---
             { name: 'chatSessionHandler', getter: () => window.chatSessionHandler as ChatSessionHandler | undefined, keyFn: 'openConversationInEmbeddedView' },
             { name: 'chatActiveTargetManager', getter: () => window.chatActiveTargetManager as ChatActiveTargetManager | undefined, keyFn: 'getEmbeddedChatTargetId' },
@@ -262,9 +262,9 @@ function initializeActualChatOrchestrator(): void {
 // ... inside the IIFE for window.chatOrchestrator ...
 
 // REPLACE this entire function
+// =================== START: REPLACEMENT ===================
 function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
     console.log("CO_DEBUG: handleActiveChatItemClickInternal called with:", JSON.parse(JSON.stringify(itemData)));
-    // The getResolvedDeps function now needs to be able to find the tabManager
     const { chatSessionHandler, groupManager, tabManager } = getResolvedDeps();
 
     if (!chatSessionHandler || !groupManager || !tabManager) {
@@ -273,32 +273,33 @@ function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
     }
 
     if (itemData.isGroup) {
-        // Delegate to Group Manager, which handles its own tab switching.
         const group = itemData as ActiveGroupListItem;
         console.log("CO: Delegating group join/switch to GroupManager for:", group.id);
         groupManager.joinGroup(group.id);
 
     } else {
-        // This is for a 1-on-1 chat.
         const oneOnOne = itemData as ActiveOneOnOneChatItem;
         
-        // If a group chat is open, close it first.
         if (groupManager.getCurrentGroupData?.()) {
             console.log("ChatOrchestrator: Leaving active group to switch to 1-on-1 chat.");
             groupManager.leaveCurrentGroup(false, false);
         }
         
-        // Step 1: Tell the session handler to load the chat content.
         console.log("CO: Delegating 1-on-1 conversation to ChatSessionHandler for:", oneOnOne.connector.id);
         chatSessionHandler.openConversationInEmbeddedView(oneOnOne.connector);
         
-        // =====================================================================
-        // ==   THE FIX: Now, tell the tab manager to switch to the view.   ==
-        // =====================================================================
-        console.log("CO: Requesting tab switch to 'messages' after initiating 1-on-1 view.");
-        tabManager.switchToTab('messages');
+        // --- THIS IS THE FIX ---
+        // Only switch to the 'messages' tab if we are NOT already on it.
+        // This prevents the redundant and destructive call to handleMessagesTabActive.
+        if (tabManager.getCurrentActiveTab?.() !== 'messages') {
+            console.log("CO: Not on messages tab. Requesting tab switch to 'messages'.");
+            tabManager.switchToTab('messages');
+        } else {
+            console.log("CO: Already on messages tab. Skipping redundant tab switch.");
+        }
     }
 }
+// ===================  END: REPLACEMENT  ===================
 
 
 // AFTER
@@ -358,40 +359,70 @@ if (searchTerm) {
 
        // chat_orchestrator.ts
        // This function is INSIDE the IIFE returned by initializeActualChatOrchestrator
-
+// =================== START: REPLACEMENT 3 ===================
 function handleMessagesTabActive(): void {
-    // Use the module-scoped flag 'co_isHandlingMessagesTabActive'
-    if (co_isHandlingMessagesTabActive) { // <<< CORRECT FLAG NAME
+    if (co_isHandlingMessagesTabActive) {
         console.warn("CO_DEBUG: handleMessagesTabActive - ALREADY PROCESSING. Preventing re-entry.");
         return;
     }
-    co_isHandlingMessagesTabActive = true; // <<< CORRECT FLAG NAME - Acquire lock
+    co_isHandlingMessagesTabActive = true;
     console.log("CO_DEBUG: handleMessagesTabActive called and lock acquired.");
     
     const deps = getResolvedDeps();
+
+    // --- THIS IS THE FIX ---
+    // Before doing anything, check if the session handler is already opening a chat.
+    const alreadyOpening = deps.chatActiveTargetManager?.getEmbeddedChatTargetId();
+    if (alreadyOpening) {
+        console.log(`CO_DEBUG: A chat (${alreadyOpening}) is already being opened. The orchestrator will not interfere.`);
+        co_isHandlingMessagesTabActive = false; // Release lock
+        console.log("CO_DEBUG: handleMessagesTabActive - Lock released.");
+        return; // Do nothing
+    }
+    // --- END OF FIX ---
     
     try {
-        if (deps && deps.chatSessionHandler && typeof deps.chatSessionHandler.handleMessagesTabBecameActive === 'function') {
+        if (deps.chatSessionHandler && typeof deps.chatSessionHandler.handleMessagesTabBecameActive === 'function') {
             console.log("CO_DEBUG: Delegating to chatSessionHandler.handleMessagesTabBecameActive()");
             deps.chatSessionHandler.handleMessagesTabBecameActive(); 
         } else {
-            console.warn("CO_WARN: handleMessagesTabActive - chatSessionHandler or its method not ready. Falling back to renderCombinedActiveChatsList.");
-            if (deps && deps.chatSessionHandler) {
-                 console.warn("CO_WARN: deps.chatSessionHandler exists, but handleMessagesTabBecameActive is type:", typeof deps.chatSessionHandler.handleMessagesTabBecameActive);
-            } else if (deps) {
-                 console.warn("CO_WARN: deps.chatSessionHandler is undefined in handleMessagesTabActive.");
-            } else {
-                 console.warn("CO_WARN: getResolvedDeps() returned null in handleMessagesTabActive.");
-            }
-            renderCombinedActiveChatsList(); 
+            // ... existing error handling ...
         }
     } finally {
         setTimeout(() => {
-            co_isHandlingMessagesTabActive = false; // <<< CORRECT FLAG NAME - Release lock
+            co_isHandlingMessagesTabActive = false;
             console.log("CO_DEBUG: handleMessagesTabActive - Lock released.");
         }, 100); 
     }
 }
+// ===================  END: REPLACEMENT 3  ===================
+
+// =================== START: ADD NEW FUNCTION ===================
+function handleGroupsTabActive(): void {
+    const { groupManager, groupDataManager } = getResolvedDeps();
+    if (!groupManager || !groupDataManager) {
+        console.error("CO: Cannot handle groups tab, groupManager or groupDataManager is missing.");
+        return;
+    }
+
+    // Check if a group was active before a refresh or tab switch.
+    const lastActiveGroupId = localStorage.getItem('polyglotLastActiveGroupId');
+
+    if (lastActiveGroupId) {
+        // If so, immediately rejoin that group to restore the view and trigger the Thalamus.
+        console.log(`[ChatOrchestrator] Groups tab active. Restoring last active group: ${lastActiveGroupId}`);
+        groupManager.joinGroup(lastActiveGroupId);
+    } else {
+        // If not, this is a normal tab switch. Show the list of joined groups.
+        console.log(`[ChatOrchestrator] Groups tab active. No last active group found, showing 'my-groups' list.`);
+        groupManager.loadAvailableGroups(null, null, null, { viewType: 'my-groups' });
+    }
+}
+// ===================  END: ADD NEW FUNCTION  ===================
+
+
+
+
 
         function notifyNewActivityInConversation(connectorId: string): void {
               console.log("CO_DEBUG: notifyNewActivityInConversation called for connectorId:", connectorId); // DEBUG
@@ -408,12 +439,13 @@ function handleMessagesTabActive(): void {
         // --- END OF PASTED FUNCTIONS ---
 
         console.log("chat_orchestrator.ts: IIFE (module definition) FINISHED.");
-      return {
+        return {
             initialize, openConversation, openMessageModal, handleMessagesTabActive,
+            handleGroupsTabActive, // <<< ADD THIS LINE
             renderCombinedActiveChatsList,
             notifyNewActivityInConversation, getTextMessageHandler, getVoiceMemoHandler,
             getCurrentEmbeddedChatTargetId, getCurrentModalMessageTarget,
-            getCombinedActiveChats // Ensure this is returned if needed publicly
+            getCombinedActiveChats
         };
     })(); // End of IIFE
 

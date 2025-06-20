@@ -539,6 +539,10 @@ function createSendHandler(
             }
         };
 
+
+
+
+        
         function setupAllChatInteractionListeners(): void {
             console.log("CEL_TS: setupAllChatInteractionListeners() - START (New Integrated Version).");
 
@@ -869,8 +873,40 @@ function createSendHandler(
             }
             
             setupAllChatInteractionListeners(); 
-            setupChatAvatarClickListeners(); // <<< ADD THIS CALL
+            setupChatAvatarClickListeners(); // <<< ADD THIS 
+            
 
+
+         // =================== START: ADD NEW RECAP CLOSE LISTENER ===================
+addSafeListener(domElements.closeRecapBtn, 'click', async () => {
+    // First, get the connector from the last session
+    const lastSession = sessionHistoryManager?.getLastSession?.();
+    if (!lastSession || !lastSession.connector) {
+        console.warn("CEL (Recap Close): Could not retrieve last session's connector. Closing modal only.");
+        modalHandler.close(domElements.sessionRecapScreen);
+        return;
+    }
+    
+    const connectorToOpen = lastSession.connector;
+
+    // Close the recap modal
+    modalHandler.close(domElements.sessionRecapScreen);
+
+    // Now, perform the "Flawless Handoff"
+    console.log(`%c[Flawless Handoff] Recap closed. Forcing view switch to 'messages' and opening chat for [${connectorToOpen.id}]`, 'color: #007bff; font-weight: bold;');
+
+    // 1. Tell the chat orchestrator to open the correct conversation in the embedded view.
+    //    This function will handle the prompt rebuild and all other necessary logic.
+    if (window.chatOrchestrator?.openConversation) { // Using the orchestrator is cleaner
+         window.chatOrchestrator.openConversation(connectorToOpen);
+    } else if (window.chatSessionHandler?.openConversationInEmbeddedView) { // Fallback
+         window.chatSessionHandler.openConversationInEmbeddedView(connectorToOpen);
+    }
+    
+    // 2. Explicitly switch the main view to 'messages'.
+    window.shellController?.switchView('messages');
+});
+// ===================  END: ADD NEW RECAP CLOSE LISTENER  ===================
             console.log("CEL_TS_DEBUG_FLOW: Checking embeddedChatLog for attaching call button listener:", domElements.embeddedChatLog);
             if (domElements.embeddedChatLog) {
                 domElements.embeddedChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);

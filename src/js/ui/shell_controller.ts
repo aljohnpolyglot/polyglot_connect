@@ -283,8 +283,7 @@ function setupMasterViewCoordinator(initialTab: string) {
         console.log(`%c[Shell Coordinator] Coordinating view for tab: '${tabName}'`, 'color: #198754; font-weight: bold;');
 
         // Get fresh dependencies every time
-        const { filterController, groupManager, chatManager, sessionHistoryManager, uiUpdater, sidebarPanelManager } = getDeps();
-
+        const { filterController, groupManager, chatManager, chatOrchestrator, sessionHistoryManager, uiUpdater, sidebarPanelManager } = getDeps();
         // Step 1: Tell ShellController to handle the basic UI switch
         switchView(tabName);
 
@@ -297,7 +296,7 @@ function setupMasterViewCoordinator(initialTab: string) {
         } else if (tabName === 'friends') {
             filterController?.applyFindConnectorsFilters?.();
         } else if (tabName === 'groups') {
-            groupManager?.loadAvailableGroups?.();
+            chatOrchestrator?.handleGroupsTabActive?.(); // <<< THIS IS THE FIX
         } else if (tabName === 'messages') {
             chatManager?.handleMessagesTabActive?.();
         } else if (tabName === 'summary') {

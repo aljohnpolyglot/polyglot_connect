@@ -314,7 +314,7 @@ function initializeActualGroupManager(): void {
             console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
             
             groupDataManager.setCurrentGroupContext(groupId, groupDef);
-        
+            localStorage.setItem('polyglotLastActiveGroupId', groupId); // <<< ADD THIS LINE
             currentGroupMembersArray = getMembersForGroup(groupDef);
             if (currentGroupMembersArray.length === 0) {
                 console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
@@ -327,6 +327,7 @@ function initializeActualGroupManager(): void {
         
             if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
                 groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+                groupInteractionLogic.startConversationFlow(true); 
             } else {
                 console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host missing.");
                 return;
@@ -344,14 +345,14 @@ function initializeActualGroupManager(): void {
             tabManager.switchToTab('groups');
             (window.shellController as any)?.switchView?.('groups');
             chatOrchestrator?.renderCombinedActiveChatsList?.();
-            
+            const sidebarPanelManager = window.sidebarPanelManager;
+if (sidebarPanelManager) {
+    console.log("[GroupManager] Forcing right sidebar panel to 'messagesChatListPanel' after joining group.");
+    sidebarPanelManager.updatePanelForCurrentTab('messages'); // We trick it by telling it the context is now 'messages'
+}
             // --- THIS IS THE CRITICAL FIX ---
             // We now AWAIT the conversation flow to start and finish its first run.
-            if (groupInteractionLogic?.startConversationFlow) {
-                await groupInteractionLogic?.startConversationFlow(); // <<< ADD THE '?.' HERE
-            } else {
-                console.error("GroupManager: groupInteractionLogic.startConversationFlow not available.");
-            }
+
     // --- END OF NEW, CORRECT ORDER ---
 
     console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
@@ -427,6 +428,8 @@ function userIsTypingInGroupSignal(): void {
             groupUiHandler.hideGroupChatViewAndShowList?.();
             resetGroupState(); 
             groupDataManager.setCurrentGroupContext(null, null); // This sets GDM's current group to null
+            localStorage.removeItem('polyglotLastActiveGroupId'); // <<< ADD THIS LINE
+           
             groupInteractionLogic.reset?.();
 
             const currentTab = tabManager.getCurrentActiveTab?.();

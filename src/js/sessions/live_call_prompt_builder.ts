@@ -45,7 +45,7 @@ export async function buildLiveApiSystemInstructionForConnector(connector: Conne
     // --- 2. Get Shared Core & Personality Rules ---
 const convoStore = window.convoStore;
 const userSummary = convoStore?.getGlobalUserProfile();
-systemPromptParts.push(getCoreIdentityPrompt(connector, userSummary)); // <<< PASS THE SUMMARY
+systemPromptParts.push(await getCoreIdentityPrompt(connector));
 // Ensure polyglotHelpers exists before passing it
 if (polyglotHelpers) {
     systemPromptParts.push(getPersonalityAndBehaviorPrompt(connector, polyglotHelpers));

@@ -249,12 +249,7 @@ function initializeActualConversationManager(): void {
             }
             if (convo.geminiHistory) {
                 let textForModelHistory = cleanText;
-                // If this AI's response (cleanText) is a comment on an image AND we managed to embed
-                // the [Internal Image Description: ...] directly into cleanText from text_message_handler
-                // (which is what the group_interaction_logic does), then cleanText is already fine.
-                // If text_message_handler passed imageSemanticDescription in extraData to addModelResponseMessage,
-                // we could use it here. Let's assume TMH doesn't do that for model responses yet.
-                // So, we rely on the text from the AI already being formatted if it's an image description.
+             
                 addTurnToGeminiHistory(convo.geminiHistory, 'model', textForModelHistory);
                 convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
             }
@@ -338,10 +333,45 @@ function initializeActualConversationManager(): void {
             return false;
         }
 
-        async function getGeminiHistoryForConnector(connectorId: string): Promise<GeminiChatItem[]> {
-            const { conversation: convo } = await ensureConversationRecord(connectorId);
-            return convo?.geminiHistory ? [...convo.geminiHistory] : [];
+      // =================== START: REPLACEMENT ===================
+async function getGeminiHistoryForConnector(connectorId: string): Promise<GeminiChatItem[]> {
+    console.log(`[CM_PROMPT_REBUILD] getGeminiHistoryForConnector called for [${connectorId}]. Forcing FULL prompt rebuild...`);
+    const { conversation: convo } = await ensureConversationRecord(connectorId);
+
+    if (!convo || !convo.connector) {
+        console.error(`[CM_PROMPT_REBUILD] Cannot rebuild history, no connector found for ${connectorId}.`);
+        return [];
+    }
+
+    // 1. Build the fresh system prompt, which calls the Thalamus for the latest memories.
+    const freshSystemPromptHistory = await buildInitialGeminiHistory(convo.connector);
+
+    // 2. Re-create the turn-by-turn history from stored messages.
+    //    This prevents using the stale, stored geminiHistory.
+    const messagesToProcess = convo.messages || [];
+    for (const msg of messagesToProcess) {
+        if (msg.type === 'text' && (msg.sender === 'user' || msg.sender === 'connector')) {
+            addTurnToGeminiHistory(freshSystemPromptHistory, msg.sender === 'user' ? 'user' : 'model', msg.text);
+        } else if (msg.type === 'image' && msg.sender === 'user' && msg.imagePartsForGemini) {
+            let imageContextForLLM = msg.text || "";
+            if (msg.imageSemanticDescription) {
+                imageContextForLLM = `${msg.text || ""} [Image Description: ${msg.imageSemanticDescription}]`;
+            }
+            addTurnToGeminiHistory(freshSystemPromptHistory, 'user', imageContextForLLM, msg.imagePartsForGemini);
+        } else if (msg.sender === 'user-voice-transcript') {
+            addTurnToGeminiHistory(freshSystemPromptHistory, 'user', msg.text);
         }
+        // Other message types (like call_event) are correctly ignored here.
+    }
+
+    // 3. Update the conversation record in the store with the newly built history.
+    convoStore.updateGeminiHistoryInStore(connectorId, freshSystemPromptHistory);
+    console.log(`[CM_PROMPT_REBUILD] ✅ Rebuild complete for [${connectorId}]. New history has ${freshSystemPromptHistory.length} turns.`);
+
+    // 4. Return a copy of the fresh history for the AI call.
+    return [...freshSystemPromptHistory];
+}
+// ===================  END: REPLACEMENT  ===================
 
         async function clearConversationHistory(connectorId: string): Promise<void> {
             const convoFromStore = convoStore.getConversationById(connectorId); // Sync read

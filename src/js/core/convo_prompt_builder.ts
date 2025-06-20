@@ -97,7 +97,9 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     // --- STEP 1: Core Identity & Personality (Who you ARE) ---
     const convoStore = window.convoStore;
     const userSummary = convoStore?.getGlobalUserProfile();
-    systemPromptParts.push(getCoreIdentityPrompt(persona, userSummary));
+    systemPromptParts.push(await getCoreIdentityPrompt(persona));
+    console.log(`%c[Limbic System] Received memory packet from Thalamus. Adding to system prompt.`, 'color: #8a2be2; font-weight: bold;');
+
     systemPromptParts.push(getPersonalityAndBehaviorPrompt(persona, window.polyglotHelpers));
 
     // --- STEP 2: Conversational Context (What you should TALK ABOUT NOW) ---

@@ -2,24 +2,22 @@
 
 
 import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_service'; // Adjust path if necessary
-
 import type {
     Connector,
     YourDomElements,
     UiUpdater,
     PolyglotHelpersOnWindow as PolyglotHelpers,
-    GeminiLiveApiService, // This is the module from gemini_live_api_service.ts
+    GeminiLiveApiService,
     SessionStateManager,
     ModalHandler,
     SharedContent,
     Minigame,
-    // ConversationManager, // Not directly used by LCH after prompt builder separation
     LiveApiMicInput,
     LiveApiAudioOutput,
     LiveApiTextCoordinator,
-    // LanguageEntry, // Not directly used by LCH
     TutorImage,
-    TranscriptTurn
+    TranscriptTurn,
+    AIService // <<< ADD THIS LINE
 } from '../types/global.d.ts';
 
 import { buildLiveApiSystemInstructionForConnector, LiveApiSystemInstruction } from './live_call_prompt_builder';
@@ -39,12 +37,11 @@ export interface LiveCallHandlerModule {
     toggleSpeakerMuteForLiveCall: () => void;
     requestActivityForLiveCall?: () => void;
 }
-
 interface LiveCallHandlerDeps {
     domElements?: YourDomElements;
     uiUpdater?: UiUpdater;
     polyglotHelpers?: PolyglotHelpers;
-    geminiLiveApiService?: GeminiLiveApiServiceModule; // <<< CORRECTED to GeminiLiveApiServiceModule
+    geminiLiveApiService?: GeminiLiveApiServiceModule;
     sessionStateManager?: SessionStateManager;
     modalHandler?: ModalHandler;
     polyglotSharedContent?: SharedContent;
@@ -52,6 +49,7 @@ interface LiveCallHandlerDeps {
     liveApiMicInput?: LiveApiMicInput;
     liveApiAudioOutput?: LiveApiAudioOutput;
     liveApiTextCoordinator?: LiveApiTextCoordinator;
+    aiService?: AIService; // <<< ADD THIS LINE
 }
 // --- INTERFACE DEFINITIONS FOR Test 8 ---
 // These match the structure that worked with your old JS version
@@ -113,7 +111,8 @@ window.liveCallHandler = ((): LiveCallHandlerModule => {
             polyglotMinigamesData: window.polyglotMinigamesData,
             liveApiMicInput: window.liveApiMicInput,
             liveApiAudioOutput: window.liveApiAudioOutput,
-            liveApiTextCoordinator: window.liveApiTextCoordinator
+            liveApiTextCoordinator: window.liveApiTextCoordinator,
+            aiService: window.aiService // Add aiService to the dependencies
         };
         return deps;
     };
@@ -348,41 +347,88 @@ async function startLiveCall(connector: Connector, sessionType: string): Promise
         return false; // Must return boolean
     }
 } // End of startLiveCall
+   // REPLACE LANDMARK 2 WITH THIS NEW ASYNC VERSION:
+// =================== START: REPLACEMENT FOR endLiveCall ===================
+// REPLACE LANDMARK 4 WITH THIS NEW ASYNC VERSION:
+// =================== START: REPLACEMENT FOR endLiveCall ===================
+// IN live_call_handler.ts
+// REPLACE THE ENTIRE endLiveCall FUNCTION WITH THIS:
+// =================== START: REPLACEMENT ===================
+async function endLiveCall(generateRecap: boolean = true): Promise<void> {
+    const functionName = "endLiveCall (TS Synchronous)";
+    if (isClosingCall) return;
+    isClosingCall = true;
+    const deps = getDeps(functionName);
+
+    // --- STEP 1: IMMEDIATE UI/CONNECTION CLEANUP ---
+    console.log(`LCH Facade (${functionName}): Prioritizing immediate UI close.`);
+    if (deps.domElements?.directCallInterface) deps.modalHandler?.close(deps.domElements.directCallInterface);
    
+    if (deps.domElements?.processingCallModal) deps.modalHandler?.open(deps.domElements.processingCallModal);
 
-function endLiveCall(generateRecap: boolean = true): void {
-    const functionName = "endLiveCall (TS)";
-    if (isClosingCall) {
-        console.warn(`LCH Facade (${functionName}): Already closing, request ignored.`);
-        return;
+    const stepEl = document.getElementById('processing-call-step');
+if (stepEl) stepEl.textContent = 'Cleaning up transcript...';
+    
+    console.log(`LCH Facade (${functionName}): "Processing" modal opened.`);
+   
+   
+   
+    deps.geminiLiveApiService?.closeConnection?.("User ended call");
+
+
+
+
+
+
+    deps.liveApiMicInput?.stopCapture?.();
+    deps.liveApiAudioOutput?.cleanupAudioContext?.();
+
+    // --- STEP 2: GET RAW DATA & PREPARE FOR PROCESSING ---
+    const rawTranscript = deps.sessionStateManager?.getRawTranscript?.();
+    const connectorForProcessing = currentConnector;
+
+    // --- STEP 3: CLEAN TRANSCRIPT **ONCE** AND STORE IT ---
+    let cleanedTranscript: string | null = null;
+    if (rawTranscript && rawTranscript.length > 0 && connectorForProcessing && deps.aiService?.cleanAndReconstructTranscriptLLM) {
+        try {
+            console.log(`LCH (${functionName}): Cleaning transcript...`);
+            cleanedTranscript = await deps.aiService.cleanAndReconstructTranscriptLLM(rawTranscript, connectorForProcessing, "User");
+            console.log(`%c[LCH -> Scribe Handoff] Preparing to send cleaned transcript to Cerebrum.`, 'color: #fd7e14; font-weight: bold;');
+            console.log(`[LCH -> Scribe Handoff] Data being sent:`, cleanedTranscript);
+          
+          
+            console.log(`LCH (${functionName}): Transcript cleaned successfully.`);
+        } catch (e) {
+            console.error(`LCH (${functionName}): Transcript cleaning failed.`, e);
+        }
     }
-    isClosingCall = true; // Set flag
-    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): START. GenerateRecap: ${generateRecap}`);
-        const deps = getDeps(functionName);
 
-        if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-        }
+    // --- STEP 4: FINALIZE SESSION (Passes cleaned transcript to recap service) ---
+    // This clears the session state and starts the recap process.
+    deps.sessionStateManager?.finalizeBaseSession?.(generateRecap, rawTranscript, cleanedTranscript);
 
-        deps.geminiLiveApiService?.closeConnection?.("User ended call");
-        deps.liveApiMicInput?.stopCapture?.();
-        deps.liveApiAudioOutput?.cleanupAudioContext?.();
-        deps.liveApiTextCoordinator?.flushUserTranscription?.();
-        deps.liveApiTextCoordinator?.flushAiSpokenText?.();
-        deps.liveApiTextCoordinator?.resetBuffers?.();
+    // --- STEP 5: PROCESS MEMORY (Passes cleaned transcript to The Scribe) ---
+    if (cleanedTranscript && connectorForProcessing && window.memoryService?.processNewUserMessage) {
+        console.log(`[CEREBRUM_CALL_SAVE] Starting memory processing. Awaiting completion...`);
+        // We now AWAIT this call to ensure memory is saved before anything else happens.
+        await window.memoryService.processNewUserMessage(
+            cleanedTranscript,
+            connectorForProcessing.id,
+            'live_call'
+        );
+        console.log(`[CEREBRUM_CALL_SAVE] ✅ Memory processing complete.`);
+    } else {
+        console.log(`[CEREBRUM_CALL_SAVE] Skipping memory processing: no cleaned transcript.`);
+    }
 
-        if (currentSessionType === "direct_modal" && deps.domElements?.directCallInterface && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.directCallInterface);
-        } else if (currentSessionType === "voiceChat_modal") {
-             console.warn("LCH: voiceChat_modal close logic placeholder.");
-        }
-
-        deps.sessionStateManager?.finalizeBaseSession?.(generateRecap);
-      currentConnector = null;
+    // --- STEP 6: RESET LOCAL STATE ---
+    currentConnector = null;
     currentSessionType = null;
-    isClosingCall = false; // Reset flag <<< ADD THIS
-    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED.`);
-    }
+    isClosingCall = false;
+    console.log(`LCH Facade (${functionName}): FINISHED.`);
+}
+// ===================  END: REPLACEMENT  ===================
+// ===================  END: REPLACEMENT FOR endLiveCall  ===================
 
     function sendTypedTextDuringLiveCall(text: string): void {
         const functionName = "sendTypedTextDuringLiveCall (TS)";

@@ -127,26 +127,62 @@ function formatExperienceForPrompt(persona: PersonaData, helpers: PolyglotHelper
  * @param persona - The persona data object.
  * @returns A formatted string for the system prompt.
  */
-export function getCoreIdentityPrompt(persona: PersonaData, userProfileSummary?: string): string {
-    const { profileName, city, country, age, profession, bioModern, modernTitle, language, keyLifeEvents } = persona;
+// =================== START: FOCUSED REPLACEMENT ===================
+export async function getCoreIdentityPrompt(persona: PersonaData): Promise<string> {
+    console.log(`[PROMPT_BUILDER] Building core identity prompt for ${persona.id}...`);
 
-    // A helper to pick out 1-2 truly defining life events to make them "unforgettable".
-    const criticalEvents = (keyLifeEvents || [])
-        .slice(0, 2)
-        .map(e => e.event);
+    // Use the persona.id passed into the function. This is the correct, reliable ID.
+    const personaIdToUse = persona.id;
+
+    let memoryPacketContent = "// No active memory service or no memories recalled.";
+
+    // Check if the memory service exists before using it.
+    if (window.memoryService && typeof window.memoryService.getMemoryForPrompt === 'function' && personaIdToUse) {
+        console.log(`[CEREBRUM_INJECT] 🧠 Retrieving 1-on-1 memory packet for [${personaIdToUse}]...`);
+        
+        const memoryResponse = await window.memoryService.getMemoryForPrompt(personaIdToUse);
+        memoryPacketContent = memoryResponse.prompt;
+        
+        if (memoryResponse.facts.length > 0) {
+            console.log(`%c[Limbic System] Thalamus recalled ${memoryResponse.facts.length} memory fact(s) for [${personaIdToUse}]:`, 'color: #17a2b8; font-weight: bold;');
+            console.table(memoryResponse.facts.map((fact) => ({
+                key: fact.key,
+                value: fact.value,
+                type: fact.type,
+                confidence: fact.initialConfidence.toFixed(2),
+                source: fact.source_context
+            })));
+        } else {
+            console.log(`%c[Limbic System] No relevant memories recalled by Thalamus for [${personaIdToUse}].`, 'color: #6c757d;');
+        }
+    }
+
+    // Now, build the final prompt string using the retrieved memory packet
+    // (This part is from your original, working prompt logic and is preserved)
+    const { profileName, city, country, age, profession, bioModern, modernTitle, language, keyLifeEvents } = persona;
+    const criticalEvents = (keyLifeEvents || []).slice(0, 2).map(e => e.event);
     const criticalEventsString = criticalEvents.length > 0 ? `Your most defining life events are: ${criticalEvents.join(' and ')}.` : '';
-    // --- NEW: User Profile Summary Section ---
-    const userSummarySection = userProfileSummary
-        ? `
-# SECTION 0: KNOWN FACTS ABOUT THE USER ('You')
-This is a summary of what you already know about the user you are talking to. Refer to these facts to make the conversation feel personal and continuous.
----
-${userProfileSummary}
----
-` : "";
-    // --- END: New Section ---
-    return `
-# SECTION 1: ABSOLUTE CORE DIRECTIVES (CRITICAL)
+
+    const memorySection = `
+SECTION 0: CEREBRUM MEMORY PACKET (Your Long-Term Memory)
+This contains facts you have learned about the user and about yourself. You MUST refer to it to create a continuous, personal conversation.
+MEMORY INTERPRETATION RULES:
+user.key: A fact about the user. Example: user.userName = "Alex".
+self.key: A fact you invented about yourself. Example: self.aiRecentActivity = "had coffee".
+[persona_all]: A public fact everyone knows.
+[persona_id]: A private fact only you and the user share.
+confidence=X.XX: How certain you are of a memory. Low confidence means you should be hesitant (e.g., "I think you mentioned...?").
+--- MEMORY START ---
+${memoryPacketContent}
+--- MEMORY END ---
+`;
+    // --- STEP 3: Return JUST the memory section and the next header ---
+    return memorySection + `
+
+SECTION 1: ABSOLUTE CORE DIRECTIVES (CRITICAL)
+
+
+// =================== END: FOCUSED REPLACEMENT ===================
 
 This section contains your most fundamental, non-negotiable instructions.
 

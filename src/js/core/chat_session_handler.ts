@@ -236,6 +236,16 @@ async function openConversationInEmbeddedView(connectorOrId: Connector | string)
             isMessagesTabActive) { 
             
             console.warn(`CSH.openConversationInEmbeddedView: Called for ALREADY ACTIVE and VISIBLE 1v1 chat '${targetId}'. Minimal UI update only (e.g., header). Chat log NOT cleared or re-rendered from history.`);
+            
+            // --- THIS IS THE FIX ---
+            // Even on a minimal UI update, we MUST rebuild the prompt to load post-call memories.
+            if (window.conversationManager) {
+                console.log(`[CSH_PROMPT_REBUILD] 🧠 Forcing prompt rebuild for ALREADY ACTIVE chat [${targetId}]...`);
+                await window.conversationManager.getGeminiHistoryForConnector(targetId);
+                console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt rebuild complete for active chat.`);
+            }
+            // --- END OF FIX ---
+        
             chatUiManager.showEmbeddedChatInterface(connectorToOpenWith); 
             if (domElements.embeddedMessageTextInput) {
                 domElements.embeddedMessageTextInput.focus();
@@ -259,6 +269,18 @@ async function openConversationInEmbeddedView(connectorOrId: Connector | string)
         }
 
         chatUiManager.showEmbeddedChatInterface(convo.connector); 
+
+// =================== START: REBUILD PROMPT ON CHAT OPEN (EMBEDDED) ===================
+if (window.conversationManager) {
+    console.log(`[CSH_PROMPT_REBUILD] 🧠 Forcing prompt rebuild for [${connectorToOpenWith.id}] on embedded chat open...`);
+    // This tells the conversation manager to create a new, fresh Gemini history
+    // with the latest memories from the Cerebrum.
+    await window.conversationManager.getGeminiHistoryForConnector(connectorToOpenWith.id);
+    console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt rebuild complete for [${connectorToOpenWith.id}].`);
+}
+// ===================  END: REBUILD PROMPT ON CHAT OPEN (EMBEDDED)  ===================
+
+
         
         console.log(`CSH.openConversationInEmbeddedView: About to clear and re-render embedded chat log for ${targetId}. History length: ${convo.messages?.length || 0}`);
         console.error(`CSH_DEBUG_EMBEDDED: Messages for ${targetId} BEFORE rendering loop:`, JSON.parse(JSON.stringify(convo.messages || [])));
@@ -452,6 +474,13 @@ async function handleMessagesTabBecameActive(): Promise<void> {
          
                      // Always clear the log before rendering new content.
                      uiUpdater.clearMessageModalLog?.();
+
+                     if (window.conversationManager) {
+                        console.log(`[CSH_PROMPT_REBUILD] 🧠 Forcing prompt rebuild for [${connector.id}] on modal open...`);
+                        // This ensures the AI has the latest memories before the user can even type.
+                        await window.conversationManager.getGeminiHistoryForConnector(connector.id);
+                        console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt rebuild complete for [${connector.id}].`);
+                    }
          
                      if (existingConvo && Array.isArray(existingConvo.messages) && existingConvo.messages.length > 0) {
                          // A conversation with messages already exists. Render the history.
