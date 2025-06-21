@@ -8,17 +8,19 @@
 /* --- Chat Log Area Base (parent of message wrappers) --- */
 /* This class can be applied to #group-chat-log, #embedded-chat-log, #message-chat-log etc. */
 /* --- Chat Log Area Base (parent of message wrappers) --- */
+/* In css/components/chat_bubbles.css */
+
 .chat-log-area {
     display: flex;
     flex-direction: column;
-    gap: var(--chat-message-gap, var(--spacing-xs, 6px));
     
-    /* === THIS IS THE FIX === */
-    /* Add padding to the top and bottom to create a "safe zone" for the
-       reaction picker and displayed reactions, preventing them from being
-       clipped by the container's scroll boundary. */
+    /* VVVV CHANGE THIS VALUE VVVV */
+    /* This controls the main vertical space between message wrappers.
+       It was 6px, let's try 2px for a tighter look. */
+    gap: var(--chat-message-gap, var(--spacing-xs, 2px)); 
+    /* ^^^^ CHANGE THIS VALUE ^^^^ */
+    
     padding: 60px var(--spacing-md, 16px) 60px var(--spacing-md, 16px);
-    
     overflow-y: auto;
     background-color: var(--chat-log-bg, var(--bg-white, #ffffff));
     scroll-behavior: smooth;
@@ -881,4 +883,283 @@ body.dark-mode .chat-message-expired-image {
         opacity: 1;
         transform: translateY(0); /* Move it to its final position */
     }
+}
+/*
+   ===================================================================
+   ||   NEW: Chat Context Menu (Reactions & Actions)                ||
+   ===================================================================
+*/
+
+/* This is the main pop-up menu container */
+.chat-context-menu {
+    position: absolute;
+    bottom: calc(100% + 8px); /* Position above the bubble */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+
+    display: flex;
+    flex-direction: column;
+    gap: 4px; /* Gap between reaction bar and action bar */
+    
+    background-color: var(--chat-reaction-picker-bg, var(--bg-white, #ffffff));
+    border-radius: var(--border-radius-lg, 12px);
+    box-shadow: var(--shadow-lg, 0 8px 25px rgba(0, 0, 0, 0.15));
+    border: 1px solid var(--chat-reaction-picker-border, var(--border-color-light, #dee2e6));
+    
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(10px); /* Start lower */
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out, visibility 0s 0.2s;
+}
+
+/* Right-aligned bubbles need right-aligned menus */
+.user-wrapper .chat-context-menu {
+    left: auto;
+    right: 0;
+    transform: translateX(0); /* Reset transform */
+}
+
+/* JS adds this class to show the menu */
+.chat-context-menu.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+    transition-delay: 0s, 0s, 0s;
+}
+.user-wrapper .chat-context-menu.visible {
+    transform: translateX(0) translateY(0);
+}
+
+
+/* Bar for just the emoji reactions */
+.reaction-picker-bar {
+    display: flex;
+    padding: 6px 12px;
+    gap: 8px;
+}
+
+/* Bar for the action buttons */
+.action-bar {
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+    border-top: 1px solid var(--border-color-light, #e9ecef);
+}
+
+.action-btn-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    color: var(--text-color-primary, #212529);
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-align: left;
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.action-btn-item:hover {
+    background-color: var(--bg-subtle-hover-light, #f1f3f5);
+}
+
+.action-btn-item i {
+    width: 16px; /* Align icons */
+    text-align: center;
+    color: var(--text-color-muted, #6c757d);
+}
+
+.action-btn-item:disabled {
+    color: var(--text-color-disabled, #ced4da);
+    cursor: not-allowed;
+    background-color: transparent;
+}
+.action-btn-item:disabled i {
+    color: var(--text-color-disabled, #ced4da);
+}
+
+/* --- Dark Mode for Context Menu --- */
+body.dark-mode .chat-context-menu {
+    background-color: var(--bg-dark-secondary, #242526);
+    border-color: var(--border-color-dark, #495057);
+}
+
+body.dark-mode .action-bar {
+    border-top-color: var(--border-color-dark, #495057);
+}
+
+body.dark-mode .action-btn-item {
+    color: var(--text-color-default-dark, #e4e6eb);
+}
+
+body.dark-mode .action-btn-item:hover {
+    background-color: var(--bg-dark-hover, #3a3b3c);
+}
+
+body.dark-mode .action-btn-item i {
+    color: var(--text-color-muted-dark, #adb5bd);
+}
+
+body.dark-mode .action-btn-item:disabled {
+    color: var(--text-color-disabled-dark, #5a5b5c);
+}
+body.dark-mode .action-btn-item:disabled i {
+    color: var(--text-color-disabled-dark, #5a5b5c);
+}/*
+   ===================================================================
+   ||   NEW: Reaction & Action Menu CSS (Your Design)               ||
+   ===================================================================
+*/
+
+/* Ensure the bubble can be a positioning parent */
+.chat-message-ui {
+    position: relative;
+}
+
+/* The Emoji Picker (appears on hover) */
+.reaction-picker {
+    position: absolute;
+    top: -45px; /* Position above the bubble */
+    left: 10px;
+    z-index: 20;
+    display: flex;
+    padding: 8px;
+    background-color: white;
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: translateY(10px);
+}
+.reaction-picker.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+.reaction-picker .reaction-btn {
+    font-size: 1.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/*
+   ===================================================================
+   ||   Action Menu (Copy, Translate) - CORRECTED                   ||
+   ===================================================================
+*/
+
+/* The Action Menu (appears on long press/right-click) */
+.action-menu {
+    position: absolute;
+    /* VVVV THIS IS THE FIX VVVV */
+    /* 1. Anchor the menu to the BOTTOM of the bubble, pushing it 100% of the way up. */
+    bottom: 100%; 
+    /* 2. Add a small gap between the bubble and the menu. */
+    margin-bottom: 0px; 
+    /* ^^^^ END OF FIX ^^^^ */
+
+    left: 10px; /* Default anchor to the left for connector messages */
+    z-index: 15;
+
+    display: flex;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--chat-reaction-picker-bg, var(--bg-white, #ffffff));
+    border-radius: var(--border-radius-lg, 10px);
+    box-shadow: var(--shadow-lg, 0 8px 25px rgba(0, 0, 0, 0.15));
+    border: 1px solid var(--chat-reaction-picker-border, var(--border-color-light, #dee2e6));
+
+    /* Start hidden and slightly scaled down for the transition */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scale(0.95) translateY(5px);
+    transform-origin: bottom left; /* Animate from the bottom-left corner */
+    transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0s 0.15s;
+}
+
+/* For user bubbles (on the right), adjust the alignment */
+.user-wrapper .action-menu {
+    left: auto; /* Unset the left anchor */
+    right: 10px; /* Anchor to the right instead */
+    transform-origin: bottom right; /* Animate from the bottom-right corner */
+}
+
+/* The state when the menu should be visible */
+.action-menu.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: scale(1) translateY(0); /* Animate to full size and final position */
+    transition-delay: 0s;
+}
+
+/* --- (No changes needed below, but kept for completeness) --- */
+
+/* Individual Action Button Styling */
+.action-btn-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    color: var(--text-color-primary, #212529);
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+    white-space: nowrap; /* Prevent text from wrapping */
+}
+
+.action-btn-item:hover {
+    background-color: var(--bg-subtle-hover-light, #f1f3f5);
+}
+
+.action-btn-item i {
+    width: 16px;
+    text-align: center;
+    color: var(--text-color-muted, #6c757d);
+}
+
+.action-btn-item:disabled {
+    color: var(--text-color-disabled, #ced4da);
+    cursor: not-allowed;
+    background-color: transparent;
+}
+.action-btn-item:disabled i {
+    color: var(--text-color-disabled, #ced4da);
+}
+
+/* Dark Mode for Action Menu */
+body.dark-mode .action-menu {
+    background-color: var(--bg-dark-secondary, #242526);
+    border-color: var(--border-color-dark, #495057);
+}
+body.dark-mode .action-btn-item {
+    color: var(--text-color-default-dark, #e4e6eb);
+}
+body.dark-mode .action-btn-item:hover {
+    background-color: var(--bg-dark-hover, #3a3b3c);
+}
+body.dark-mode .action-btn-item i {
+    color: var(--text-color-muted-dark, #adb5bd);
+}
+body.dark-mode .action-btn-item:disabled {
+    color: var(--text-color-disabled-dark, #5a5b5c);
+}
+body.dark-mode .action-btn-item:disabled i {
+    color: var(--text-color-disabled-dark, #5a5b5c);
 }
