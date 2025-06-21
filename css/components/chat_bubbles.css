@@ -100,6 +100,7 @@
     box-sizing: border-box;
     position: relative; /* For sender name or other internal absolute elements */
     margin-right: 1rem;
+    text-align: left; /* <<< THIS IS THE FIX */
 }
 
 /* User's Bubble */
@@ -783,4 +784,101 @@ body.dark-mode .message-reactions .reaction-item {
 }
 body.dark-mode .reaction-item .reaction-count {
     color: var(--chat-reaction-count-text-dark, var(--text-color-muted-dark, #adb5bd));
+}
+/* ==================================================
+   ||   NEW: Placeholder for Expired/Removed Image   ||
+   ================================================== */
+
+/* This is the main container for the placeholder text */
+.chat-message-expired-image {
+    /* --- Inherit from .call-event-message for consistency --- */
+    color: var(--chat-call-event-text, var(--text-color-muted, #6c757d));
+    font-size: 0.8em;
+    text-align: center;
+    display: flex; /* Use flex to align icon and text */
+    align-items: center;
+    justify-content: center; /* Center the content within the bubble */
+    gap: var(--spacing-xs, 6px);
+
+    /* --- Unique Styling --- */
+    padding: var(--spacing-xs, 6px) var(--spacing-sm, 10px);
+    background-color: var(--chat-bubble-connector-bg, var(--bg-alt-color, #e9ecef));
+    border: 1px dashed var(--border-color-light, #dee2e6); /* Dashed border to indicate "missing" */
+    border-radius: var(--border-radius-md, 6px);
+    width: fit-content; /* Be only as wide as its content */
+    margin: 0 auto; /* Center itself within the parent bubble */
+    font-style: italic;
+}
+
+/* The icon for the placeholder */
+.chat-message-expired-image i {
+    font-size: 1.2em; /* Make the icon slightly larger than the text */
+    opacity: 0.7;
+}
+
+/* --- Dark Mode Consistency --- */
+body.dark-mode .chat-message-expired-image {
+    color: var(--chat-call-event-text-dark, var(--text-color-muted-dark, #adb5bd));
+    background-color: var(--chat-bubble-connector-bg-dark, var(--bg-dark-tertiary, #3a3b3c));
+    border-color: var(--border-color-dark, #495057);
+}
+
+/* ===================================================================
+   ||   NEW: Mobile-First Chat Layout Experience                    ||
+   =================================================================== */
+
+/* This rule applies only to screens 768px wide or less (phones/small tablets) */
+@media (max-width: 768px) {
+    .chat-log-area {
+        /*
+         * This is the key change. It reverses the stacking order of messages.
+         * New messages added to the DOM will now appear at the bottom,
+         * pushing the older messages upwards off-screen.
+        */
+        flex-direction: column-reverse;
+    }
+}
+/* ========================================================== */
+/* ==         MOBILE-ONLY: TIMESTAMP ON CLICK              == */
+/* ========================================================== */
+/* ========================================================== */
+/* ==         MOBILE-ONLY: TIMESTAMP ON CLICK              == */
+/* ========================================================== */
+
+/* The hidden timestamp element that lives inside the wrapper.
+   It's positioned absolutely relative to the wrapper. */
+   .message-timestamp-on-click {
+    /* Hide by default using opacity and positioning */
+    display: block;
+    position: absolute;
+    top: -5px; /* Position it just above the bubble */
+    left: 0;
+    width: 100%;
+    text-align: center;
+    
+    color: var(--text-color-muted, #868e96);
+    font-size: 0.75em;
+    font-weight: 500;
+    
+    opacity: 0;
+    transform: translateY(5px); /* Start slightly lower for the fade-in-up effect */
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+    pointer-events: none; /* Make sure it can't be clicked itself */
+    z-index: 1; /* Keep it below the reaction picker if it were to open */
+}
+
+/* On mobile screens, we define the visible state */
+@media (max-width: 768px) {
+    /* The .chat-message-wrapper needs a position context for its child */
+    .chat-message-wrapper {
+        position: relative;
+        /* Add a little top margin to give the timestamp space to appear */
+        margin-top: 1.5em; 
+    }
+
+    /* When the wrapper gets this class via JS, reveal the timestamp */
+    .chat-message-wrapper.timestamp-visible .message-timestamp-on-click {
+        opacity: 1;
+        transform: translateY(0); /* Move it to its final position */
+    }
 }

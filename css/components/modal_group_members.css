@@ -47,6 +47,15 @@ body.dark-mode .gmm-group-photo {
     color: var(--text-color-strong);
     margin: 0 0 var(--spacing-xs) 0;
 }
+@media (max-width: 768px) {
+    #gmm-group-name {
+        font-size: 0.8em;
+    }
+    #gmm-group-description{
+    
+        margin-bottom: 20px;
+    }
+}
 body.dark-mode #gmm-group-name {
     color: var(--text-color-light);
 }
@@ -54,8 +63,8 @@ body.dark-mode #gmm-group-name {
 #gmm-group-description {
     font-size: 0.7em;
     color: var(--text-color-muted);
-    margin-bottom: 0;
-    max-height: 60px; /* Limit description lines shown in header */
+    margin-bottom: 10px;
+ 
     overflow: hidden;
     text-overflow: ellipsis;
 }

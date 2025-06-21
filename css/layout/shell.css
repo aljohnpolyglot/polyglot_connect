@@ -506,4 +506,23 @@ body.dark-mode .sidebar-action-btn:hover {
         padding: var(--spacing-sm, 10px);
         /* margin-top might need slight adjustment if --header-height-mobile changes */
     }
+}/* ===================================================================
+   ||   TARGETED FIX for Full-Height Embedded Chat Layout           ||
+   =================================================================== */
+
+/*
+  This rule targets ONLY the direct children of the #messages-view.
+  It turns the view into a flex container.
+*/
+
+/* 
+  Now, we target the .view-content specifically inside #messages-view.
+  We tell it to take up all the remaining space.
+*/
+
+/* 
+  Finally, we tell the chat UI itself to fill the .view-content parent.
+*/
+#messages-view .embedded-chat-ui {
+    height: 100%;
 }

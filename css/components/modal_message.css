@@ -1,14 +1,22 @@
 /* Improved CSS for modal_message.css */
 
 /* General Modal Styling */
+/* In modal_message.css */
 .messaging-interface-modal {
-    max-width: 600px; /* Optimal width for text chat */
-    height: clamp(400px, 75vh, 650px); /* Responsive height */
-    padding: 0; /* Padding handled by child elements */
-    border-radius: var(--border-radius-lg); /* Smooth corners */
-    box-shadow: var(--shadow-lg); /* Add depth */
-    background-color: var(--bg-white); /* Default light background */
-    overflow: hidden; /* Prevent content overflow */
+    max-width: 600px;
+    /* This clamp is good, but let's make it more robust for mobile keyboard */
+    height: clamp(400px, 85vh, 700px); /* Use vh (viewport height) for better keyboard response */
+    max-height: 90vh; /* Absolute max height */
+
+    /* --- ADD/VERIFY THESE --- */
+    display: flex;
+    flex-direction: column;
+    /* --- END ADDITION --- */
+    
+    padding: 0;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
 }
 
 /* Header Styling */
@@ -65,15 +73,21 @@
 }
 
 /* Chat Log Styling */
+/* REPLACE THE RULE ABOVE WITH THIS */
 .message-chat-log {
     flex-grow: 1;
     overflow-y: auto;
     padding: var(--spacing-md);
-    background-color: var(--bg-white); /* Ensure white background */
-    border-bottom: 1px solid var(--border-light); /* Separator line */
+    background-color: var(--bg-white);
     color: var(--text-primary);
     font-size: var(--font-size-md);
     line-height: var(--line-height-md);
+    
+    /* --- ADD THESE LINES --- */
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-message-gap, var(--spacing-xs, 6px));
+    /* --- END ADDITION --- */
 }
 
 .message-chat-log::-webkit-scrollbar {
@@ -184,13 +198,16 @@ body.dark-mode .messaging-interface-footer .send-btn:hover {
 }
 
 /* Partner Info section within the modal header */
+/* Partner Info section within the modal header */
+/* Partner Info section within the modal header */
 .messaging-interface-header .partner-info {
     display: flex;
     align-items: center;
     gap: var(--spacing-md, 12px);
-    min-width: 0; /* Allow text to truncate */
+    min-width: 0;
+    flex-grow: 1;
+    text-align: left; /* <-- ADD THIS LINE */
 }
-
 /* Avatar specifically for the message modal header (targets #message-modal-header-avatar or .chat-header-avatar within this context) */
 .messaging-interface-header #message-modal-header-avatar,
 .messaging-interface-header .chat-header-avatar { /* If using shared class */
@@ -344,12 +361,11 @@ body.dark-mode .chat-log-empty-placeholder {
 .messaging-interface-header #message-modal-header-name{
     font-size: 0.86em;
 }
-.messaging-interface-header .modal-controls.chat-header-actions{
-    
-}
+
 .messaging-interface-header #message-modal-header-details{
     font-size: 0.75em;
 }
 .modal-btn, .action-btn, .control-btn, .sidebar-action-btn, .send-btn{
     padding: 0.4em;
+}
 }

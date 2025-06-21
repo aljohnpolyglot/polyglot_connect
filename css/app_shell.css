@@ -190,6 +190,7 @@ body.dark-mode .view-header p { color: #b0b3b8; }
     color: #777;
     font-style: italic;
 }
+
 body.dark-mode .loading-message, body.dark-mode .empty-list-msg { color: #8a8d91; }
 
 /* Home View Tips Panel */
