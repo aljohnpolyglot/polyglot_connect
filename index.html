@@ -55,6 +55,12 @@
 
   
 </head>
+
+<!-- in index.html, inside <body> -->
+    <!-- <button id="ai-test-button" style="position: fixed; top: 10px; left: 10px; z-index: 9999; padding: 10px; background: red; color: white; border: none;">
+        RUN AI HEARTBEAT TEST
+    </button> -->
+
 <body>
   <div id="polyglot-connect-app-shell">
     <!-- ===== LEFT SIDEBAR (Main Navigation) ===== -->
@@ -564,7 +570,7 @@
     <script type="module" src="/src/js/services/ai_recap_service.ts"></script> <!-- Already TS -->
     <script type="module" src="/src/js/services/ai_text_generation_service.ts"></script> 
     
-
+    <script type="module" src="/src/js/services/ai_translation_service.ts"></script>
     <!-- AI Service Facade (depends on all specialized services above) -->
     
     <script type="module" src="/src/js/services/ai_service.ts"></script> <!-- You just converted this -->
@@ -583,11 +589,13 @@
     <script type="module" src="/src/js/core/convo_turn_manager.ts"></script>
     <script type="module" src="/src/js/core/chat_active_target_manager.ts"></script>
     <script type="module" src="/src/js/core/text_message_handler.ts"></script>
-    <script type="module" src="/src/js/core/voice_memo_handler.ts"></script> <!-- You just converted this -->
+  
+<script type="module" src="/src/js/core/voice_memo_handler.ts"></script>
+    <script type="module" src="/src/js/core/voice_memo_handler.ts"></script>
     <script type="module" src="/src/js/core/chat_session_handler.ts"></script>
     <script type="module" src="/src/js/core/group_data_manager.ts"></script>
     <script type="module" src="/src/js/core/group_ui_handler.ts"></script>
-    <script type="module" src="/src/js/core/group_interaction_logic.ts"></script> <!-- You just converted this -->
+    <script type="module" src="/src/js/core/group_interaction_logic.ts"></script>
     <script type="module" src="/src/js/core/group_manager.ts"></script>
     
     <!-- Session Management (Live call parts depend on live API service) -->

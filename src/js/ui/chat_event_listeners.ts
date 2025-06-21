@@ -4,6 +4,7 @@ import type {
     YourDomElements,
     PersonaModalManager,
     ConversationManager, // <<< ADD THIS LINE
+    AiTranslationServiceModule, // <<< ADD THIS LINE
     ChatSessionHandler,
     ChatActiveTargetManager,
     VoiceMemoHandler,
@@ -883,11 +884,21 @@ function createSendHandler(
             setupAllChatInteractionListeners();
             setupChatAvatarClickListeners();
         
-            if (window.reactionHandler?.initialize) {
-                // This will now correctly find both `domElements` and `conversationManager`
-                window.reactionHandler.initialize(domElements, conversationManager);
-            }
+        // in chat_event_listeners.ts
 
+// =================== REPLACE WITH THIS BLOCK ===================
+if (window.reactionHandler?.initialize && window.aiTranslationService) {
+    console.log("CEL: Initializing Reaction Handler with all required dependencies (including aiTranslationService).");
+    // Pass all three required arguments now
+    window.reactionHandler.initialize(
+        domElements, 
+        conversationManager, 
+        window.aiTranslationService // <<< THIS IS THE FIX
+    );
+} else {
+    console.error("CEL: Could not initialize Reaction Handler. Missing reactionHandler.initialize or aiTranslationService.");
+}
+// ===============================================================
 
          // =================== START: ADD NEW RECAP CLOSE LISTENER ===================
 addSafeListener(domElements.closeRecapBtn, 'click', async () => {
@@ -1098,7 +1109,8 @@ const dependenciesForCEL: string[] = [
     'uiUpdaterReady',
     'modalHandlerReady',
     'polyglotDataReady',
-    'reactionHandlerReady'
+    'reactionHandlerReady',
+    'aiTranslationServiceReady'
 ];
 
 const celMetDependenciesLog: { [key: string]: boolean } = {};
@@ -1137,7 +1149,12 @@ function checkAndInitCEL(receivedEventName?: string): void {
                 celDepsMetCount++;
                 console.log(`CEL_DEPS: Event '${receivedEventName}' processed AND VERIFIED. Count: ${celDepsMetCount}/${dependenciesForCEL.length}`);
             }
-        } else {
+        } 
+        
+        
+        
+        
+        else {
             console.warn(`CEL_EVENT: Event '${receivedEventName}' received but verification FAILED.`);
         }
     }
@@ -1174,6 +1191,10 @@ dependenciesForCEL.forEach((eventName: string) => {
         case 'polyglotDataReady': isReadyNow = !!window.polyglotConnectors; isVerifiedNow = isReadyNow && Array.isArray(window.polyglotConnectors); break;
         // Removed the duplicate 'polyglotAppReady' check that was only checking for existence
         case 'reactionHandlerReady': isReadyNow = !!window.reactionHandler; isVerifiedNow = isReadyNow && !!window.reactionHandler?.initialize; break;
+        case 'aiTranslationServiceReady': 
+        isReadyNow = !!window.aiTranslationService; 
+        isVerifiedNow = isReadyNow && !!window.aiTranslationService?.initialize; 
+        break;
         default: console.warn(`CEL_PRECHECK: Unknown dependency: ${eventName}`); isVerifiedNow = false; break;
     }
 

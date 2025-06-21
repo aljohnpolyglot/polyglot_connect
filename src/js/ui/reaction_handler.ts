@@ -1,12 +1,15 @@
 // D:\polyglot_connect\src\js\handlers\reaction_handler.ts
 
 // At the top of the file
-import type { YourDomElements, ConversationManager } from '../types/global.d.ts'; // <<< ADD ConversationManager
-
+import type { YourDomElements, ConversationManager, AiTranslationServiceModule } from '../types/global.d.ts';
 // ...
-
+// REPLACE THE OLD INTERFACE WITH THIS
 interface ReactionHandlerModule {
-    initialize: (domElements: YourDomElements, conversationManager: ConversationManager) => void; // <<< ADD ConversationManager
+    initialize: (
+        domElements: YourDomElements, 
+        conversationManager: ConversationManager, 
+        aiTranslationService: AiTranslationServiceModule
+    ) => void;
 }
 
 console.log('reaction_handler.ts: Script loaded.');
@@ -32,10 +35,7 @@ window.reactionHandler = {} as ReactionHandlerModule;
     const reactionHandlerMethods = ((): ReactionHandlerModule => {
         
    // REPLACE WITH 
-   
-
-   const initialize = (domElements: YourDomElements, conversationManager: ConversationManager): void => {
-    console.log('ReactionHandler: Initializing listeners...');
+   const initialize = (domElements: YourDomElements, conversationManager: ConversationManager, aiTranslationService: AiTranslationServiceModule): void => { console.log('ReactionHandler: Initializing listeners...');
 
     const chatLogs = [
         domElements.embeddedChatLog,
@@ -44,7 +44,7 @@ window.reactionHandler = {} as ReactionHandlerModule;
     ].filter(el => el) as HTMLElement[];
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-    let activePicker: HTMLElement | null = null;
+    let activeMenu: HTMLElement | null = null;
     let isLongPress = false;
 
     // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
@@ -103,36 +103,82 @@ window.reactionHandler = {} as ReactionHandlerModule;
         }
     };
     // ^^^^^^ END OF MOVED FUNCTION ^^^^^^
+let activePicker: HTMLElement | null = null;
 
-    const closeActivePicker = () => {
-        if (activePicker) {
-            activePicker.classList.remove('visible');
-            activePicker.querySelectorAll('.reaction-btn.selected').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            activePicker = null;
-        }
-    };
 
-    const openPickerForBubble = (bubble: HTMLElement) => {
-        const picker = bubble.querySelector<HTMLElement>('.reaction-picker');
-        const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
-        if (!picker || !wrapper) return;
+const closeActivePicker = () => {
+    if (activePicker) {
+        activePicker.classList.remove('visible');
+        activePicker = null;
+    }
+    if (activeMenu) { // This part was missing
+        activeMenu.classList.remove('visible');
+        activeMenu = null;
+    }
+};
 
-        closeActivePicker(); 
+const openPickerForBubble = (bubble: HTMLElement) => {
+    closeActivePicker(); 
+    
+    let picker = bubble.querySelector<HTMLElement>('.reaction-picker');
+    
+    // Create the picker if it doesn't exist
+    if (!picker) {
+        const newPicker = document.createElement('div'); // Create as a new const
+        newPicker.className = 'reaction-picker';
+        ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
+            const button = document.createElement('button');
+            button.className = 'reaction-btn';
+            button.type = 'button';
+            button.setAttribute('aria-label', `React with ${emoji}`);
+            button.textContent = emoji;
+            // No error: 'newPicker' is guaranteed to be an HTMLElement
+            newPicker.appendChild(button); 
+        });
+        bubble.appendChild(newPicker);
+        picker = newPicker; // Assign the newly created element back to the original variable
+    }
 
+    const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+
+    // THIS IS THE FINAL FIX: We check for wrapper and picker together here
+    // This guarantees 'picker' is not null for all subsequent operations.
+    if (wrapper && picker) {
+        // --- THIS IS THE FIX ---
+        // 1. First, remove the 'selected' class from ALL buttons in this picker.
+        picker.querySelectorAll('.reaction-btn.selected').forEach(btn => {
+            btn.classList.remove('selected');
+        });
+
+        // 2. Then, check for the user's current reaction on the wrapper.
         const currentUserReaction = wrapper.dataset.userReaction;
         if (currentUserReaction) {
+            // 3. Find the specific button that matches and add the class ONLY to it.
             const selectedBtn = picker.querySelector<HTMLButtonElement>(`button[aria-label="React with ${currentUserReaction}"]`);
-            if (selectedBtn) selectedBtn.classList.add('selected');
+            if (selectedBtn) {
+                selectedBtn.classList.add('selected');
+            }
         }
+        // --- END OF FIX ---
 
         picker.classList.add('visible');
         activePicker = picker;
-    };
+    }
+};
+// ADD THIS NEW FUNCTION FOR THE ACTION MENU
+const openActionMenu = (bubble: HTMLElement) => {
+    closeActivePicker(); // Close other popups first
+    const menu = bubble.querySelector<HTMLElement>('.action-menu');
+    if (menu) {
+        menu.classList.add('visible');
+        activeMenu = menu;
+    }
+};
+
+
 
     // Global click listener to close the picker when clicking away
-    addSafeListener(document, 'click', (e: Event) => {
+    addSafeListener(document, 'click', (e) => {
         const target = e.target as HTMLElement;
         if (activePicker && !target.closest('.reaction-picker') && !target.closest('.message-reactions')) {
             closeActivePicker();
@@ -146,34 +192,56 @@ window.reactionHandler = {} as ReactionHandlerModule;
         addSafeListener(log, 'mouseover', (e: Event) => {
             const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
             if (!bubble) return;
-            if (activePicker) return; 
+
+            // <<< THIS IS THE FIX >>>
+            // Do not show the reaction picker if a picker OR an action menu is already active.
+            if (activePicker || activeMenu) return; 
+            
             openPickerForBubble(bubble);
         });
 
         // --- Logic to HIDE the picker when the mouse leaves the bubble/picker area ---
+              // --- Logic to HIDE the picker when the mouse leaves the "safe zone" ---
+                 // --- Logic to HIDE the picker when the mouse leaves the message WRAPPER ---
+              // --- Logic to HIDE the picker and menu when the mouse leaves the message WRAPPER ---
+                    // --- Logic to HIDE any active popup when the mouse leaves its "safe zone" ---
         addSafeListener(log, 'mouseout', (e: Event) => {
-            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-            if (bubble && activePicker) {
-                setTimeout(() => {
-                    if (activePicker && !activePicker.matches(':hover')) {
-                        closeActivePicker();
-                    }
-                }, 300);
+            const mouseEvent = e as MouseEvent;
+            const toElement = mouseEvent.relatedTarget as HTMLElement;
+            const fromElement = mouseEvent.target as HTMLElement;
+
+            // Find the wrapper of the message we are leaving from
+            const messageWrapper = fromElement.closest('.chat-message-wrapper');
+            if (!messageWrapper) return;
+
+            // Determine if there's an active menu or picker associated with THIS message
+            const hasActivePopup = activePicker?.closest('.chat-message-wrapper') === messageWrapper || 
+                                   activeMenu?.closest('.chat-message-wrapper') === messageWrapper;
+
+            if (hasActivePopup) {
+                // Check if the element we are moving TO is still within the message wrapper's bounds.
+                // This wrapper contains the bubble AND the popups.
+                if (!toElement || !messageWrapper.contains(toElement)) {
+                    // If we've truly left the wrapper area, close everything.
+                    closeActivePicker(); 
+                }
             }
         });
-        
         // --- Logic to SHOW the picker (Long Press on Mobile) ---
         addSafeListener(log, 'touchstart', (e: Event) => {
             const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
             if (!bubble) return;
             
-            isLongPress = false;
+            isLongPress = false; // Reset flag
             longPressTimer = setTimeout(() => {
-                e.preventDefault();
+                e.preventDefault(); // Prevent text selection, etc.
                 isLongPress = true;
-                openPickerForBubble(bubble);
+                
+                // Open the ACTION MENU on long-press now
+                openActionMenu(bubble);
+
                 longPressTimer = null;
-            }, 500);
+            }, 500); // 500ms for a long press
         }, { passive: false });
 
         const cancelLongPress = () => {
@@ -183,17 +251,102 @@ window.reactionHandler = {} as ReactionHandlerModule;
         
         addSafeListener(log, 'touchend', cancelLongPress);
         addSafeListener(log, 'touchmove', cancelLongPress);
-        // =======================================================================
-           
+               // --- Logic for Right-Click (Desktop) ---
+               addSafeListener(log, 'contextmenu', (e: Event) => {
+                const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+                if (bubble) {
+                    // Prevent the default browser menu and stop other listeners from running.
+                    e.preventDefault();
+                    e.stopPropagation(); 
+    
+                    // Close any open reaction picker to ensure the action menu takes precedence.
+                    closeActivePicker(); 
+                    
+                    // Open the action menu.
+                    openActionMenu(bubble);
+                }
+            }, { capture: true }); // <<< THIS IS THE CRUCIAL FIX
            
            
              // =================== REPLACE THE ENTIRE 'click' LISTENER WITH THIS FINAL VERSION ===================
-             addSafeListener(log, 'click', (e: Event) => {
+             addSafeListener(log, 'click', async (e: Event) => {
+
+           
+
+
+
                 if (isLongPress) {
                     e.preventDefault();
+                    isLongPress = false; // Reset the flag
                     return;
                 }
                 const target = e.target as HTMLElement;
+
+
+                const actionButton = target.closest<HTMLElement>('.action-btn-item');
+                if (actionButton) {
+                    e.stopImmediatePropagation(); // <-- THE FIX
+                    e.stopPropagation();
+                    const bubble = actionButton.closest<HTMLElement>('.chat-message-ui');
+                    const messageWrapper = bubble?.closest<HTMLElement>('.chat-message-wrapper');
+                    const textElement = messageWrapper?.querySelector<HTMLElement>('.chat-message-text');
+    
+                    if (!messageWrapper || !textElement) {
+                        closeActivePicker();
+                        return;
+                    }
+                
+                    const action = actionButton.dataset.action;
+                
+                    if (action === 'copy') {
+                        navigator.clipboard.writeText(textElement.textContent || '');
+                        actionButton.querySelector('span')!.textContent = 'Copied!';
+                        setTimeout(() => { actionButton.querySelector('span')!.textContent = 'Copy'; }, 1500);
+                    } else if (action === 'translate') {
+                        console.log('[STEP 1] ✅ "Translate" button clicked. Preparing to call AI service.');
+                        const messageId = messageWrapper.dataset.messageId;
+                        const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
+                        const connectorId = chatContainer?.dataset.currentConnectorId;
+                        
+                        if (messageId && connectorId) {
+                            const originalText = messageWrapper.dataset.originalText || (messageWrapper.dataset.originalText = textElement.textContent || '');
+                            const isTranslated = messageWrapper.dataset.isTranslated === 'true';
+                    
+                            if (isTranslated) {
+                                textElement.textContent = originalText;
+                                messageWrapper.dataset.isTranslated = 'false';
+                                actionButton.querySelector('span')!.textContent = 'Translate';
+                            } else {
+                                const originalButtonContent = actionButton.innerHTML;
+                                actionButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>Translating...</span>`;
+                                (actionButton as HTMLButtonElement).disabled = true;
+                    
+                                try {
+                                    const translatedText = await aiTranslationService.generateTranslation(messageId, connectorId);
+
+                                    console.log('[STEP 3] ✅ AI Translation Service responded. Result:', translatedText);
+                                    
+                                    if (translatedText) {
+                                        textElement.textContent = translatedText;
+                                        messageWrapper.dataset.isTranslated = 'true';
+                                        actionButton.innerHTML = `<i class="fas fa-language"></i><span>Original</span>`;
+                                    } else {
+                                        textElement.textContent += ' (Translation failed)';
+                                        actionButton.innerHTML = originalButtonContent;
+                                    }
+                                } catch (err) {
+                                    textElement.textContent += ' (Translation error)';
+                                    actionButton.innerHTML = originalButtonContent;
+                                } finally {
+                                    (actionButton as HTMLButtonElement).disabled = false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    closeActivePicker(); // Close the menu after an action
+                    return; 
+                }
 
                 // CASE 1: Clicked on a displayed reaction badge (e.g., "👍 1").
                 const reactionBadge = target.closest<HTMLElement>('.reaction-item');
@@ -215,40 +368,58 @@ window.reactionHandler = {} as ReactionHandlerModule;
 // CASE 2: Clicked a button inside the picker.
 // =================== REPLACE CASE 2 WITH THIS CORRECTED VERSION ===================
                     // CASE 2: Clicked on a button inside the picker itself.
-                    const pickerButton = target.closest<HTMLElement>('.reaction-btn');
-                    if (pickerButton && activePicker) {
-                        const wrapper = pickerButton.closest<HTMLElement>('.chat-message-wrapper');
-                        const reactionsDisplay = wrapper?.querySelector<HTMLElement>('.message-reactions');
-                        
-                        if (wrapper && reactionsDisplay) {
-                           const emoji = pickerButton.textContent || '';
-                           const currentReaction = wrapper.dataset.userReaction;
-                    
-                           const existingEl = reactionsDisplay.querySelector('.reaction-item');
-                           if (existingEl) existingEl.remove();
-                    
-                           if (currentReaction === emoji) {
-                               delete wrapper.dataset.userReaction;
-                               updateReactionInData(wrapper, null);
-                           } else {
-                               wrapper.dataset.userReaction = emoji;
-                               const newReactionEl = document.createElement('button');
-                               newReactionEl.className = 'reaction-item';
-                               newReactionEl.type = 'button';
-                               newReactionEl.innerHTML = `${emoji} <span class="reaction-count">1</span>`;
-                               reactionsDisplay.appendChild(newReactionEl);
-                               updateReactionInData(wrapper, emoji);
-                           }
-                        }
-                        
-                        // --- THIS IS THE FIX ---
-                        // After the user makes a selection, always close the picker.
-                        closeActivePicker();
-                        // --- END OF FIX ---
-                        
-                        e.stopPropagation();
-                        return;
-                    }
+                  // REPLACE CASE 2 WITH THIS
+
+// CASE 2: Clicked a button inside the picker.
+// CASE 2: Clicked a button inside the picker.
+const pickerButton = target.closest<HTMLElement>('.reaction-btn');
+if (pickerButton) {
+    console.log('[RH_DEBUG] CASE 2 triggered by click on:', target);
+    console.log('[RH_DEBUG] Found pickerButton:', pickerButton);
+
+    // Stop the event from bubbling up to other listeners IMMEDIATELY.
+    e.stopPropagation(); 
+    e.preventDefault();
+
+    // Use .closest() to find the wrapper, it's generally more reliable.
+    const wrapper = pickerButton.closest<HTMLElement>('.chat-message-wrapper');
+    console.log('[RH_DEBUG] Attempting to find wrapper. Found:', wrapper);
+
+    if (wrapper) {
+        console.log('[RH_DEBUG] Wrapper found. It has dataset:', JSON.parse(JSON.stringify(wrapper.dataset)));
+        const reactionsDisplay = wrapper.querySelector<HTMLElement>('.message-reactions');
+
+        if (reactionsDisplay) {
+            const emoji = pickerButton.textContent || '';
+            const currentReaction = wrapper.dataset.userReaction;
+
+            const existingEl = reactionsDisplay.querySelector('.reaction-item');
+            if (existingEl) existingEl.remove();
+
+            if (currentReaction === emoji) {
+                delete wrapper.dataset.userReaction;
+                console.log('[RH_DEBUG] Calling updateReactionInData to REMOVE reaction.');
+                updateReactionInData(wrapper, null);
+            } else {
+                wrapper.dataset.userReaction = emoji;
+                const newReactionEl = document.createElement('button');
+                newReactionEl.className = 'reaction-item';
+                newReactionEl.type = 'button';
+                newReactionEl.innerHTML = `${emoji} <span class="reaction-count">1</span>`;
+                reactionsDisplay.appendChild(newReactionEl);
+                console.log('[RH_DEBUG] Calling updateReactionInData to ADD reaction.');
+                updateReactionInData(wrapper, emoji);
+            }
+        } else {
+            console.error('[RH_DEBUG] Wrapper was found, but its .message-reactions child was not.');
+        }
+    } else {
+        console.error('[RH_DEBUG] CRITICAL: pickerButton was clicked, but a .chat-message-wrapper parent could not be found.');
+    }
+    
+    closeActivePicker();
+    return; // IMPORTANT: Exit the click handler
+}
 // ==============================================================================
 // ==============================================================================
 

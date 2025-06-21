@@ -366,24 +366,48 @@ function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, u
             cleanAndReconstructTranscriptLLM: cleanAndReconstructTranscriptLLM_internal,
             
           // Replace with this in ai_service.ts
-          generateTextMessage: async (
-            promptOrText: string, 
-            connector: Connector, 
-            history: GeminiChatItem[] | null | undefined, 
-            preferredProvider = safeProviders.GROQ,
-            expectJson: boolean = false,
-            context: 'group-chat' | 'one-on-one' = 'one-on-one',
-            abortSignal?: AbortSignal // <<< ADDED
-        ): Promise<string | null | object> => {
-            const currentDeps = getDeps();
-            const subService = currentDeps.aiTextGenerationService;
-            if (!subService?.generateTextMessage) {
-                console.error("AI Facade (TS): aiTextGenerationService.generateTextMessage unavailable.");
-                return getRandomHumanError();
-            }
-            // Let AbortError bubble up to the caller (text_message_handler)
-            return await subService.generateTextMessage(promptOrText, connector, history || [], preferredProvider, expectJson, context, abortSignal); // <<< PASS IT HERE
-        },
+        // in ai_service.ts
+
+// =================== REPLACE THE OLD generateTextMessage WITH THIS NEW VERSION ===================
+generateTextMessage: async (
+    promptOrText: string, 
+    connector: Connector, 
+    history: GeminiChatItem[] | null | undefined, 
+    preferredProvider = safeProviders.GROQ,
+    expectJson: boolean = false,
+    context: 'group-chat' | 'one-on-one' = 'one-on-one',
+    abortSignal?: AbortSignal
+): Promise<string | null | object> => {
+
+    // --- This is our new logging ---
+    console.log(`%c[AI_SERVICE] generateTextMessage called. Preferred Provider: [${preferredProvider}]`, 'color: orange; font-weight: bold;');
+    
+    const currentDeps = getDeps();
+    const subService = currentDeps.aiTextGenerationService;
+
+    if (!subService?.generateTextMessage) {
+        console.error("[AI_SERVICE_FAIL] aiTextGenerationService.generateTextMessage unavailable.");
+        return getRandomHumanError();
+    }
+    
+    // --- We wrap your original logic in try...catch ---
+    try {
+        // This is your original, important line of code. It's still here.
+        const result = await subService.generateTextMessage(promptOrText, connector, history || [], preferredProvider, expectJson, context, abortSignal);
+        
+        // --- This is our new success log ---
+        console.log(`%c[AI_SERVICE] Sub-service returned a result:`, 'color: green;', result);
+        return result;
+
+    } catch (error: any) {
+        // --- This is our new error log ---
+        console.error(`%c[AI_SERVICE_FAIL] The call to subService.generateTextMessage FAILED for provider [${preferredProvider}].`, 'color: red; font-weight: bold;');
+        console.error('[AI_SERVICE_FAIL] Error details:', error);
+        // This is important: it makes sure the fallback loop in the translation service works.
+        throw error;
+    }
+},
+// ===========================================================================================
 
             generateTextForCallModal: async (userText, connector, modalCallHistory) => {
                 const currentDeps = getDeps();

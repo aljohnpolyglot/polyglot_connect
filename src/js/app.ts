@@ -152,6 +152,7 @@ function initializeAppLogic(): void {
         { name: 'polyglotMinigamesData', obj: window.polyglotMinigamesData as Minigame[] | undefined },
         { name: 'polyglotSharedContent', obj: window.polyglotSharedContent as SharedContent | undefined, keyFn: 'homepageTips' },
         { name: 'aiService', obj: window.aiService as AIService | undefined, keyFn: 'generateTextMessage' },
+        { name: 'aiTranslationService', obj: window.aiTranslationService as import('./types/global').AiTranslationServiceModule | undefined, keyFn: 'initialize' },
         { name: 'geminiLiveApiService', obj: window.geminiLiveApiService as GeminiLiveApiService | undefined, keyFn: 'connect' },
         { name: 'activityManager', obj: window.activityManager as ActivityManager | undefined, keyFn: 'isConnectorActive' },
         { name: 'groupManager', obj: window.groupManager as GroupManager | undefined, keyFn: 'initialize' },
@@ -270,7 +271,30 @@ function initializeAppLogic(): void {
         console.error("app.ts (initializeAppLogic): CRITICAL - chatOrchestrator not found! window.chatManager will be undefined.");
     }
 
-   
+    if (window.aiTranslationService?.initialize) {
+        console.groupCollapsed('%c[APP_INIT] Wiring up AiTranslationService...', 'font-weight: bold; color: #9c27b0;');
+    
+        const hasConvoManager = !!(window.conversationManager?.getConversationById);
+        const hasAiService = !!(window.aiService?.generateTextMessage);
+    
+        console.log(`Dependency Check: conversationManager is ready? -> ${hasConvoManager}`);
+        console.log(`Dependency Check: aiService is ready? -> ${hasAiService}`);
+        
+        if (hasConvoManager && hasAiService) {
+            console.log('%cAll dependencies MET. Initializing aiTranslationService now.', 'color: green;');
+            window.aiTranslationService.initialize({
+                conversationManager: window.conversationManager!,
+                aiService: window.aiService!
+            });
+            // Note: The service will dispatch its own 'Ready' event internally.
+        } else {
+            console.error('Cannot initialize aiTranslationService. Missing dependencies.');
+        }
+        console.groupEnd();
+    
+    } else {
+        console.error('[APP_INIT] FAILED to find window.aiTranslationService.initialize function during wiring.');
+    }
     if (titleNotifier) {
         titleNotifier.initialize();
         console.log("app.ts (initializeAppLogic): Title Notifier has been initialized.");
@@ -417,3 +441,52 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log("app.ts: Script parsing finished. Event listeners for 'allCoreModulesReady' and 'DOMContentLoaded' are set.");
+
+// in app.ts, at the very bottom
+
+// =================== PASTE THIS ENTIRE TEST BLOCK AT THE END OF APP.TS ===================
+document.addEventListener('DOMContentLoaded', () => {
+    const testButton = document.getElementById('ai-test-button');
+    const firstConnector = window.polyglotConnectors ? window.polyglotConnectors[0] : null;
+
+    if (testButton && firstConnector) {
+        testButton.addEventListener('click', async () => {
+            console.log('%c[HEARTBEAT_TEST] Button clicked. Starting test...', 'background: red; color: white; font-size: 1.2em;');
+            
+            if (!window.aiService?.generateTextMessage) {
+                console.error('[HEARTBEAT_TEST_FAIL] window.aiService or its generateTextMessage method is NOT available.');
+                alert('HEARTBEAT FAIL: aiService is missing!');
+                return;
+            }
+
+            console.log('[HEARTBEAT_TEST] aiService appears to be available. Calling generateTextMessage...');
+            testButton.textContent = 'TEST RUNNING...';
+            testButton.style.background = 'orange';
+
+            try {
+                const result = await window.aiService.generateTextMessage(
+                    "This is a direct test. Respond with only the word: 'OK'",
+                    firstConnector,
+                    null,
+                    'groq' // Test with the fastest provider
+                );
+
+                console.log('%c[HEARTBEAT_TEST_SUCCESS] The AI service responded!', 'background: green; color: white; font-size: 1.2em;');
+                console.log('[HEARTBEAT_TEST] Result:', result);
+                alert(`HEARTBEAT SUCCESS! AI responded with: "${result}"`);
+                testButton.textContent = 'TEST SUCCEEDED';
+                testButton.style.background = 'green';
+
+            } catch (error) {
+                console.error('%c[HEARTBEAT_TEST_FAIL] The call to aiService FAILED with an error.', 'background: #b30000; color: white; font-size: 1.2em;');
+                console.error(error);
+                alert('HEARTBEAT FAIL: The AI call threw an error. Check console.');
+                testButton.textContent = 'TEST FAILED';
+                testButton.style.background = '#b30000';
+            }
+        });
+    } else {
+        console.error('[HEARTBEAT_TEST] Could not set up test button. Missing button or connector data.');
+    }
+});
+// =======================================================================================

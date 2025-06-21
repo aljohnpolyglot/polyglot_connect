@@ -1430,6 +1430,28 @@ export interface ChatEventListenersModule {
       conversationManager: ConversationManager
   ) => void;
 }
+// ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
+// ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
+// ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
+
+export interface ReactionHandlerModule {
+  initialize: (
+    domElements: YourDomElements, 
+    conversationManager: ConversationManager, 
+    aiTranslationService: AiTranslationServiceModule
+  ) => void;
+}
+// in global.d.ts
+
+// =================== REPLACE WITH THIS BLOCK ===================
+export interface AiTranslationServiceModule {
+  initialize: (deps: { 
+      conversationManager: ConversationManager,
+      aiService: AiServiceModule // It now depends on the main AI service.
+  }) => void;
+  generateTranslation: (messageId: string, connectorId: string) => Promise<string | null>;
+}
+// ===============================================================
 // =======================================================================
 export interface GeminiChatServiceModule {
   initialize: () => void;
@@ -1492,6 +1514,8 @@ declare global {
     sessionManager?: SessionManager;
     modalHandler?: ModalHandler;
     uiUpdater?: UiUpdater;
+    reactionHandler?: ReactionHandlerModule;
+aiTranslationService?: AiTranslationServiceModule;
     chatUiUpdater?: ChatUiUpdaterModule; // <<< ADD THIS LINE
     cardRenderer?: CardRenderer;
     polyglotApp?: PolyglotApp; // Uses the exported PolyglotApp interface
@@ -1499,7 +1523,7 @@ declare global {
     groupManager?: GroupManager; // Uses the exported GroupManager
     listRenderer?: ListRenderer;
     shellSetup?: ShellSetup;
-    reactionHandler?: ReactionHandlerModule; // <<< ADD THIS LINE
+
    liveApiMicInput?: LiveApiMicInput;
 liveApiAudioOutput?: LiveApiAudioOutput;
 liveApiTextCoordinator?: LiveApiTextCoordinator;

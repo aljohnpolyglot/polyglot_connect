@@ -306,12 +306,10 @@ if (Array.isArray(convo.messages) && convo.messages.length > 0) {
         let senderClass = msg.sender === 'user-voice-transcript' ? 'user' : (msg.sender === 'user' ? 'user' : 'connector');
         let textForDisplay = msg.text || ""; 
 
-        // VVVVVV THIS IS THE FIX VVVVVV
-        // Spread all properties from the stored message (including 'reactions'),
-        // then add/override any properties needed specifically for the UI.
-        const msgOptions: ChatMessageOptions = {
-            ...msg, // Copies timestamp, messageId, type, reactions, etc.
-            // Override/add specific UI-related properties below
+         // THE FIX: Explicitly map the stored 'id' to the 'messageId' property the UI needs.
+         const msgOptions: ChatMessageOptions = {
+            ...msg, // Spread first to copy all other properties (reactions, etc.)
+            messageId: msg.id, // This is the crucial line
             connectorIdForButton: msg.connectorIdForButton,
             connectorNameForDisplay: msg.connectorNameForDisplay
         };
@@ -484,20 +482,18 @@ async function openMessageModalForConnector(connector: Connector): Promise<void>
         // 3. Check if a conversation with messages *already exists*.
         const existingConvo = conversationManager.getConversationById(connector.id);
         
-              if (existingConvo && existingConvo.messages?.length > 0) {
-            // If it exists and has messages, render them.
+        if (existingConvo && existingConvo.messages?.length > 0) {
             console.log(`CSH: Populating ${existingConvo.messages.length} messages from existing conversation for ${connector.id}.`);
             existingConvo.messages.forEach((msg: MessageInStore) => {
                 const senderClass = msg.sender === 'user' ? 'user' : 'connector';
 
-                // VVVVVV THIS IS THE FIX VVVVVV
                 const msgOptions: ChatMessageOptions = {
-                    ...msg, // Spread all properties from the stored message (including reactions)
+                    ...msg, // Spread all properties from the stored message (like reactions)
+                    messageId: msg.id, // <<< THIS IS THE ONLY LINE YOU NEED TO ADD
                     avatarUrl: connector.avatarModern,
                     senderName: connector.profileName,
                     connectorId: connector.id,
                 };
-                // ^^^^^^ END OF FIX ^^^^^^
 
                 uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
             });

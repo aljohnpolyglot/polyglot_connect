@@ -72,6 +72,14 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
     }
 
     function appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null {
+      
+        console.log('[CHAT_UI_DEBUG] appendChatMessage called for sender:', senderClass);
+        // Log a clean snapshot of the options object to see exactly what was passed in.
+        console.log('[CHAT_UI_DEBUG] FULL OPTIONS RECEIVED:', JSON.parse(JSON.stringify(options))); 
+        if (!options.messageId) {
+            console.error('[CHAT_UI_DEBUG] CRITICAL: The `messageId` property is MISSING from the options object passed to appendChatMessage!');
+        }
+      
         const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
         if (!logElement || !currentPolyglotHelpers) {
             console.error("ChatUIU_appendChatMessage: logElement or polyglotHelpers missing.");
@@ -129,6 +137,20 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
         }
         
         const messageWrapper = document.createElement('div');
+
+        
+        
+        
+        console.log('[CHAT_UI_DEBUG] Creating message wrapper. Checking for messageId in options...');
+        if (options.messageId) {
+            messageWrapper.dataset.messageId = options.messageId;
+            console.log(`[CHAT_UI_DEBUG] SUCCESS: Set data-message-id to "${options.messageId}" on the wrapper.`);
+        } else {
+            console.warn('[CHAT_UI_DEBUG] WARNING: No messageId was provided in options, so data-message-id was NOT set on the wrapper.');
+        }
+        // Let's inspect the dataset immediately after trying to set it.
+        console.log('[CHAT_UI_DEBUG] Wrapper dataset immediately after setting:', JSON.parse(JSON.stringify(messageWrapper.dataset)));
+
         const currentSpeakerId = options.speakerId || options.connectorId;
         if (shouldDisplayTimestamp) {
             lastSpeakerPerLog.delete(logElement);
@@ -266,6 +288,12 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
             options.type !== 'call_event' &&               // <<< AND THIS IS A SAFETY CHECK
             options.avatarUrl;
             if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
+
+            
+                
+                
+                
+                
                 const timeOnDemandDiv = document.createElement('div');
                 timeOnDemandDiv.className = 'message-timestamp-on-click';
                 timeOnDemandDiv.textContent = messageTimestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -293,51 +321,69 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
 
         // Add reaction picker logic
      // =================== REPLACE THE REACTION CONTAINER BLOCK WITH THIS ===================
-    if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
-        const messageBubble = messageWrapper.querySelector('.chat-message-ui');
-        if (messageBubble) {
-            // Create the picker (it's always there, just hidden)
-            const reactionPicker = document.createElement('div');
-            reactionPicker.className = 'reaction-picker';
-            ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
-                const button = document.createElement('button');
-                button.className = 'reaction-btn';
-                button.type = 'button';
-                button.textContent = emoji;
-                button.setAttribute('aria-label', `React with ${emoji}`);
-                reactionPicker.appendChild(button);
-            });
-            messageBubble.appendChild(reactionPicker);
 
-            // Create the container for displayed reactions
-            const reactionsContainer = document.createElement('div');
-            reactionsContainer.className = 'message-reactions';
-            
-            // --- THIS IS THE NEW PART ---
-            // Check for saved reactions passed in the options
-            if (options.reactions) {
-                // Find the reaction made by the current user
-                const userReactionEmoji = Object.keys(options.reactions).find(emoji => 
-                    options.reactions![emoji].includes('user_player')
-                );
+    
+     if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
+        const safetyNet = document.createElement('div');
+        safetyNet.className = 'message-safety-net';
+        messageWrapper.appendChild(safetyNet);
+        
+        
+        
+     // =================== REPLACE THE REACTION CONTAINER BLOCK WITH THIS (CORRECTED) ===================
+// =================== REPLACE THE REACTION CONTAINER BLOCK WITH THIS (CORRECTED) ===================
 
-                if (userReactionEmoji) {
-                    // Set the dataset for the handler to know the user has reacted
-                    messageWrapper.dataset.userReaction = userReactionEmoji;
+if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
+    
+    // The `messageDiv` variable IS the message bubble. We will add the menu directly to it.
 
-                    // Create and append the visual badge
-                    const reactionEl = document.createElement('button');
-                    reactionEl.className = 'reaction-item';
-                    reactionEl.type = 'button';
-                    const reactionCount = options.reactions[userReactionEmoji].length;
-                    reactionEl.innerHTML = `${userReactionEmoji} <span class="reaction-count">${reactionCount}</span>`;
-                    reactionsContainer.appendChild(reactionEl);
-                }
-            }
-            // --- END OF NEW PART ---
+    // 1. Create the Reaction Picker (for hover/long-press)
+    const reactionPicker = document.createElement('div');
+    reactionPicker.className = 'reaction-picker';
+    ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
+        const button = document.createElement('button');
+        button.className = 'reaction-btn';
+        button.type = 'button';
+        button.textContent = emoji;
+        button.setAttribute('aria-label', `React with ${emoji}`);
+        reactionPicker.appendChild(button);
+    });
+    messageDiv.appendChild(reactionPicker);
 
-            messageWrapper.appendChild(reactionsContainer);
+    // 2. Create YOUR Action Menu (for right-click)
+    const actionMenu = document.createElement('div');
+    actionMenu.className = 'action-menu';
+    actionMenu.innerHTML = `
+        <button class="action-btn-item" data-action="copy" title="Copy message text"><i class="fas fa-copy"></i><span>Copy</span></button>
+        <button class="action-btn-item" data-action="translate" title="Translate message"><i class="fas fa-language"></i><span>Translate</span></button>
+    `;
+    // Append the menu directly to the bubble. This now works correctly.
+    messageDiv.appendChild(actionMenu);
+
+    // 3. Create the container for displaying selected reactions
+    const reactionsContainer = document.createElement('div');
+    reactionsContainer.className = 'message-reactions';
+
+    if (options.reactions) {
+        const userReactionEmoji = Object.keys(options.reactions).find(emoji => 
+            options.reactions![emoji].includes('user_player')
+        );
+
+        if (userReactionEmoji) {
+            messageWrapper.dataset.userReaction = userReactionEmoji;
+            const reactionEl = document.createElement('button');
+            reactionEl.className = 'reaction-item';
+            reactionEl.type = 'button';
+            const reactionCount = options.reactions[userReactionEmoji].length;
+            reactionEl.innerHTML = `${userReactionEmoji} <span class="reaction-count">${reactionCount}</span>`;
+            reactionsContainer.appendChild(reactionEl);
         }
+    }
+    
+    messageWrapper.appendChild(reactionsContainer);
+}
+// ======================================================================================
+// ======================================================================================
     }
 // ======================================================================================
 
