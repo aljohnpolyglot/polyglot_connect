@@ -1,25 +1,25 @@
 // D:\polyglot_connect\src\js\core\conversation_manager.ts (Facade)
 import type {
-    PolyglotHelpersOnWindow,
-    ChatOrchestrator,
     Connector,
-    ConversationItem,
+    ConversationManager as ConversationManagerInterface, // Import the MASTER interface with an alias
+    ConversationRecordInStore,
+    ConvoStoreModule,
     GeminiChatItem,
     MessageInStore,
-    ConversationRecordInStore,
-    ConvoStoreModule
+    PolyglotHelpersOnWindow,
+    MemoryServiceModule,
+    ConversationItem,
+    ChatOrchestrator
 } from '../types/global.d.ts';
 
-// Import utilities from our new modules
-// Assuming buildInitialGeminiHistory is now async and returns Promise<GeminiChatItem[]>
-import { buildInitialGeminiHistory } from './convo_prompt_builder.js'; 
-import { addTurnToGeminiHistory } from './convo_turn_manager.js';
-
 console.log('conversation_manager.ts (Facade): Script loaded, waiting for core dependencies.');
+
+// Define the internal module interface. This is what the file will promise to build.
+// It MUST match the structure of the object returned by the IIFE.
 interface ConversationManagerModule {
-    initialize: () => Promise<void>; // Now returns Promise
-    getActiveConversations: () => ConversationItem[]; // Remains sync for now
-    getConversationById: (connectorId: string) => ConversationRecordInStore | null; // Remains sync
+    initialize: () => Promise<void>;
+    getActiveConversations: () => ConversationItem[];
+    getConversationById: (connectorId: string) => ConversationRecordInStore | null;
     addMessageToConversation: (
         connectorId: string,
         sender: string,
@@ -27,30 +27,26 @@ interface ConversationManagerModule {
         type?: string,
         timestamp?: number,
         extraData?: Record<string, any>
-    ) => Promise<MessageInStore | null>; // Returns Promise
+    ) => Promise<MessageInStore | null>;
     ensureConversationRecord: (
         connectorId: string,
-        connectorData?: Connector | null
-    ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>; // Returns Promise
-  
-  
-    addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>; // Returns Promise
- 
- 
-    // VVVVVV ADD THIS FUNCTION SIGNATURE VVVVVV
-    saveAllConversationsToStorage: () => void;
-    // ^^^^^^ ADD THIS FUNCTION SIGNATURE ^^^^^^
- 
-    markConversationActive: (connectorId: string) => boolean; // Remains sync
+        connectorData?: Connector | null,
+        options?: { setLastActivity?: boolean }
+    ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
+    addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>;
+    markConversationActive: (connectorId: string) => boolean;
     addModelResponseMessage: (
-        connectorId: string, 
-        text: string, 
-        geminiHistoryRefToUpdate?: GeminiChatItem[] // Likely redundant
-    ) => Promise<MessageInStore | null>; // Returns Promise
-    getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>; // Returns Promise
-    clearConversationHistory: (connectorId: string) => Promise<void>; // Returns Promise
+        connectorId: string,
+        text: string,
+        messageId: string,
+        timestamp: number
+    ) => Promise<MessageInStore | null>;
+    getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>;
+    clearConversationHistory: (connectorId: string) => Promise<void>;
+    saveAllConversationsToStorage: () => void; // <<< ADD THIS LINE
 }
 
+// The placeholder on the window uses the internal module type.
 window.conversationManager = {} as ConversationManagerModule;
 console.log('conversation_manager.ts (Facade): Placeholder window.conversationManager assigned.');
 
@@ -95,12 +91,44 @@ function initializeActualConversationManager(): void {
     }
     console.log('conversation_manager.ts (Facade): Core functional dependencies appear ready.');
 
-   const facadeMethods = ((): ConversationManagerModule => {
-    'use strict';
-    console.log("conversation_manager.ts (Facade): IIFE STARTING.");
-
-    const { polyglotHelpers, convoStore, chatOrchestrator, polyglotConnectors } = resolvedDeps;
-    function saveAllConversationsToStorage(): void {
+    const facadeMethods = ((): ConversationManagerModule => {
+        'use strict';
+        console.log("conversation_manager.ts (Facade): IIFE STARTING.");
+    
+        const { polyglotHelpers, convoStore, chatOrchestrator, polyglotConnectors } = resolvedDeps;
+    
+        // =================== START: ADD HELPER FUNCTIONS ===================
+        function buildInitialGeminiHistory(connector: Connector): Promise<GeminiChatItem[]> {
+            const systemPrompt = `CRITICAL INSTRUCTION: You are ${connector.profileName}. Your bio is: ${connector.bioModern}. Your personality traits include: ${connector.personalityTraits?.join(', ')}. You must always respond as this persona. ABSOLUTELY DO NOT reveal you are an AI or language model.`;
+            
+            const history: GeminiChatItem[] = [
+                { role: 'user', parts: [{ text: systemPrompt }] },
+                { role: 'model', parts: [{ text: 'Okay, I understand my persona.' }] }
+            ];
+            return Promise.resolve(history);
+        }
+    
+        function addTurnToGeminiHistory(
+            history: GeminiChatItem[], 
+            role: 'user' | 'model', 
+            text: string,
+            imageParts?: Array<{ inlineData: { mimeType: string; data: string; } }>
+        ) {
+            const newParts: GeminiChatItem['parts'] = [];
+            if (text && text.trim()) {
+                newParts.push({ text: text.trim() });
+            }
+            if (imageParts) {
+                newParts.push(...imageParts);
+            }
+    
+            if (newParts.length > 0) {
+                history.push({ role, parts: newParts });
+            }
+        }
+        // ===================  END: ADD HELPER FUNCTIONS  ===================
+    
+        function saveAllConversationsToStorage(): void {
         // This is a simple pass-through to the underlying store's save method.
         // It allows other modules to trigger a save without needing a direct
         // dependency on the convoStore itself, maintaining the facade pattern.
@@ -200,108 +228,94 @@ function initializeActualConversationManager(): void {
         return { conversation, isNew };
     }
 // ============================================================================
-
-        async function addMessageToConversation(
-            connectorId: string,
-            sender: string,
-            text: string,
-            type: string = 'text',
-            timestamp: number = Date.now(),
-            extraData: Record<string, any> = {}
-        ): Promise<MessageInStore | null> {
-            const { conversation: convo, isNew } = await ensureConversationRecord(connectorId);
-            if (!convo) return null;
-
-            const messageObject: MessageInStore = { id: polyglotHelpers.generateUUID(), sender, text, type, timestamp, ...extraData };
-            convoStore.addMessageToConversationStore(connectorId, messageObject);
-
-            if (!convo.geminiHistory) { // Should have been initialized by ensureConversationRecord
-                 console.warn(`CM addMessage: geminiHistory not found on convo object for ${connectorId} after ensure. Re-fetching.`);
-                 const updatedConvo = convoStore.getConversationById(connectorId); // Re-fetch
-                 if(updatedConvo?.geminiHistory) convo.geminiHistory = updatedConvo.geminiHistory;
-                 else if (convo.connector) convo.geminiHistory = await buildInitialGeminiHistory(convo.connector); // Last resort
-                 else { console.error("CM addMessage: Cannot update geminiHistory, connector info missing."); return messageObject; }
-            }
-
-            if (type === 'text' && (sender === 'user' || sender === 'connector')) {
-                addTurnToGeminiHistory(convo.geminiHistory, sender === 'user' ? 'user' : 'model', text);
-            } else if (type === 'image' && sender === 'user' && extraData.imagePartsForGemini) {
-                let imageContextForLLM = text; // User's caption or placeholder like "[User sent an image]"
-                if (extraData.imageSemanticDescription) { // imageSemanticDescription comes from TMH via extraData
-                    // This is the AI's *first-pass* description made by TMH when user sent the image.
-                    imageContextForLLM = `${text || ""} [Image Description: ${extraData.imageSemanticDescription}]`;
-                    console.log(`CM.addMessageToConversation: Adding image with AI description to Gemini history for ${connectorId}.`);
-                } else {
-                     imageContextForLLM = text || ""; 
-                }
-                addTurnToGeminiHistory(convo.geminiHistory, 'user', imageContextForLLM, extraData.imagePartsForGemini);
-            } else if (sender === 'user-voice-transcript') {
-                addTurnToGeminiHistory(convo.geminiHistory, 'user', text);
-            }
-            // Update the history in the store
-            convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
-            
-            // --- THIS IS THE FIX ---
-            // Explicitly save everything to localStorage immediately after adding any message.
-            console.log("CM.addMessage: Forcing save to storage after adding message.");
-            convoStore.saveAllConversationsToStorage();
-            // --- END OF FIX ---
-
-            if (chatOrchestrator?.notifyNewActivityInConversation) {
-            chatOrchestrator.notifyNewActivityInConversation(connectorId);
-        }
-
-        // Broadcast the new message event for live UI updates
-        console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
-        document.dispatchEvent(new CustomEvent('new-message-in-store', {
-            detail: {
-                connectorId: connectorId,
-                message: messageObject
-            }
-        }));
-
-        return messageObject;
-        }
-
-        async function addModelResponseMessage(
-            connectorId: string,
-            text: string,
-            geminiHistoryRefToUpdate?: GeminiChatItem[] // Often not needed due to ensureConversationRecord
-        ): Promise<MessageInStore | null> {
-            const { conversation: convo } = await ensureConversationRecord(connectorId);
-            if (!convo) return null;
-            const cleanText = typeof text === 'string' ? text : String(text || "(AI response was empty)");
-
-            const messageObject: MessageInStore = { id: polyglotHelpers.generateUUID(), sender: 'connector', text: cleanText, type: 'text', timestamp: Date.now() };
-            convoStore.addMessageToConversationStore(connectorId, messageObject);
-            
-            if (!convo.geminiHistory && convo.connector) { // Safety: ensure history exists
-                convo.geminiHistory = await buildInitialGeminiHistory(convo.connector);
-            }
-            if (convo.geminiHistory) {
-                let textForModelHistory = cleanText;
-             
-                addTurnToGeminiHistory(convo.geminiHistory, 'model', textForModelHistory);
-                convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
-            }
-            // --- FIX: Ensure this line exists ---
-            convoStore.saveAllConversationsToStorage();
-
-            if (chatOrchestrator?.notifyNewActivityInConversation) {
-                chatOrchestrator.notifyNewActivityInConversation(connectorId);
-            }
-            
-            // Broadcast the new message event for live UI updates
-            console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
-            document.dispatchEvent(new CustomEvent('new-message-in-store', {
-                detail: {
-                    connectorId: connectorId,
-                    message: messageObject
-                }
-            }));
+async function addMessageToConversation(
+    connectorId: string,
+    sender: string,
+    text: string,
+    type?: string,
+    timestamp?: number,
+    extraData: Record<string, any> = {}
+): Promise<MessageInStore | null> {
+    const finalType = type || 'text';
+    const finalTimestamp = timestamp || Date.now();
     
-            return messageObject;
+    const { conversation: convo, isNew } = await ensureConversationRecord(connectorId);
+    if (!convo) return null;
+
+    const messageObject: MessageInStore = { id: polyglotHelpers.generateUUID(), sender, text, type: finalType, timestamp: finalTimestamp, ...extraData };
+    convoStore.addMessageToConversationStore(connectorId, messageObject);
+
+    if (!convo.geminiHistory && convo.connector) {
+         console.warn(`CM addMessage: geminiHistory not found on convo object for ${connectorId}. Rebuilding.`);
+         convo.geminiHistory = await buildInitialGeminiHistory(convo.connector);
+    }
+
+    if (convo.geminiHistory) {
+        if (type === 'text' && (sender === 'user' || sender === 'connector')) {
+            addTurnToGeminiHistory(convo.geminiHistory, sender === 'user' ? 'user' : 'model', text);
+        } else if (type === 'image' && sender === 'user' && extraData.imagePartsForGemini) {
+            let imageContextForLLM = text;
+            if (extraData.imageInitialDescription) {
+                imageContextForLLM = `${text || ""} [Image Description: ${extraData.imageInitialDescription}]`;
+            }
+            addTurnToGeminiHistory(convo.geminiHistory, 'user', imageContextForLLM, extraData.imagePartsForGemini);
+        } else if (type === 'voice_memo' && sender === 'user') {
+            const content = `[User sent a voice memo. Transcript: "${text}"]`;
+            addTurnToGeminiHistory(convo.geminiHistory, 'user', content);
         }
+        convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
+    }
+    
+    console.log("CM.addMessage: Forcing save to storage after adding message.");
+    convoStore.saveAllConversationsToStorage();
+
+    chatOrchestrator?.notifyNewActivityInConversation?.(connectorId);
+
+    console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
+    document.dispatchEvent(new CustomEvent('new-message-in-store', {
+        detail: { connectorId: connectorId, message: messageObject }
+    }));
+
+    return messageObject;
+}
+async function addModelResponseMessage(
+    connectorId: string,
+    text: string,
+    messageId: string,
+    timestamp: number
+): Promise<MessageInStore | null> {
+    const { conversation: convo } = await ensureConversationRecord(connectorId);
+    if (!convo) return null;
+    const cleanText = typeof text === 'string' ? text : String(text || "(AI response was empty)");
+
+    const messageObject: MessageInStore = { id: messageId, sender: 'connector', text: cleanText, type: 'text', timestamp: timestamp };
+    convoStore.addMessageToConversationStore(connectorId, messageObject);
+    
+    if (!convo.geminiHistory && convo.connector) { // Safety: ensure history exists
+        convo.geminiHistory = await buildInitialGeminiHistory(convo.connector);
+    }
+    if (convo.geminiHistory) {
+        addTurnToGeminiHistory(convo.geminiHistory, 'model', cleanText);
+        convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
+    }
+    
+    convoStore.saveAllConversationsToStorage();
+
+    if (chatOrchestrator?.notifyNewActivityInConversation) {
+        chatOrchestrator.notifyNewActivityInConversation(connectorId);
+    }
+    
+    // Broadcast the new message event for live UI updates
+    console.log(`CM: Dispatching 'new-message-in-store' event for connectorId: ${connectorId}`);
+    document.dispatchEvent(new CustomEvent('new-message-in-store', {
+        detail: {
+            connectorId: connectorId,
+            message: messageObject
+        }
+    }));
+
+    return messageObject;
+}
         
         // getActiveConversations and getConversationById can remain synchronous
         // as they read from the store which is synchronously updated by other async methods.

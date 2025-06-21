@@ -72,6 +72,34 @@ export interface LanguageSpecificCodeEntry {
   liveApiVoiceName: string;// Voice for Gemini Live API (if language directly supported for speech)
   liveApiSpeechLanguageCodeOverride?: string; // Optional: e.g., "en-US" to force Live API speech to English
 }
+
+
+
+export interface ApiKeyHealthStatus {
+  nickname: string;
+  provider: 'Gemini' | 'Together' | 'Groq' | 'OpenRouter';
+  lastStatus: 'success' | 'failure';
+  lastChecked: string;
+  successCount: number;
+  failureCount: number;
+  lastError: string;
+}
+
+export interface ApiKeyHealthTrackerModule {
+  initialize: () => void;
+  getHealthData: () => { [nickname: string]: ApiKeyHealthStatus };
+  reportStatus: (
+      nickname: string,
+      provider: 'Gemini' | 'Together' | 'Groq' | 'OpenRouter',
+      status: 'success' | 'failure',
+      error?: string
+  ) => void;
+}
+export interface DevPanelModule {
+  initialize: () => void;
+  showToggleButton: () => void;
+  toggle: () => void; // <<< ADD THIS LINE
+}
 export interface AIService {
   // ... other methods ...
   cleanAndReconstructTranscriptLLM?: ( // Make it optional for now during integration
@@ -516,6 +544,7 @@ export interface YourDomElements { // Ensure EXPORT
     themeToggleButton: HTMLButtonElement | null;
   // ================= ADD THIS LINE =================
   universalJumpButtons: HTMLElement | null;
+  devPanelToggleButton?: HTMLButtonElement | null; // <<< ADD THIS
   // =================================================
     // Home View
     homepageTipsList: HTMLUListElement | null;
@@ -1016,37 +1045,39 @@ export interface ConversationItem { // <<< THIS IS THE NEW/COMPLETE DEFINITION
     geminiHistory?: GeminiChatItem[]; // Optional: The history formatted for Gemini API
     // Add any other properties that `conversationManager.getActiveConversations()` returns for each item.
 }
+
 export interface ConversationManager {
-  initialize: () => Promise<void>; // UPDATED
-  getActiveConversations: () => ConversationItem[]; // Stays sync
-  getConversationById: (connectorId: string) => ConversationRecordInStore | null; // Stays sync
+  initialize: () => Promise<void>;
+  getActiveConversations: () => ConversationItem[];
+  getConversationById: (connectorId: string) => ConversationRecordInStore | null;
   addMessageToConversation: (
       connectorId: string,
       sender: string,
       text: string,
-      type?: string,
-      timestamp?: number,
-      extraData?: Record<string, any>
-  ) => Promise<MessageInStore | null>; // UPDATED
-// REPLACE WITH THIS in global.d.ts
-ensureConversationRecord: (
-  connectorId: string,
-  connectorData?: Connector | null,
-  options?: { setLastActivity?: boolean } // <<< ADD THIS LINE
-) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
-
-
-  addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>; // UPDATED
-  markConversationActive: (connectorId: string) => boolean; // Stays sync
-  addModelResponseMessage: ( 
-      connectorId: string, 
-      text: string, 
-      geminiHistoryRefToUpdate?: GeminiChatItem[] // This param might be vestigial now
-  ) => Promise<MessageInStore | null>; // UPDATED
-  getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>; // UPDATED
-  clearConversationHistory: (connectorId: string) => Promise<void>; // 
-  saveAllConversationsToStorage?: () => void; // <<< ADD THIS LINE
+      type: string,
+      timestamp: number,
+      extraData: Partial<MessageInStore>
+  ) => Promise<MessageInStore | null>;
+  ensureConversationRecord: (
+      connectorId: string,
+      connectorData?: Connector | null,
+      options?: { setLastActivity?: boolean }
+  ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
+  addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>;
+  markConversationActive: (connectorId: string) => boolean;
+  addModelResponseMessage: (
+      connectorId: string,
+      text: string,
+      messageId: string,
+      timestamp: number
+  ) => Promise<MessageInStore | null>;
+  getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>;
+  clearConversationHistory: (connectorId: string) => Promise<void>;
+  saveAllConversationsToStorage?: () => void;
 }
+
+
+
 export interface ChatSessionHandler {
   initialize?: () => void; 
   openConversationInEmbeddedView: (connectorOrId: Connector | string) => Promise<void>; // UPDATED
@@ -1438,7 +1469,8 @@ export interface ReactionHandlerModule {
   initialize: (
     domElements: YourDomElements, 
     conversationManager: ConversationManager, 
-    aiTranslationService: AiTranslationServiceModule
+    aiTranslationService: AiTranslationServiceModule,
+    groupDataManager: GroupDataManager // <<< THIS IS THE FIX
   ) => void;
 }
 // in global.d.ts
@@ -1486,6 +1518,8 @@ type OpenaiCompatibleApiCallerFn = (
 // --- GLOBAL WINDOW INTERFACE AUGMENTATION ---
 declare global {
   interface Window {
+    apiKeyHealthTracker?: ApiKeyHealthTrackerModule;
+    devPanel?: DevPanelModule;
     polyglotPersonasDataSource?: PersonaDataSourceItem[];
     polyglotConnectors?: Connector[]; // Uses exported Connector
     polyglotGroupsData?: Group[];     // Uses exported Group

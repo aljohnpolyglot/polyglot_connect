@@ -16,7 +16,11 @@ import type {
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
 // =================== START: NEW CANCELLATION LOGIC ===================
+// in text_message_handler.ts at the very top
 
+// =================== ADD THIS IMPORT LINE ===================
+import { getGroupPersonaSummary, getTimeAwarenessAndReasonPrompt } from './persona_prompt_parts';
+// ============================================================
 // Map to track ongoing AI generation calls for each conversation.
 // Key: targetId (string), Value: AbortController
 const activeAiOperations = new Map<string, AbortController>();
@@ -145,7 +149,29 @@ function initializeActualTextMessageHandler(): void {
     const methods = ((): TextMessageHandlerModule => {
         'use strict';
 
+  // =================== PASTE THIS NEW DEFINITION HERE ===================
+    /**
+     * Creates a universal, token-efficient preamble for any multimodal prompt.
+     * It instructs the AI to use its full context to generate a response.
+     */
+    const getMultimodalPreamble = (connector: Connector): string => {
+        const personaSummary = getGroupPersonaSummary(connector, connector.language);
+        
+        // This is a static string. We are teaching the AI to look for these sections
+        // in the main system prompt it receives, which already contains the memory and time.
+        return `
+You are about to react to an image or a voice message. To do this perfectly, you MUST use all three parts of your 'brain':
 
+1.  **YOUR CORE IDENTITY:**
+    ${personaSummary}
+
+2.  **YOUR LONG-TERM MEMORY:** You must consult the memories you have of this user to make your response personal.
+
+3.  **YOUR CURRENT SITUATION:** You must consider your current time and place to make your response feel grounded and real.
+
+Combine these three elements to inform your reaction.
+`;
+    };
 
 
 /**
@@ -361,25 +387,31 @@ typingDurationMs = Math.max(1200, Math.min(typingDurationMs, 5000));
         // 4. Clear the typing indicator right before showing the message.
         clearTypingIndicatorFor(targetId);
 
-        // 5. Clean up text for naturalism (e.g., remove trailing period on short replies).
-        if (text.length < 12 && text.endsWith('.') && !text.endsWith('..')) {
-            text = text.slice(0, -1);
-        }
+     // 5. Clean up text for naturalism ...
+if (text.length < 12 && text.endsWith('.') && !text.endsWith('..')) {
+    text = text.slice(0, -1);
+}
 
-        // 6. Append the actual message bubble to the UI and save to history.
-        appendToLog?.(text, 'connector', {
-            avatarUrl: connector.avatarModern,
-            senderName: connector.profileName,
-            timestamp: Date.now(),
-            connectorId: connector.id
-        });
-        await conversationManager.addModelResponseMessage(targetId, text);
+// 6. Generate a UNIQUE ID and timestamp for this specific message bubble.
+const messageId = polyglotHelpers.generateUUID();
+const timestamp = Date.now();
 
-        // 7. Add a short "reading" pause before the next loop, if there are more messages.
-        // This prevents the next typing indicator from appearing instantly.
-        if (index < lines.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
-        }
+// 7. Append the actual message bubble to the UI, passing the new ID.
+appendToLog?.(text, 'connector', {
+    avatarUrl: connector.avatarModern,
+    senderName: connector.profileName,
+    timestamp: timestamp,
+    connectorId: connector.id,
+    messageId: messageId // Pass the ID to the UI
+});
+
+// 8. Save the message to history, also passing the SAME ID and timestamp.
+await conversationManager.addModelResponseMessage(targetId, text, messageId, timestamp);
+
+// 9. Add a short "reading" pause ...
+if (index < lines.length - 1) {
+    await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
+}
     }
     console.log(`%c[ScenePlayer] SCENE FINISHED for ${connector.profileName}.`, 'color: #8a2be2; font-weight: bold;');
 }
@@ -620,15 +652,13 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
 
                 if (imageFile) { // User sent an image (with or without caption)
                     const userProvidedTextWithImage = captionText || textFromInput?.trim() || "";
+                    const preamble = getMultimodalPreamble(currentConnector);
+                    
                     // Construct promptForAI for the 2-part image reply
-                    promptForAI = `The user has shared an image.`;
-                    if (userProvidedTextWithImage) {
-                      promptForAI += ` They also provided the following text with it: "${userProvidedTextWithImage}".`;
-                    } else {
-                      promptForAI += ` They did not provide any accompanying text.`;
-                    }
-                    promptForAI += ` Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-
+                    promptForAI = `${preamble}
+                    
+                    The user has shared an image. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                    
                     Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
                     - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
                     - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
@@ -646,6 +676,8 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     
                     Example: "This has such a great vibe, reminds me of a little cafe I love. [IMAGE_DESCRIPTION_START]A photo of a person sitting at an outdoor cafe with a cup of coffee.[IMAGE_DESCRIPTION_END]"
                     Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
+                    // =================================== END OF STRIKE 1 =================================== 
+                    
                     if (imagePartsForGemini && imagePartsForGemini[0]?.inlineData?.data) {
                         console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply.`);
                         aiResponseObject = await (aiService.generateTextFromImageAndText as any)(
@@ -699,11 +731,11 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     aiResponseObject = await (aiService.generateTextMessage as any)(
                         promptForAI,
                         currentConnector,
-                        historyForAiCall, // Use the (potentially modified) history
-                        aiApiConstants.PROVIDERS.GROQ,
+                        historyForAiCall,
+                        null, // <<< THE FIX. Pass null to be explicit.
                         false,
                         'one-on-one',
-                        controller.signal // <<< ADD THIS
+                        controller.signal
                     );
                 }
 
@@ -854,24 +886,29 @@ aiRespondedSuccessfully = true;
                 const dataUrlForDisplay = resultString;
                 const imagePlaceholderTextForStore = "[User sent an image]"; // Or derive a better placeholder
 
-                uiUpdater.appendToEmbeddedChatLog?.("", 'user', { imageUrl: dataUrlForDisplay, timestamp: Date.now() });
                 const imageMessageId = polyglotHelpers.generateUUID();
                 const imageTimestamp = Date.now();
+
+                // First, display the user's image in the UI with its unique ID.
+                uiUpdater.appendToEmbeddedChatLog?.("", 'user', { 
+                    imageUrl: dataUrlForDisplay, 
+                    timestamp: imageTimestamp,
+                    messageId: imageMessageId 
+                });
         
+                // Then, save the message to the conversation history with all its data.
                 await conversationManager.addMessageToConversation(
-                    currentEmbeddedChatTargetId!,
+                    currentEmbeddedChatTargetId, // <<< FIX: Use the correct variable passed into the function.
                     'user',
-                    imagePlaceholderTextForStore, 
+                    "[User sent an image]",
                     'image',
                     imageTimestamp,
                     {
-                        id: imageMessageId, // Ensure 'id' is used if your type expects it directly, or 'messageId' if that's the field.
-                                            // Assuming 'id' is the correct field name as per other MessageInStore structures.
+                        id: imageMessageId,
                         content_url: dataUrlForDisplay,
                         imagePartsForGemini: [{ inlineData: { mimeType: file.type, data: base64DataForApi } }]
                     }
                 );
-
                 uiUpdater.toggleEmbeddedSendButton?.(false);
 
                 const thinkingMsgOptions: ChatMessageOptions = {
@@ -884,20 +921,28 @@ aiRespondedSuccessfully = true;
                 let aiRespondedSuccessfully = false; // Scoped to onloadend
         
                 try {
-                  const newPromptForImageAndDescription =
-                    `The user has just sent an image. Your response MUST have two parts:
-As ${currentConnector.profileName} (their language partner, with interests like [${currentConnector.interests?.slice(0,2).join(', ') || 'various topics'}]), provide a natural, conversational comment or question about the image just sent by the user.
-- Make an engaging observation specific to the image.
-- Perhaps share a very brief, relevant thought or a quick related personal (persona-consistent) experience.
-- Ask an open-ended question that invites the user to share more about the image or their connection to it.
-After your conversational comment, include a special section clearly marked like this:
-[IMAGE_DESCRIPTION_START]
-A concise, factual description of the image, including:
-Any prominent text visible in the image (transcribe it accurately).
-Key objects, people, or scenes depicted.
-The overall style or type of image (e.g., photo, drawing, movie poster).
-[IMAGE_DESCRIPTION_END]Example: "That's a really dramatic movie poster! The colors are intense. [IMAGE_DESCRIPTION_START]Movie poster for 'Inferno'. Shows Tom Hanks and another actor. Text 'INFERNO' is prominent at the bottom. Appears to be for an action or thriller film set in a historic European city.[IMAGE_DESCRIPTION_END]"
-Speak ONLY in ${currentConnector.language}. Your conversational comment should come first.`;
+                    const preamble = getMultimodalPreamble(currentConnector);
+
+                    const PromptForImageAndDescription = `${preamble}
+                    
+                    The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                    
+                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - AVOID generic phrases like "What's this?" or "Nice photo."
+                    - Your goal is to start a conversation. Try one of these persona-driven approaches:
+                      - Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
+                      - Ask an open-ended question driven by your curiosity and interests.
+                      - Share a brief, relevant memory or thought from your own life experiences that the image sparks.
+                    
+                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+                    [IMAGE_DESCRIPTION_START]
+                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+                    [IMAGE_DESCRIPTION_END]
+                    
+                    Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
+                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
 
 const relevantHistoryForAi = getHistoryForAiCall(undefined, true);
 // ^^^^^^ relevantHistoryForAi DEFINED ^^^^^^
@@ -907,7 +952,7 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
     file.type,                              // 2
     currentConnector,                       // 3
     relevantHistoryForAi,                   // 4. history (now correctly using the helper)
-    newPromptForImageAndDescription,        // 5. prompt
+    PromptForImageAndDescription,     // 5. prompt
     aiApiConstants.PROVIDERS.TOGETHER       // 6. preferredProvider
 );
                     if (thinkingMsg?.remove) thinkingMsg.remove();
@@ -932,13 +977,14 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                     const aiResponseTextForDisplay = conversationalReply;
                     const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseTextForDisplay || "");
     
-                     if (aiResponseTextForDisplay === null) {
+                    if (aiResponseTextForDisplay === null) {
                         uiUpdater.appendToEmbeddedChatLog?.("Sorry, I couldn't process the image right now.", 'connector-error', { isError:true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
                     } else if (isHumanError) {
                         uiUpdater.appendToEmbeddedChatLog?.(aiResponseTextForDisplay, 'connector-error', { isError:true, isSystemLikeMessage:true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
                     } else {
-                        uiUpdater.appendToEmbeddedChatLog?.(aiResponseTextForDisplay, 'connector', { avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id, timestamp: Date.now() });
-                        await conversationManager.addModelResponseMessage(currentEmbeddedChatTargetId!, aiResponseTextForDisplay);
+                        const processedText = intelligentlySeparateText(aiResponseTextForDisplay, currentConnector, { probability: 1.0 });
+                        const responseLines = processedText.split('\n').filter(line => line.trim());
+                        await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
                         aiRespondedSuccessfully = true;
                     }
     
@@ -1198,31 +1244,28 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
 
                 if (imageFile) { // User sent an image (with or without caption)
                     const userProvidedTextWithImage_modal = captionText || text || "";
+                    const preamble = getMultimodalPreamble(currentConnector);
+                    
                     // Construct promptForAI_modal for the 2-part image reply
-                    promptForAI_modal = `The user has shared an image in our chat.`;
-                    if (userProvidedTextWithImage_modal) {
-                        promptForAI_modal += ` They also provided the following text with it: "${userProvidedTextWithImage_modal}".`;
-                    } else {
-                        promptForAI_modal += ` They did not provide any accompanying text.`;
-                    }
-                    promptForAI_modal += ` Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-
+                    promptForAI_modal = `${preamble}
+                    
+                    The user has shared an image in our chat. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                    
                     Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
                     - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction.
                     - AVOID generic phrases like "That's a cool picture."
                     - INSTEAD, try one of these persona-driven approaches:
-                      - Make a creative observation that reflects your personality (e.g., a 'passionate' person might say "The energy in this photo is incredible!").
+                      - Make a creative observation that reflects your personality.
                       - Ask a question driven by your curiosity and interests.
                       - Share a brief, relevant memory or thought from your own life experiences.
                     - If the user wrote a caption ("${userProvidedTextWithImage_modal || 'none'}"), weave it into your comment naturally.
                     
                     Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
                     [IMAGE_DESCRIPTION_START]
-                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+                 A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
                     [IMAGE_DESCRIPTION_END]
                     
-                    Example: "This has such a great vibe, reminds me of a little cafe I love. [IMAGE_DESCRIPTION_START]A photo of a person sitting at an outdoor cafe with a cup of coffee.[IMAGE_DESCRIPTION_END]"
                     Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
                     if (imagePartsForGemini_modal && imagePartsForGemini_modal[0]?.inlineData?.data) {
                         console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply (modal).`);
@@ -1261,15 +1304,16 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                     }
                     // --- END: CONTEXT INJECTION FOR CALLS ---
     
-                    aiResponse = await (aiService.generateTextMessage as any)(
-                        promptForAI_modal,
-                        currentConnector,
-                        historyForAiCall, // Use the (potentially modified) history
-                        aiApiConstants.PROVIDERS.GROQ,
-                        false,
-                        'one-on-one',
-                        controller.signal // <<< ADD THIS
-                    );
+                   // Change it to this in BOTH places
+aiResponse = await (aiService.generateTextMessage as any)(
+    promptForAI_modal,
+    currentConnector,
+    historyForAiCall,
+    null    , // <<< THE FIX. The coach is now in control.
+    false,
+    'one-on-one',
+    controller.signal
+);
                 }
                 const aiResponseText = typeof aiResponse === 'string' ? aiResponse : null;
     
@@ -1298,13 +1342,9 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                             conversationalReply_modal = aiResponseText.substring(0, startIndex).trim();
                         }
                 
-                        uiUpdater.appendToMessageLogModal?.(conversationalReply_modal, 'connector', {
-                            avatarUrl: currentConnector.avatarModern, 
-                            senderName: currentConnector.profileName, 
-                            timestamp: Date.now() 
-                        });
-                        // <<< FIX: Using the reliable 'currentConnector.id'
-                        await conversationManager.addModelResponseMessage(currentConnector.id, conversationalReply_modal);
+                        const processedText = intelligentlySeparateText(conversationalReply_modal, currentConnector, { probability: 1.0 });
+                        const responseLines = processedText.split('\n').filter(line => line.trim());
+                        await playAiResponseScene(responseLines, currentConnector.id, currentConnector, 'modal');
                 
                         // <<< FIX: All logic for updating the message is now self-contained and uses 'currentConnector.id'
                         if (extractedImageDescription_modal && userMessageId) {
@@ -1428,17 +1468,20 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                     // Re-using the detailed prompt from handleEmbeddedImageUpload for consistency and better descriptions
                   // REPLACE WITH THIS BLOCK
 
-const PromptForImageAndDescription =
-`The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                  const preamble = getMultimodalPreamble(currentConnector);
 
-Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
-- React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-- Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
-- AVOID generic phrases like "What's this?" or "Nice photo."
-- Your goal is to start a conversation. Try one of these persona-driven approaches:
-- Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
-- Ask an open-ended question driven by your curiosity and interests.
-- Share a brief, relevant memory or thought from your own life experiences that the image sparks.
+                  const PromptForImageAndDescription = `${preamble}
+                  
+                  The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                  
+                  Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+                  - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+                  - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction.
+                  - AVOID generic phrases like "What's this?" or "Nice photo."
+                  - Your goal is to start a conversation. Try one of these persona-driven approaches:
+                    - Make a creative observation that reflects your personality.
+                    - Ask an open-ended question driven by your curiosity and interests.
+                    - Share a brief, relevant memory or thought from your own life experiences.
 
 Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
 [IMAGE_DESCRIPTION_START]
@@ -1478,13 +1521,14 @@ Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_STA
                     const aiResponseTextForDisplay = conversationalReply;
                     const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseTextForDisplay || "");
 
-                     if (aiResponseTextForDisplay === null) {
+                    if (aiResponseTextForDisplay === null) {
                         uiUpdater.appendToMessageLogModal?.("Sorry, I couldn't process the image.", 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName});
                     } else if (isHumanError) {
                         uiUpdater.appendToMessageLogModal?.(aiResponseTextForDisplay, 'connector-error', { isError: true, isSystemLikeMessage: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
                     } else {
-                        uiUpdater.appendToMessageLogModal?.(aiResponseTextForDisplay, 'connector', { avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, timestamp: Date.now() });
-                        await conversationManager.addModelResponseMessage(targetId, aiResponseTextForDisplay);
+                        const processedText = intelligentlySeparateText(aiResponseTextForDisplay, currentConnector, { probability: 1.0 });
+                        const responseLines = processedText.split('\n').filter(line => line.trim());
+                        await playAiResponseScene(responseLines, targetId, currentConnector, 'modal');
                         aiRespondedSuccessfully = true;
                     }
 

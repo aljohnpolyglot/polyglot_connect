@@ -671,9 +671,15 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
             indicatorElement.remove();
             indicatorElement = null;
         }
-        groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id);
+
+        // --- THIS IS THE FIX ---
+        // Generate a unique ID for this message bubble and pass it in the options.
+        const messageId = getDeps().polyglotHelpers.generateUUID();
+        groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id, { messageId: messageId });
         
-        const historyItem: GroupChatHistoryItem = { speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+        const historyItem: GroupChatHistoryItem = { messageId: messageId, speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+       
+       
         lastMessageTimestamp = historyItem.timestamp;
         if (window.memoryService && typeof window.memoryService.processNewUserMessage === 'function') {
             console.log(`[CEREBRUM_SELF_WRITE] ✍️ Sending [${speaker.profileName}]'s own message for self-analysis...`);
@@ -1098,9 +1104,13 @@ FINAL CHECK: Your entire output MUST only be the dialogue in the format [Speaker
   // <<< REPLACE THE ENTIRE try...catch BLOCK WITH THIS >>>
 // <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
 // <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
+// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
+// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
+// <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
 try {
     // This function now ONLY gets the text and returns the lines.
-    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], 'openrouter', false, 'group-chat', abortSignal); // <<< ADD abortSignal
+    // --- THIS IS THE FIX: The 'openrouter' argument has been removed. ---
+    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], undefined, false, 'group-chat', abortSignal);
     
     if (typeof rawResponse !== 'string' || !rawResponse) {
         throw new Error("AI service returned empty or invalid response.");

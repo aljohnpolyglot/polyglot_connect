@@ -62,10 +62,10 @@ function initializeCerebrumInspector(): void {
     console.log("Cerebrum Inspector: UI and event listeners initialized.");
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeCerebrumInspector);
-} else {
-    console.log("Cerebrum Inspector: DOM already loaded, initializing inspector immediately.");
-    initializeCerebrumInspector();
-}
+document.dispatchEvent(new CustomEvent('cerebrumInspectorReady'));
+
+// Expose the initialize function on the window object
+(window as any).cerebrumInspector = {
+    initialize: initializeCerebrumInspector,
+};
 // ===================  END: REPLACEMENT  ===================

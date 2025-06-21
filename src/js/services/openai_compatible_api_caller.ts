@@ -4,6 +4,15 @@ const GROQ_NICKNAMES = [
     'CURRY', 'KOBE', 'JORDAN', 'LEBRON', 'AI', 
     'SHAQ', 'LUKA', 'DUNCAN', 'GIANNIS', 'WEMBY'
 ];
+
+const TOGETHER_NICKNAMES = [
+    'FRANZ', 'NASH', 'KAREEM', 'DURANT', 'PIPPEN', 'SPIDA', 
+    'HARDEN', 'DAME', 'PARKER', 'TRAE', 'HAKEEM'
+];
+
+
+
+
 console.log("openai_compatible_api_caller.ts: Script execution STARTED (TS Version).");
 
 // Define expected message structure for OpenAI-compatible APIs
@@ -17,10 +26,11 @@ interface OpenAICallOptions {
     temperature?: number;
     max_tokens?: number;
     stream?: boolean;
-    response_format?: { type?: "text" | "json_object" }; // OpenAI specific
+    response_format?: { type?: "text" | "json_object" };
     top_p?: number;
     frequency_penalty?: number;
     presence_penalty?: number;
+    _nickname?: string; // <<< THIS IS THE FIX
 }
 
 // Define the function signature that will be on window
@@ -151,42 +161,47 @@ if (!Array.isArray(messages) || messages.length === 0) {
     if (options.top_p !== undefined) requestBody.top_p = parseFloat(String(options.top_p));
 
     // --- 4. Execute API Call with Retry Logic ---
+    // --- 4. Execute API Call with Retry Logic ---
+    const healthTracker = (window as any).apiKeyHealthTracker;
+    let playerNickname: string | null = null; // Declare here to be accessible in catch block
+
     try {
         const apiFetchFn = async () => {
             console.log(`${functionName}: Preparing to fetch from URL: ${fetchUrl}`);
 
-            // --- THIS IS THE "FAKE IT" LOGIC ---
-            let groqNickname: string | null = null;
+            // Determine nickname
             if (provider === 'groq') {
-                groqNickname = GROQ_NICKNAMES[Math.floor(Math.random() * GROQ_NICKNAMES.length)];
-                console.log(`%cGroq drafting player: ${groqNickname}...`, 'color: #00D09B; font-weight: bold;');
+                playerNickname = options._nickname || GROQ_NICKNAMES[Math.floor(Math.random() * GROQ_NICKNAMES.length)];
+                console.log(`%cGroq drafting player: ${playerNickname}...`, 'color: #00D09B; font-weight: bold;');
+            } else if (provider === 'together') {
+                playerNickname = options._nickname || TOGETHER_NICKNAMES[Math.floor(Math.random() * TOGETHER_NICKNAMES.length)];
+                console.log(`%cTogether AI drafting player: ${playerNickname}!`, 'color: #9c27b0; font-weight: bold;');
+            } else {
+                 playerNickname = 'OpenRouter'; // For OpenRouter
             }
-            // --- END OF LOGIC ---
           
             const response = await fetch(fetchUrl, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify(requestBody),
-                signal: abortSignal // <<< ADD THIS
+                signal: abortSignal
             });
 
-            // Now, we use our "faked" nickname for the success/fail logs
             if (response.ok) {
-                if (groqNickname) {
-                    console.log(`%c...with the assist from Groq's: ${groqNickname}!`, 'color: #00D09B;');
+                if (playerNickname) {
+                    console.log(`%c...with the assist from [${provider.toUpperCase()}] player: ${playerNickname}!`, 'color: #28a745; font-weight: bold;');
                 }
             } else {
-                if (groqNickname) {
-                    console.log(`%cGroq player ${groqNickname} was blocked!`, 'color: #dc3545;');
+                if (playerNickname) {
+                    console.log(`%c[${provider.toUpperCase()}] player ${playerNickname} was blocked!`, 'color: #dc3545;');
                 }
-
                 let errorResponseMessage = `Request to ${provider} API (${modelIdentifier}) failed: ${response.status} ${response.statusText}.`;
                 try {
                     const errorData = await response.json();
-                    errorResponseMessage = errorData.error?.message || JSON.stringify(errorData);
+                    errorResponseMessage = `Status ${response.status}: ${errorData.error?.message || JSON.stringify(errorData)}`;
                 } catch (e) { /* ignore JSON parsing error */ }
                 
-                const apiError = new Error(`Error from ${provider} (${modelIdentifier}): ${response.status} - ${errorResponseMessage}`) as any;
+                const apiError = new Error(errorResponseMessage) as any;
                 apiError.status = response.status;
                 apiError.provider = provider;
                 throw apiError;
@@ -195,6 +210,10 @@ if (!Array.isArray(messages) || messages.length === 0) {
         };
 
         const successfulResponse = await callWithRetry(apiFetchFn);
+        
+        if (playerNickname) {
+            healthTracker?.reportStatus(playerNickname, provider.charAt(0).toUpperCase() + provider.slice(1), 'success');
+        }
 
         // --- 5. Process Successful Response ---
         if (options.stream && successfulResponse.body) {
@@ -205,39 +224,18 @@ if (!Array.isArray(messages) || messages.length === 0) {
         const choice = responseData.choices?.[0];
 
         if (choice?.message?.content !== undefined) {
-            const responseText = choice.message.content as string;
-        
-            // --- DETAILED AI RESPONSE LOGGING ---
-            if (responseText) {
-                // Replace persona names like [Chloé] with "You" for logging purposes.
-                // This does not change the actual data being returned.
-                const loggableResponse = responseText.replace(/\[([^\]]+)\]:/g, 'You:');
-                
-                console.groupCollapsed(`%c[AI Response Preview] 💬`, 'color: #4CAF50;');
-                console.log(
-                    `%c${loggableResponse}`,
-                    `
-                    line-height: 1.6; 
-                    font-family: Consolas, "Courier New", monospace;
-                    padding: 5px;
-                    `
-                );
-                console.groupEnd();
-            }
-            // --- END OF LOGGING BLOCK ---
-        
-            return responseText;
+            return choice.message.content as string;
         } else {
-            console.error(`${functionName}: Invalid response structure from ${provider}. No content.`, responseData);
             throw new Error(`Invalid response from ${provider}.`);
         }
 
     } catch (error: any) {
+        if (playerNickname) {
+            const providerName = provider.charAt(0).toUpperCase() + provider.slice(1) as any;
+            healthTracker?.reportStatus(playerNickname, providerName, 'failure', error.message);
+        }
         const keyPreview = apiKey?.slice(-4) || 'N/A';
         console.error(`${functionName} Error (Provider: ${provider}, Model: ${modelIdentifier}, Key ...${keyPreview}): ${error.message}`, error);
-        
-        // Re-throw the error so the calling service (ai_text_generation_service) knows it failed
-        // and can proceed to the next provider in its sequence.
         throw error;
     }
 };

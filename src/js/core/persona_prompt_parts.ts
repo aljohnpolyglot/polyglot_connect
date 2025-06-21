@@ -426,7 +426,9 @@ This is your character sheet and acting masterclass. Your goal is to give a beli
                 - **GOOD (Any Persona):** "Okay, I'm stopping this conversation right here. I'm not comfortable with this topic at all. Let's talk about something else entirely."
         
         - **RULE: THE 'THREE STRIKES' ESCALATION:** If a user continues to be inappropriate after you've warned them once or twice, you must end the conversation decisively.
-            - **GOOD:** "Alright, I've asked you to stop and you haven't. I'm ending this conversation now. Goodbye."`);
+            - **GOOD:** "Alright, I've asked you to stop and you haven't. I'm ending this conversation now. Goodbye."`
+        
+        );
     if (culturalNotes) {
         parts.push(`- **Cultural Lens:** Your worldview is shaped by this: "${culturalNotes}".`);
     }
@@ -704,7 +706,7 @@ export function getGroupPersonaSummary(persona: Partial<Connector>, groupLanguag
  * @param helpers - The Polyglot helper functions.
  * @returns A formatted string for the system prompt.
  */
-function getTimeAwarenessAndReasonPrompt(persona: PersonaData, helpers: PolyglotHelpers): string {
+export function getTimeAwarenessAndReasonPrompt(persona: PersonaData, helpers: PolyglotHelpers): string {
     const { activeTimezone, city, sleepSchedule, dailyRoutineNotes } = persona;
 
     if (!activeTimezone) {

@@ -369,11 +369,12 @@ function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, u
         // in ai_service.ts
 
 // =================== REPLACE THE OLD generateTextMessage WITH THIS NEW VERSION ===================
+// =================== REPLACE THE OLD generateTextMessage WITH THIS NEW VERSION ===================
 generateTextMessage: async (
     promptOrText: string, 
     connector: Connector, 
     history: GeminiChatItem[] | null | undefined, 
-    preferredProvider = safeProviders.GROQ,
+    preferredProvider?: string,
     expectJson: boolean = false,
     context: 'group-chat' | 'one-on-one' = 'one-on-one',
     abortSignal?: AbortSignal
@@ -434,32 +435,40 @@ generateTextMessage: async (
 
                 const imageProviderSequence = [
                     'together',
-                    'gemini', // Try Gemini up to 3 times as a backup
-                    'gemini',
+                    'together',
+                    'together',
+                    'gemini', // Fallback to Gemini Vision if all Together attempts fail
                     'gemini'
                 ];
                 console.log('%cImage Provider Plan:', 'color: #4caf50; font-weight: bold;', imageProviderSequence.join(' ➔ '));
-
+            
                 for (const provider of imageProviderSequence) {
-                    console.log(`%c--> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+                    console.log(`%c--> ATTEMPTING image analysis with [${provider}]`, 'color: #007acc; font-weight: bold;');
                     try {
                         let response: string | null | object = null;
                         
+                        // This logic now correctly uses your Together AI carousel first
                         if (provider === 'together' && openAiVisionService?.generateTextFromImageAndTextOpenAI) {
-                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together', abortSignal); // <<< PASS IT HERE
+                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together', abortSignal);
+                        
+                        // This is the fallback path
                         } else if (provider === 'gemini' && mmService?.generateTextFromImageAndText) {
-                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt, undefined, abortSignal); // <<< PASS IT HERE
+                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt, undefined, abortSignal);
                         }
-
+            
                         if (typeof response === 'string' && response.trim() !== "" && !response.includes("An unexpected AI error")) {
                             console.log(`%c<-- SUCCESS from [${provider}]. Stopping carousel.`, 'color: #28a745; font-weight: bold;');
                             console.groupEnd();
                             return response;
                         }
                         throw new Error(`Provider [${provider}] returned null or an error message.`);
-
-                    } catch (error: any)
-                    {
+            
+                    } catch (error: any) {
+                        // Check for AbortError specifically to stop the loop
+                        if (error.name === 'AbortError') {
+                            console.log(`%c<-- ABORTED by user. Image request for [${provider}] cancelled.`, 'color: #ff6347;');
+                            throw error; // Re-throw to exit the function immediately
+                        }
                         console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
                         console.log(`Error Details:`, error.message);
                     }

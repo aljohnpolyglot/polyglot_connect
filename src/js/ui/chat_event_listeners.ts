@@ -887,16 +887,17 @@ function createSendHandler(
         // in chat_event_listeners.ts
 
 // =================== REPLACE WITH THIS BLOCK ===================
-if (window.reactionHandler?.initialize && window.aiTranslationService) {
-    console.log("CEL: Initializing Reaction Handler with all required dependencies (including aiTranslationService).");
-    // Pass all three required arguments now
+if (window.reactionHandler?.initialize && window.aiTranslationService && window.groupDataManager) {
+    console.log("CEL: Initializing Reaction Handler with all required dependencies (including groupDataManager).");
+    // Pass all four required arguments now
     window.reactionHandler.initialize(
         domElements, 
         conversationManager, 
-        window.aiTranslationService // <<< THIS IS THE FIX
+        window.aiTranslationService,
+        window.groupDataManager // <<< THIS IS THE FIX
     );
 } else {
-    console.error("CEL: Could not initialize Reaction Handler. Missing reactionHandler.initialize or aiTranslationService.");
+    console.error("CEL: Could not initialize Reaction Handler. Missing a dependency: reactionHandler, aiTranslationService, or groupDataManager.");
 }
 // ===============================================================
 

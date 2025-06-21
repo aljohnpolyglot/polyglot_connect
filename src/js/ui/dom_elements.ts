@@ -16,6 +16,9 @@ window.domElements = {
     rightSidebarPanels: document.querySelectorAll('#right-sidebar .sidebar-panel') as NodeListOf<HTMLElement>,
     themeToggleButton: document.getElementById('toggle-theme-btn') as HTMLButtonElement | null,
     universalJumpButtons: document.getElementById('universal-jump-buttons') as HTMLElement | null,
+   
+    devPanelToggleButton: document.getElementById('dev-panel-toggle-btn') as HTMLButtonElement | null, // <<< ADD THIS
+   
     // Home View
     homepageTipsList: document.getElementById('homepage-tips-list') as HTMLUListElement | null,
 

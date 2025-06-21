@@ -422,74 +422,100 @@ function filterAndDisplayConnectors(): void {
 } // End of filterAndDisplayConnectors
     // AFTER (The new, tab-aware function)
 
-// =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
 
-// =================== REPLACE THE ENTIRE applyFindConnectorsFilters FUNCTION ===================
-// =================== REPLACE THE applyFindConnectorsFilters FUNCTION ===================
-
-// =================== REPLACE applyFindConnectorsFilters ===================
-function applyFindConnectorsFilters(): void {
-    console.log(`%c[FC] applyFindConnectorsFilters START. Active Friends View: '${activeFriendsView}'`, 'color: #ffc107; font-weight: bold;');
-    const { cardRenderer, domElements, polyglotHelpers } = getDeps();
-    const allConnectors = window.polyglotConnectors || [];
-
-    if (!cardRenderer || !domElements || !polyglotHelpers) {
-        console.error("FC: applyFindConnectorsFilters missing critical deps.");
-        return;
+    function applyFindConnectorsFilters(): void {
+        const { cardRenderer, domElements, polyglotHelpers } = getDeps();
+        
+        // --- START OF THE GTA CHEAT CODE FIX ---
+        const nameSearchInput = domElements.filterConnectorNameInput?.value.trim() || "";
+        const searchUpper = nameSearchInput.toUpperCase();
+    
+        const CHEAT_CODES: { [key: string]: () => void } = {
+            'DEVMODE': () => {
+                const devPanel = (window as any).devPanel;
+                if (devPanel) {
+                    // Ensure the button is visible so the user can close the panel
+                    devPanel.showToggleButton();
+                    // Directly call the new function to toggle the panel's visibility
+                    devPanel.toggle(); 
+                }
+            },
+            'HESOYAM': () => alert('+$250,000, Health, & Armor\n...just kidding.'),
+            'ROCKETMAN': () => alert('Jetpack Spawned!'),
+            'PROFESSIONALSKIT': () => alert('Weapon Set 2 Unlocked.'),
+            'FULLCLIP': () => alert('Infinite Ammo Activated!'),
+            'AEZAKMI': () => alert('Wanted Level Cleared.'),
+            'LEAVEMEALONE': () => alert('Wanted Level Cleared (The boring way).'),
+            'PANZER': () => alert('Rhino Tank Spawned!'),
+            'BIGBANG': () => alert('All nearby vehicles have exploded.'),
+            'WHEELSONLYPLEASE': () => alert('Invisible Car Activated.'),
+            'COMEFLYWITHME': () => alert('Cars Can Fly!'),
+        };
+    
+        if (CHEAT_CODES[searchUpper]) {
+            console.log(`%cCHEAT CODE ACTIVATED: ${searchUpper}`, 'color: white; background: red; font-size: 20px; font-weight: bold;');
+            CHEAT_CODES[searchUpper]();
+            if(domElements.filterConnectorNameInput) domElements.filterConnectorNameInput.value = "";
+            return; 
+        }
+        // --- END OF THE GTA CHEAT CODE FIX ---
+    
+        console.log(`%c[FC] applyFindConnectorsFilters START. Active Friends View: '${activeFriendsView}'`, 'color: #ffc107; font-weight: bold;');
+        const allConnectors = window.polyglotConnectors || [];
+    
+        if (!cardRenderer || !domElements || !polyglotHelpers) {
+            console.error("FC: applyFindConnectorsFilters missing critical deps.");
+            return;
+        }
+    
+        const langFilter = domElements.filterLanguageSelect?.value || 'all';
+        const roleFilter = domElements.filterRoleSelect?.value || 'all';
+        const nameSearch = nameSearchInput; // Use the variable we already captured
+        const normalizedNameSearch = polyglotHelpers.normalizeText(nameSearch);
+    
+        // --- UI State Management (Enable/Disable inputs) ---
+        if (domElements.filterConnectorNameInput) domElements.filterConnectorNameInput.disabled = false;
+        if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = false;
+        if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = (langFilter === 'all');
+        console.log(`[FC] UI State Updated: Name/Lang enabled. Role enabled: ${!domElements.filterRoleSelect?.disabled}`);
+    
+        // --- Data Filtering Logic ---
+        let sourceConnectors: Connector[];
+        let emptyMessage: string;
+        let filteredEmptyMessage: string;
+    
+        if (activeFriendsView === 'my-friends') {
+            sourceConnectors = (window.conversationManager?.getActiveConversations() || [])
+                .filter(c => !c.isGroup)
+                .map(c => c.connector);
+            emptyMessage = 'You have no friends yet. Find some in the Discover tab!';
+            filteredEmptyMessage = 'None of your friends match your filters.';
+        } else { // 'discover' view
+            const friendIds = new Set((window.conversationManager?.getActiveConversations() || []).map(c => c.connector.id));
+            sourceConnectors = allConnectors.filter(c => !friendIds.has(c.id));
+            emptyMessage = 'No new people to discover right now.';
+            filteredEmptyMessage = 'No one matches your filters. Try different criteria!';
+        }
+    
+        let filteredResult = [...sourceConnectors];
+        const hasActiveFilters = langFilter !== 'all' || roleFilter !== 'all' || nameSearch !== "";
+    
+        if (nameSearch) {
+            filteredResult = filteredResult.filter(c => polyglotHelpers.normalizeText(c.profileName).includes(normalizedNameSearch));
+        }
+        if (langFilter !== 'all') {
+            filteredResult = filteredResult.filter(c =>
+                c.nativeLanguages?.some(l => l.lang === langFilter) ||
+                c.practiceLanguages?.some(l => l.lang === langFilter)
+            );
+        }
+        if (langFilter !== 'all' && roleFilter !== 'all') {
+            filteredResult = filteredResult.filter(c => c.languageRoles?.[langFilter]?.includes(roleFilter));
+        }
+    
+        cardRenderer.renderCards(filteredResult, activeFriendsView);
+        updateEmptyMessage(domElements.friendsEmptyPlaceholder, filteredResult.length, emptyMessage, filteredEmptyMessage, hasActiveFilters);
     }
-
-    const langFilter = domElements.filterLanguageSelect?.value || 'all';
-    const roleFilter = domElements.filterRoleSelect?.value || 'all';
-    const nameSearch = domElements.filterConnectorNameInput?.value.trim() || "";
-    const normalizedNameSearch = polyglotHelpers.normalizeText(nameSearch);
-
-    // --- UI State Management (Enable/Disable inputs) ---
-    // The filters should ALWAYS be enabled, except for the role filter which depends on the language filter.
-    if (domElements.filterConnectorNameInput) domElements.filterConnectorNameInput.disabled = false;
-    if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = false;
-    if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = (langFilter === 'all');
-    console.log(`[FC] UI State Updated: Name/Lang enabled. Role enabled: ${!domElements.filterRoleSelect?.disabled}`);
-
-    // --- Data Filtering Logic ---
-    let sourceConnectors: Connector[];
-    let emptyMessage: string;
-    let filteredEmptyMessage: string;
-
-    if (activeFriendsView === 'my-friends') {
-        sourceConnectors = (window.conversationManager?.getActiveConversations() || [])
-            .filter(c => !c.isGroup)
-            .map(c => c.connector);
-        emptyMessage = 'You have no friends yet. Find some in the Discover tab!';
-        filteredEmptyMessage = 'None of your friends match your filters.';
-    } else { // 'discover' view
-        const friendIds = new Set((window.conversationManager?.getActiveConversations() || []).map(c => c.connector.id));
-        sourceConnectors = allConnectors.filter(c => !friendIds.has(c.id));
-        emptyMessage = 'No new people to discover right now.';
-        filteredEmptyMessage = 'No one matches your filters. Try different criteria!';
-    }
-
-    let filteredResult = [...sourceConnectors];
-
-    const hasActiveFilters = langFilter !== 'all' || roleFilter !== 'all' || nameSearch !== "";
-
-    // Apply filters sequentially
-    if (nameSearch) {
-        filteredResult = filteredResult.filter(c => polyglotHelpers.normalizeText(c.profileName).includes(normalizedNameSearch));
-    }
-    if (langFilter !== 'all') {
-        filteredResult = filteredResult.filter(c =>
-            c.nativeLanguages?.some(l => l.lang === langFilter) ||
-            c.practiceLanguages?.some(l => l.lang === langFilter)
-        );
-    }
-    if (langFilter !== 'all' && roleFilter !== 'all') {
-        filteredResult = filteredResult.filter(c => c.languageRoles?.[langFilter]?.includes(roleFilter));
-    }
-
-    // --- Render the final result ---
-    cardRenderer.renderCards(filteredResult, activeFriendsView);
-    updateEmptyMessage(domElements.friendsEmptyPlaceholder, filteredResult.length, emptyMessage, filteredEmptyMessage, hasActiveFilters);
-}
 // =========================================================================
 // ===================================================================================
 // =======================================================================================

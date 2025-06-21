@@ -73,14 +73,27 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
 
     function appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null {
       
+        const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
+
+        // --- THIS IS THE FIX: Make the function robust by ensuring a messageId always exists. ---
+        if (!options.messageId) {
+            if (currentPolyglotHelpers) {
+                options.messageId = currentPolyglotHelpers.generateUUID();
+                // This warning is helpful for future debugging but won't be a critical error.
+                console.warn(`[CHAT_UI_DEBUG] A messageId was MISSING from the options object. A new one was generated: ${options.messageId}`);
+            } else {
+                // Fallback if helpers aren't even ready, which would be a severe issue.
+                options.messageId = `fallback-id-${Date.now()}-${Math.random()}`;
+                 console.error(`[CHAT_UI_DEBUG] CRITICAL: messageId was missing AND polyglotHelpers were unavailable to generate a new one.`);
+            }
+        }
+        // --- END OF FIX ---
+
         console.log('[CHAT_UI_DEBUG] appendChatMessage called for sender:', senderClass);
         // Log a clean snapshot of the options object to see exactly what was passed in.
         console.log('[CHAT_UI_DEBUG] FULL OPTIONS RECEIVED:', JSON.parse(JSON.stringify(options))); 
-        if (!options.messageId) {
-            console.error('[CHAT_UI_DEBUG] CRITICAL: The `messageId` property is MISSING from the options object passed to appendChatMessage!');
-        }
       
-        const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
+      
         if (!logElement || !currentPolyglotHelpers) {
             console.error("ChatUIU_appendChatMessage: logElement or polyglotHelpers missing.");
             return null;
@@ -172,7 +185,14 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
         const messageDiv = document.createElement('div');
         if (options.messageId) messageWrapper.dataset.messageId = options.messageId;
         messageWrapper.title = messageTimestamp.toLocaleString();
-        if (currentSpeakerId) messageWrapper.dataset.speakerId = currentSpeakerId;
+
+        // --- THIS IS THE FIX ---
+        // Ensure both speakerId and connectorId are set on the wrapper for consistency.
+        // The reaction handler looks for connectorId, while other logic may use speakerId.
+        if (currentSpeakerId) {
+            messageWrapper.dataset.speakerId = currentSpeakerId;
+            messageWrapper.dataset.connectorId = currentSpeakerId; // Use speakerId as the connectorId in a group context
+        }
 
         if (options.type === 'call_event' || senderClass === 'system-call-event') {
             messageWrapper.classList.add('system-event-wrapper');

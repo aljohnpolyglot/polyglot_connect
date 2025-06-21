@@ -108,7 +108,7 @@ Translate the [TARGET] message into the language: ${userLanguage}`;
 
    // THIS IS THE NEW, FULL-POWER BLOCK TO PASTE IN ITS PLACE
 
-   const translationProviderSequence = ['together', 'gemini', 'gemini', 'gemini'];
+   const translationProviderSequence = ['together', 'together', 'together', 'gemini', 'gemini', 'gemini'];
    console.log('%c[TRANSLATOR] Provider Plan:', 'color: #9c27b0; font-weight: bold;', translationProviderSequence.join(' ➔ '));
    
    let finalResult: string | null = null;

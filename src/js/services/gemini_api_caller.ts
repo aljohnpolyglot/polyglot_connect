@@ -147,29 +147,28 @@ async function callWithRetry<T>(
             finalPayload.safetySettings = CACHED_STANDARD_SAFETY_SETTINGS;
         }
 
+        const healthTracker = (window as any).apiKeyHealthTracker;
         try {
             const response = await fetch(fullApiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload),
-                signal: abortSignal // <<< ADD THIS
+                signal: abortSignal
             });
             const responseData = await response.json();
     
             if (!response.ok) {
-                // If the request fails, we throw an error for the carousel to catch.
                 const errorDetails = responseData.error || { message: `API request failed with status ${response.status}` };
-                const errorMessage = errorDetails.message || `Gemini API Error: ${response.status}`;
+                const errorMessage = `Status ${response.status}: ${errorDetails.message || 'Unknown Gemini Error'}`;
+                healthTracker?.reportStatus(nickname, 'Gemini', 'failure', errorMessage);
                 const err = new Error(errorMessage) as any;
                 err.status = response.status;
                 throw err;
             }
             
-            // --- THIS IS THE NEW SUCCESS LOGGING BLOCK ---
             console.log(`%c...and the score from: ${nickname}!`, 'color: #34A853; font-weight: bold;');
-            // ---------------------------------------------
+            healthTracker?.reportStatus(nickname, 'Gemini', 'success');
 
-            // Now, we process and return the data as before
             if (requestType === "generateContent") {
                 const candidate = responseData.candidates?.[0];
                 let textPart = "";
@@ -185,6 +184,10 @@ async function callWithRetry<T>(
     
         } catch (error: any) {
             console.error(`Catch Block in _geminiInternalApiCaller (Player: ${nickname})`, error.message);
+            // Report failure for network errors too
+            if (!error.status) { // If status isn't set, it's likely a network/fetch error
+                 healthTracker?.reportStatus(nickname, 'Gemini', 'failure', error.message);
+            }
             throw error; 
         }
     };

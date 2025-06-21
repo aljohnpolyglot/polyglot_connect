@@ -33,6 +33,11 @@ if (!(window as any).polyglotApp) { // Check if it's not already set by another 
     }
 }
 const CORE_MODULES_TO_WAIT_FOR: { eventName: string, windowObjectKey: keyof Window, keyFunction?: string }[] = [
+    // We only need to wait for the health tracker data module now.
+    // The UI panels will be initialized by dev_panel.ts itself.
+    { eventName: 'domElementsReady', windowObjectKey: 'domElements', keyFunction: 'appShell' },
+    { eventName: 'devPanelReady', windowObjectKey: 'devPanel', keyFunction: 'initialize' },
+    { eventName: 'apiKeyHealthTrackerReady', windowObjectKey: 'apiKeyHealthTracker', keyFunction: 'initialize' },
     { eventName: 'shellSetupReady', windowObjectKey: 'shellSetup', keyFunction: 'initializeAppCore' },
     { eventName: 'jumpButtonManagerReady', windowObjectKey: 'jumpButtonManager', keyFunction: 'initialize' },
     { eventName: 'tabManagerReady', windowObjectKey: 'tabManager', keyFunction: 'initialize' },
@@ -98,6 +103,8 @@ console.log("app.ts: TOP LEVEL - Script executing."); // Changed from .js
 console.log("app.ts TOP LEVEL: VITE_TEST_VAR from import.meta.env is:", import.meta.env?.VITE_TEST_VAR);
 import * as apiKeysConfig from './config';
 
+import './dev/dev_panel';
+
 console.log("app.ts: Imported apiKeysConfig:", apiKeysConfig);
 console.log("app.ts (LOCAL DEV TEST): Imported VITE_TEST_VAR_EXPORT:", apiKeysConfig.VITE_TEST_VAR_EXPORT);
 
@@ -109,10 +116,7 @@ window.GEMINI_API_KEY_ALT = apiKeysConfig.GEMINI_API_KEY_ALT || undefined;
 console.log("app.ts: window.GEMINI_API_KEY_ALT set to:", window.GEMINI_API_KEY_ALT);
 window.GEMINI_API_KEY_ALT_2 = apiKeysConfig.GEMINI_API_KEY_ALT_2 || undefined;
 console.log("app.ts: window.GEMINI_API_KEY_ALT_2 set to:", window.GEMINI_API_KEY_ALT_2);
-window.GROQ_API_KEY = apiKeysConfig.GROQ_API_KEY || 'proxy-handled';
-console.log("app.ts: window.GROQ_API_KEY set to:", window.GROQ_API_KEY);
-window.TOGETHER_API_KEY = apiKeysConfig.TOGETHER_API_KEY || undefined;
-console.log("app.ts: window.TOGETHER_API_KEY set to:", window.TOGETHER_API_KEY);
+
 console.log("app.ts: API keys set on window object.");
 
 if (window.GEMINI_API_KEY) console.log("app.ts: CONFIRMED - window.GEMINI_API_KEY has been set."); else console.warn("app.ts: CONFIRMED - window.GEMINI_API_KEY is UNDEFINED.");
@@ -140,7 +144,7 @@ function initializeAppLogic(): void {
     console.log('app.ts: Starting critical module checks (within initializeAppLogic)...');
     const criticalModules: CriticalModuleDef[] = [
         { name: 'GEMINI_API_KEY', obj: window.GEMINI_API_KEY, isKey: true },
-        { name: 'TOGETHER_API_KEY', obj: window.TOGETHER_API_KEY, isKey: true },
+   
 
         { name: 'polyglotHelpers', obj: window.polyglotHelpers as PolyglotHelpers | undefined, keyFn: 'sanitizeTextForDisplay'},
         { name: 'flagLoader', obj: window.flagLoader as FlagLoader | undefined, keyFn: 'getFlagUrl' },
@@ -299,7 +303,13 @@ function initializeAppLogic(): void {
         titleNotifier.initialize();
         console.log("app.ts (initializeAppLogic): Title Notifier has been initialized.");
     }
-
+    const filterController = window.filterController as FilterController | undefined;
+    if (filterController) {
+        filterController.initializeFilters();
+        console.log('[APP INIT] filterController.initializeFilters() called.');
+    } else {
+        console.error('[APP INIT] CRITICAL: filterController not found for final initialization.');
+    }
     (window.polyglotApp as PolyglotApp).initiateSession = (connector: Connector, sessionTypeWithContext: string): void => {
         console.log(`APP_TS_DEBUG: polyglotApp.initiateSession for connector ID: ${connector?.id}, type: ${sessionTypeWithContext}`);
 
