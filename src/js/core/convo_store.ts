@@ -100,75 +100,106 @@ function initializeActualConvoStore(): void {
                 globalUserProfile = {};
                 console.log("ConvoStore: Initialized. No saved user profile found.");
             }
+
+            // --- Logic to check for and expire old images on load ---
+            const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+            let wasImageExpired = false;
+
+            for (const convoId in activeConversations) {
+                const convo = activeConversations[convoId];
+                if (convo.messages) {
+                    for (const msg of convo.messages) {
+                        if (msg.content_url?.startsWith('data:image') && msg.timestamp < twentyFourHoursAgo) {
+                            console.log(`CS_INIT: Expiring image from msg '${msg.id}' (timestamp: ${new Date(msg.timestamp).toLocaleString()}) because it's older than 24 hours.`);
+                            msg.content_url = 'image_expired';
+                            wasImageExpired = true;
+                        }
+                    }
+                }
+            }
+            
+            // If we expired an image, we need to re-save the store to persist the change.
+            if (wasImageExpired) {
+                console.log("CS_INIT: An image was expired, re-saving the conversation store.");
+                saveAllConversationsToStorage(); // This will save the now-pruned data
+            }
+
+
+
+
     // --- END NEW BLOCK ---
         }
 
       // Inside the storeInstance IIFE in convo_store.ts
 // Inside the storeInstance IIFE in convo_store.ts
 
+
+// =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
+
 function saveAllConversationsToStorage(): void {
     try {
-        // Create a deep copy to modify for localStorage
-        // This ensures we don't alter the live 'activeConversations' object
-        const conversationsForLocalStorage: ActiveConversationsStore = JSON.parse(JSON.stringify(activeConversations));
+        const conversationsForStorage: ActiveConversationsStore = JSON.parse(JSON.stringify(activeConversations));
 
-        for (const convoId in conversationsForLocalStorage) {
-            if (Object.prototype.hasOwnProperty.call(conversationsForLocalStorage, convoId)) {
-                const convo = conversationsForLocalStorage[convoId];
+        let latestImage: { timestamp: number, convoId: string, msgId: string } | null = null;
+        const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
 
-                // Prune messages within the conversation
-                if (convo.messages && Array.isArray(convo.messages)) {
-                    convo.messages = convo.messages.map(msg => {
-                        const msgCopy = { ...msg }; // msg is already a copy from the deep clone
-
-                        // Prune ONLY auxiliary image data, NOT the main display URLs (content_url, audioBlobDataUrl)
-                        if (msgCopy.type === 'image' || msgCopy.isImageMessage) {
-                            if (msgCopy.imagePartsForGemini) {
-                                delete msgCopy.imagePartsForGemini;
-                            }
-                            if ((msgCopy as any).base64ImageDataForAI) { 
-                                delete (msgCopy as any).base64ImageDataForAI;
-                            }
-                            // DO NOT DELETE/MODIFY msgCopy.content_url if it's 'data:image...' here
-                            // if you want it to be available on page refresh from localStorage.
+        // --- PASS 1: Find the absolute most recent image across ALL conversations ---
+        for (const convoId in conversationsForStorage) {
+            const convo = conversationsForStorage[convoId];
+            if (convo.messages) {
+                for (const msg of convo.messages) {
+                    if (msg.content_url?.startsWith('data:image') && msg.timestamp > (latestImage?.timestamp || 0)) {
+                        // Check if the image is NOT older than 24 hours
+                        if (msg.timestamp >= twentyFourHoursAgo) {
+                            latestImage = { timestamp: msg.timestamp, convoId, msgId: msg.id! };
+                        } else {
+                            // This image is already expired, mark it for removal immediately
+                            console.log(`CS_SAVE: Expiring old image on save: msg '${msg.id}'`);
+                            msg.content_url = 'image_expired';
                         }
-
-                        // DO NOT DELETE/MODIFY msgCopy.audioBlobDataUrl if it's 'data:audio...' here
-                        // if you want it to be available on page refresh from localStorage.
-                        
-                        return msgCopy;
-                    });
-                }
-
-                // Prune Gemini history (this is usually safe as it's for AI context, not direct rendering)
-                if (convo.geminiHistory && Array.isArray(convo.geminiHistory)) {
-                    convo.geminiHistory = convo.geminiHistory.map(turn => {
-                        if (turn.parts && Array.isArray(turn.parts)) {
-                            const newParts = turn.parts.map(part => {
-                                const inlineDataPart = part as { inlineData?: { mimeType: string; data: string } };
-                                if (inlineDataPart.inlineData && inlineDataPart.inlineData.data && inlineDataPart.inlineData.data.length > 500) { // Heuristic
-                                    return { ...part, inlineData: { mimeType: inlineDataPart.inlineData.mimeType, data: '[omitted_base64_history_part]' } };
-                                }
-                                return part;
-                            });
-                            return { ...turn, parts: newParts };
-                        }
-                        return turn;
-                    });
+                    }
                 }
             }
         }
-        // Now save this version (with media URLs intact but other large parts pruned) to localStorage
-        polyglotHelpers.saveToLocalStorage(STORAGE_KEY, conversationsForLocalStorage);
-        // console.log(`ConvoStore: Saved conversations (media URLs retained) to localStorage for key '${STORAGE_KEY}'.`);
+
+        // --- PASS 2: Prune all other images and clean up ---
+        for (const convoId in conversationsForStorage) {
+            const convo = conversationsForStorage[convoId];
+            if (convo.messages) {
+                for (const msg of convo.messages) {
+                    // Prune large auxiliary data from ALL messages to save space
+                    if (msg.imagePartsForGemini) delete msg.imagePartsForGemini;
+                    if ((msg as any).base64ImageDataForAI) delete (msg as any).base64ImageDataForAI;
+
+                    // Now, handle the main image data
+                    if (msg.content_url?.startsWith('data:image')) {
+                        const isTheOneToKeep = latestImage && convoId === latestImage.convoId && msg.id === latestImage.msgId;
+                        if (!isTheOneToKeep) {
+                            // This is an older image or one that was just expired.
+                            // Mark it as expired for the UI renderer.
+                            msg.content_url = 'image_expired';
+                        }
+                    }
+                }
+            }
+        }
+
+        if (latestImage) {
+            console.log(`CS_SAVE: The single image being kept is msg '${latestImage.msgId}' in convo '${latestImage.convoId}'.`);
+        } else {
+            console.log("CS_SAVE: No recent images found to keep. All Base64 data will be pruned.");
+        }
+
+        polyglotHelpers.saveToLocalStorage(STORAGE_KEY, conversationsForStorage);
 
     } catch (e: any) {
-        console.error(`ConvoStore: Error in saveAllConversationsToStorage for key '${STORAGE_KEY}'. Message: ${e.message}`, e.stack ? e.stack.substring(0, 400) : '');
-        if (e.name === 'QuotaExceededError' || (e.message && e.message.toLowerCase().includes('quota'))) {
-            console.error("LOCALSTORAGE QUOTA EXCEEDED! Data for 'polyglotActiveConversations' was not saved or was truncated. Images/audio might be lost on next refresh if new data pushes it over.");
+        console.error(`ConvoStore: Critical error in saveAllConversationsToStorage.`, e);
+        if (e.name === 'QuotaExceededError') {
+            alert("Storage Error: Your browser storage is full, which may cause chat history to be lost. Please try clearing the site data.");
         }
     }
 }
+// ============================================================================
 
         function getConversationById(connectorId: string): ConversationRecordInStore | null {
             return activeConversations[connectorId] || null;

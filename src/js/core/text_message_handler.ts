@@ -338,11 +338,20 @@ async function playAiResponseScene(
         // 1. Show the typing indicator. The helper handles clearing any previous one.
         showTypingIndicatorFor(targetId, context);
 
-        // 2. Calculate a realistic typing delay for the current line.
-        const words = text.split(/\s+/).length;
-        // Use a base delay plus a per-word delay to feel natural.
-        // Min 1.2s, max ~5s to keep it from being too long or too short.
-        const typingDurationMs = Math.max(1200, Math.min(800 + (words * 150) + (Math.random() * 500), 5000));
+       // 2. Calculate a realistic typing delay for the current line.
+const words = text.trim().split(/\s+/).length;
+
+// Use realistic human WPM to compute base delay
+const wpm = 40; // average human typing speed
+const wordsPerMs = wpm / 60 / 1000;
+let typingDurationMs = words / wordsPerMs;
+
+// Add subtle randomness to avoid robotic timing
+typingDurationMs += Math.random() * 500;
+
+// Clamp duration to reasonable min/max
+typingDurationMs = Math.max(1200, Math.min(typingDurationMs, 5000));
+
         
         console.log(`%c[ScenePlayer] Line ${index + 1} for ${connector.profileName}. Words: ${words}. Typing: ${(typingDurationMs / 1000).toFixed(1)}s`, 'color: #8a2be2;');
 
@@ -1018,6 +1027,15 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 return;
             }
 
+            const existingConvoCheck = conversationManager.getConversationById(targetId);
+            const isFirstMessageEver = !existingConvoCheck || (existingConvoCheck.messages?.length || 0) === 0;
+
+            if (isFirstMessageEver) {
+                console.log(`%cTMH: First message in modal for ${targetId}. This will make the conversation official.`, 'color: #17a2b8; font-weight: bold;');
+            }
+
+
+
             const record = await conversationManager.ensureConversationRecord(targetId, currentModalMessageTargetConnector);
             const convo = record.conversation as ConversationRecordInStore | null;
             if (!convo || !convo.connector) {
@@ -1132,7 +1150,10 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 userMessageTimestamp,
                 finalMessageExtraData // Use the consolidated extra data
             );
-    
+            if (isFirstMessageEver) {
+                console.log(`%cTMH: First message sent. Rendering active chat list to include new conversation.`, 'color: #28a745; font-weight: bold;');
+                getChatOrchestrator()?.renderCombinedActiveChatsList();
+            }
             // UI updates for modal input (only if this function initiated the send)
             if (!skipUiAppend) {
                 if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = true;

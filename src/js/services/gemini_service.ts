@@ -25,7 +25,7 @@ export interface GeminiServiceModule {
         userText: string,
         connector: Connector,
         existingGeminiHistory: GeminiChatItem[]
-    ) => Promise<string | null>;
+    ) => Promise<string | object | null>; // <<< THIS IS THE FIX
 
     generateTextForCallModal?: ( // This was optional
         userText: string,

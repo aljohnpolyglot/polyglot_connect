@@ -16,7 +16,6 @@ import { buildInitialGeminiHistory } from './convo_prompt_builder.js';
 import { addTurnToGeminiHistory } from './convo_turn_manager.js';
 
 console.log('conversation_manager.ts (Facade): Script loaded, waiting for core dependencies.');
-
 interface ConversationManagerModule {
     initialize: () => Promise<void>; // Now returns Promise
     getActiveConversations: () => ConversationItem[]; // Remains sync for now
@@ -38,6 +37,9 @@ interface ConversationManagerModule {
     addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>; // Returns Promise
  
  
+    // VVVVVV ADD THIS FUNCTION SIGNATURE VVVVVV
+    saveAllConversationsToStorage: () => void;
+    // ^^^^^^ ADD THIS FUNCTION SIGNATURE ^^^^^^
  
     markConversationActive: (connectorId: string) => boolean; // Remains sync
     addModelResponseMessage: (
@@ -98,7 +100,13 @@ function initializeActualConversationManager(): void {
     console.log("conversation_manager.ts (Facade): IIFE STARTING.");
 
     const { polyglotHelpers, convoStore, chatOrchestrator, polyglotConnectors } = resolvedDeps;
-
+    function saveAllConversationsToStorage(): void {
+        // This is a simple pass-through to the underlying store's save method.
+        // It allows other modules to trigger a save without needing a direct
+        // dependency on the convoStore itself, maintaining the facade pattern.
+        convoStore.saveAllConversationsToStorage();
+        console.log("CM (Facade): Pass-through saveAllConversationsToStorage was called.");
+    }
         async function initialize(): Promise<void> {
             console.log("ConversationManager (Facade): Initializing...");
             const allConvos = convoStore.getAllConversationsAsArray();
@@ -133,47 +141,65 @@ function initializeActualConversationManager(): void {
             console.log("ConversationManager (Facade): Initialization complete.");
         }
 
-        async function ensureConversationRecord(
-            connectorId: string,
-            connectorData?: Connector | null
-        ): Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }> {
-            let isNew = false;
-            let conversation = convoStore.getConversationById(connectorId);
+     // =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
+     async function ensureConversationRecord(
+        connectorId: string,
+        connectorData?: Connector | null,
+        options: { setLastActivity?: boolean } = { setLastActivity: true } // <<< ADDED
+    ): Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }> {
+        let isNew = false;
+        let conversation = convoStore.getConversationById(connectorId);
 
-            if (!conversation) {
-                const connector = connectorData || polyglotConnectors.find(c => c.id === connectorId);
-                if (!connector) {
-                    console.error(`CM (Facade) ensureConversationRecord: Connector not found for ID '${connectorId}'.`);
-                    return { conversation: null, isNew: false };
-                }
-                conversation = convoStore.createNewConversationRecord(connectorId, connector);
-                if (conversation) {
-                    console.log(`CM (Facade) ensureConversationRecord: New record, building Gemini history for ${connectorId}`);
-                    conversation.geminiHistory = await buildInitialGeminiHistory(connector);
-                    convoStore.updateGeminiHistoryInStore(connectorId, conversation.geminiHistory);
-                    isNew = true;
-                    convoStore.saveAllConversationsToStorage();
-                }
-            } else {
-                const liveConnector = connectorData || polyglotConnectors.find(c => c.id === connectorId) || conversation.connector;
-                let historyNeedsRebuild = !conversation.geminiHistory || conversation.geminiHistory.length < 2;
-
-                if (liveConnector && (!conversation.connector || conversation.connector.profileName !== liveConnector.profileName)) {
-                    console.log(`CM (Facade) ensureRecord: Updating connector data for ${connectorId}`);
-                    conversation.connector = { ...liveConnector }; // Ensure connector on the object is updated
-                    convoStore.updateConversationProperty(connectorId, 'connector', conversation.connector);
-                    historyNeedsRebuild = true;
+        if (!conversation) {
+            const connector = connectorData || polyglotConnectors.find(c => c.id === connectorId);
+            if (!connector) {
+                console.error(`CM (Facade) ensureConversationRecord: Connector not found for ID '${connectorId}'.`);
+                return { conversation: null, isNew: false };
+            }
+            
+            conversation = convoStore.createNewConversationRecord(connectorId, connector);
+            
+            if (conversation) {
+                console.log(`CM (Facade) ensureConversationRecord: New record, building Gemini history for ${connectorId}`);
+                conversation.geminiHistory = await buildInitialGeminiHistory(connector);
+                
+                // *** THIS IS THE KEY CHANGE ***
+                // Only set the activity timestamp if the option is true.
+                if (options.setLastActivity) {
+                    conversation.lastActivity = Date.now();
+                } else {
+                    // For a new, un-interacted chat, set activity to 0 so it doesn't appear in sorted lists.
+                    conversation.lastActivity = 0;
                 }
                 
-                if (historyNeedsRebuild && liveConnector) { // Use liveConnector for building history
-                     console.log(`CM (Facade) ensureRecord: Re-initializing short/stale Gemini history for ${connectorId}`);
-                    conversation.geminiHistory = await buildInitialGeminiHistory(liveConnector);
-                    convoStore.updateGeminiHistoryInStore(connectorId, conversation.geminiHistory);
-                    // No need to saveAll here, assume updateGeminiHistoryInStore handles its persistence or it's batched
-                }
+                convoStore.updateConversationProperty(connectorId, 'lastActivity', conversation.lastActivity);
+                convoStore.updateGeminiHistoryInStore(connectorId, conversation.geminiHistory);
+                
+                isNew = true;
+                convoStore.saveAllConversationsToStorage(); // Save after all updates
             }
-            return { conversation, isNew };
+
+        } else {
+            // ... (the rest of the original logic for existing conversations is fine) ...
+            const liveConnector = connectorData || polyglotConnectors.find(c => c.id === connectorId) || conversation.connector;
+            let historyNeedsRebuild = !conversation.geminiHistory || conversation.geminiHistory.length < 2;
+
+            if (liveConnector && (!conversation.connector || conversation.connector.profileName !== liveConnector.profileName)) {
+                console.log(`CM (Facade) ensureRecord: Updating connector data for ${connectorId}`);
+                conversation.connector = { ...liveConnector }; // Ensure connector on the object is updated
+                convoStore.updateConversationProperty(connectorId, 'connector', conversation.connector);
+                historyNeedsRebuild = true;
+            }
+            
+            if (historyNeedsRebuild && liveConnector) { // Use liveConnector for building history
+                 console.log(`CM (Facade) ensureRecord: Re-initializing short/stale Gemini history for ${connectorId}`);
+                conversation.geminiHistory = await buildInitialGeminiHistory(liveConnector);
+                convoStore.updateGeminiHistoryInStore(connectorId, conversation.geminiHistory);
+            }
         }
+        return { conversation, isNew };
+    }
+// ============================================================================
 
         async function addMessageToConversation(
             connectorId: string,
@@ -212,11 +238,16 @@ function initializeActualConversationManager(): void {
             } else if (sender === 'user-voice-transcript') {
                 addTurnToGeminiHistory(convo.geminiHistory, 'user', text);
             }
-            convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory); // This already saves the updated history
-        // ...
-        convoStore.saveAllConversationsToStorage();
+            // Update the history in the store
+            convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
+            
+            // --- THIS IS THE FIX ---
+            // Explicitly save everything to localStorage immediately after adding any message.
+            console.log("CM.addMessage: Forcing save to storage after adding message.");
+            convoStore.saveAllConversationsToStorage();
+            // --- END OF FIX ---
 
-        if (chatOrchestrator?.notifyNewActivityInConversation) {
+            if (chatOrchestrator?.notifyNewActivityInConversation) {
             chatOrchestrator.notifyNewActivityInConversation(connectorId);
         }
 
@@ -253,6 +284,7 @@ function initializeActualConversationManager(): void {
                 addTurnToGeminiHistory(convo.geminiHistory, 'model', textForModelHistory);
                 convoStore.updateGeminiHistoryInStore(connectorId, convo.geminiHistory);
             }
+            // --- FIX: Ensure this line exists ---
             convoStore.saveAllConversationsToStorage();
 
             if (chatOrchestrator?.notifyNewActivityInConversation) {
@@ -334,42 +366,53 @@ function initializeActualConversationManager(): void {
         }
 
       // =================== START: REPLACEMENT ===================
-async function getGeminiHistoryForConnector(connectorId: string): Promise<GeminiChatItem[]> {
-    console.log(`[CM_PROMPT_REBUILD] getGeminiHistoryForConnector called for [${connectorId}]. Forcing FULL prompt rebuild...`);
-    const { conversation: convo } = await ensureConversationRecord(connectorId);
 
-    if (!convo || !convo.connector) {
-        console.error(`[CM_PROMPT_REBUILD] Cannot rebuild history, no connector found for ${connectorId}.`);
+  // D:\polyglot_connect\src\js\core\conversation_manager.ts
+
+// REPLACE THE ENTIRE getGeminiHistoryForConnector FUNCTION WITH THIS
+async function getGeminiHistoryForConnector(connectorId: string): Promise<GeminiChatItem[]> {
+    console.log(`[CM_PROMPT_REBUILD] getGeminiHistoryForConnector called for [${connectorId}].`);
+
+    const existingConvo = getConversationById(connectorId);
+
+    // Case 1: The conversation exists and already has a pre-built Gemini history.
+    // This is the most common case for an ongoing chat.
+    if (existingConvo?.geminiHistory && existingConvo.geminiHistory.length > 0) {
+        console.log(`[CM_PROMPT_REBUILD] ✅ Returning existing, cached prompt with ${existingConvo.geminiHistory.length} turns.`);
+        return [...existingConvo.geminiHistory]; // Return a copy
+    }
+
+    // Get the full connector object, which we'll need for building the prompt.
+    const connector = existingConvo?.connector || window.polyglotConnectors?.find(c => c.id === connectorId);
+    if (!connector) {
+        console.error(`[CM_PROMPT_REBUILD] 🛑 Cannot build prompt. Connector not found for ID: ${connectorId}`);
         return [];
     }
 
-    // 1. Build the fresh system prompt, which calls the Thalamus for the latest memories.
-    const freshSystemPromptHistory = await buildInitialGeminiHistory(convo.connector);
+    // Build the prompt from scratch. This is needed for new chats or old empty ones.
 
-    // 2. Re-create the turn-by-turn history from stored messages.
-    //    This prevents using the stale, stored geminiHistory.
-    const messagesToProcess = convo.messages || [];
-    for (const msg of messagesToProcess) {
-        if (msg.type === 'text' && (msg.sender === 'user' || msg.sender === 'connector')) {
-            addTurnToGeminiHistory(freshSystemPromptHistory, msg.sender === 'user' ? 'user' : 'model', msg.text);
-        } else if (msg.type === 'image' && msg.sender === 'user' && msg.imagePartsForGemini) {
-            let imageContextForLLM = msg.text || "";
-            if (msg.imageSemanticDescription) {
-                imageContextForLLM = `${msg.text || ""} [Image Description: ${msg.imageSemanticDescription}]`;
-            }
-            addTurnToGeminiHistory(freshSystemPromptHistory, 'user', imageContextForLLM, msg.imagePartsForGemini);
-        } else if (msg.sender === 'user-voice-transcript') {
-            addTurnToGeminiHistory(freshSystemPromptHistory, 'user', msg.text);
-        }
-        // Other message types (like call_event) are correctly ignored here.
+    const newHistory = await buildInitialGeminiHistory(connector);
+    // Case 2: This is a brand new conversation ("stalking" case).
+    // The conversation record does NOT exist in the store yet.
+    if (!existingConvo) {
+        console.log(`[CM_PROMPT_REBUILD] ✅ Built a TEMPORARY prompt for new chat [${connectorId}]. It will NOT be saved yet.`);
+        // Return the freshly built prompt without saving it to the store.
+        // The record will be created later when the user sends the first message.
+        return newHistory;
     }
 
-    // 3. Update the conversation record in the store with the newly built history.
-    convoStore.updateGeminiHistoryInStore(connectorId, freshSystemPromptHistory);
-    console.log(`[CM_PROMPT_REBUILD] ✅ Rebuild complete for [${connectorId}]. New history has ${freshSystemPromptHistory.length} turns.`);
+    // Case 3: The conversation record EXISTS, but its geminiHistory is empty.
+    // We need to build the history AND save it to the existing record.
+    if (existingConvo && (!existingConvo.geminiHistory || existingConvo.geminiHistory.length === 0)) {
+        console.log(`[CM_PROMPT_REBUILD] ✅ Built and SAVING prompt for existing (but empty-history) chat [${connectorId}].`);
+        // We have an existing record, so it's safe to update its history property.
+        window.convoStore?.updateGeminiHistoryInStore(connectorId, newHistory);
+        window.convoStore?.saveAllConversationsToStorage(); // Persist the change
+        return newHistory;
+    }
 
-    // 4. Return a copy of the fresh history for the AI call.
-    return [...freshSystemPromptHistory];
+    // Fallback: Should not be reached, but returns an empty array just in case.
+    return [];
 }
 // ===================  END: REPLACEMENT  ===================
 
@@ -416,9 +459,12 @@ async function getGeminiHistoryForConnector(connectorId: string): Promise<Gemini
             addMessageToConversation,
             ensureConversationRecord,
             addSystemMessageToConversation,
+            saveAllConversationsToStorage, // <<< ADD THIS LINE
             markConversationActive,
             addModelResponseMessage,
-            getGeminiHistoryForConnector,
+            getGeminiHistoryForConnector: (connectorId: string) => {
+                return getGeminiHistoryForConnector(connectorId);
+            },
             clearConversationHistory
         };
     })();

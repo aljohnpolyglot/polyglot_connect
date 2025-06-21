@@ -176,6 +176,65 @@ function initializeActualAiService(): void {
         });
 
       // REPLACE WITH THIS BLOCK
+   
+
+// =================== START: ADD NEW HELPER FUNCTION ===================
+/**
+ * Builds the definitive, multi-language prompt for cleaning and re-ordering a raw transcript.
+ * This is the single source of truth for this task.
+ * @param preliminaryFormattedTranscript The raw, pre-formatted transcript string.
+ * @param userName The name of the user.
+ * @param partnerName The name of the AI partner.
+ * @returns The full prompt string for the LLM.
+ */
+function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, userName: string, partnerName: string): string {
+    return `You are a specialist AI dialogue editor. Your only task is to reconstruct a raw, fragmented, and out-of-order voice transcript into a clean, logical conversation. The dialogue is between "${userName}" and "${partnerName}".
+
+    You MUST follow these two steps precisely:
+    
+    **STEP 1: FIX CONTENT AND FORMATTING**
+    The raw transcript is messy. You must fix it.
+    - **Combine Word Fragments:** This is your most important rule. You must combine parts of words into whole words.
+    - **This Rule Applies to ALL Languages:**
+        - **English Example:** Raw "ho w ar e y ou" **MUST** become "how are you". Raw "that 's righ t" **MUST** become "that's right".
+        - **Tagalog Example:** Raw "kam ust a na" **MUST** become "kamusta na". Raw "Ayo s n ama n" **MUST** become "Ayos naman".
+        - **Spanish Example:** Raw "Com o est as" **MUST** become "Como estas". Raw "m uy bi en" **MUST** become "muy bien".
+        - **French Example:** Raw "je ne sais p as" **MUST** become "je ne sais pas". Raw "c 'est bon" **MUST** become "c'est bon".
+    - **Punctuation:** Add natural punctuation (commas, periods, question marks) to make the dialogue flow correctly.
+  - **Maintain Speakers:** Keep the original speaker labels ("${userName}:" and "${partnerName}:").
+    
+    **STEP 2: FIX CONVERSATIONAL ORDER**
+    The real-time log is often interleaved incorrectly. You MUST re-sequence the cleaned-up lines to make the conversation logical and turn-by-turn.
+    - **Perfect Re-ordering Example:**
+        - Raw Input from Log:
+            User: Hi there
+            Jhoven: Hello!
+            User: I'm doing great
+            Jhoven: How are you?
+        - **Your Required, Corrected Output:**
+            User: Hi there
+            Jhoven: Hello! How are you?
+            User: I'm doing great
+    
+    **CRITICAL OUTPUT RULE:**
+    Your entire response MUST be ONLY the cleaned, formatted, and re-ordered dialogue.
+    - **DO NOT** add any extra text.
+    - **DO NOT** add titles like "Cleaned Dialogue:".
+    - **DO NOT** add any commentary or explanations.
+    
+    ---
+    **Raw Transcript to Process:**
+    ${preliminaryFormattedTranscript.trim()}
+    ---
+    `;
+    }
+// ===================  END: ADD NEW HELPER FUNCTION  ===================
+
+
+
+
+   
+   
       async function cleanAndReconstructTranscriptLLM_internal(
         rawTranscript: TranscriptTurn[],
         connector: Connector,
@@ -218,33 +277,11 @@ function initializeActualAiService(): void {
         // --- THIS IS THE CORRECTED PROMPT ---
       // --- THIS IS THE ENHANCED PROMPT TO FIX ORDERING ---
         // --- THIS IS THE ULTIMATE MULTI-LANGUAGE ENHANCED PROMPT ---
-        const cleaningPrompt = `You are an expert dialogue editor. Your task is to reconstruct a raw, and potentially out-of-order, voice call transcript. The dialogue is between "${userName}" and "${connector.profileName}".
-
-Your process MUST follow two critical steps:
-1.  **Fix Content and Formatting:**
-    *   The transcript contains fragmented words and incorrect spacing due to real-time transcription. You MUST combine these fragments into whole words.
-    *   This applies to ALL languages. For example:
-        *   **Tagalog:** "Ayo s n ama n" must become "Ayos naman". "kam ust a" must become "kamusta".
-        *   **English:** "how are y ou" must become "how are you".
-        *   **Spanish:** "Com o est as" must become "Como estas".
-        *   **French:** "c 'est" must become "c'est". "je ne sais p as" must become "je ne sais pas".
-    *   Ensure all punctuation is natural and readable.
-    *   Maintain the original speaker turns and the language used.
-
-2.  **Fix Conversational Order:**
-    *   The transcript is a real-time log, so lines can be interleaved incorrectly. You MUST re-order the cleaned-up lines to create a logical, turn-by-turn conversational flow.
-    *   **Example of Re-ordering:**
-        *   Raw: "User: Hi", "AI: Hello there", "User: I'm good", "AI: how are you?"
-        *   Corrected: "User: Hi", "AI: Hello there how are you?", "User: I'm good"
-
-Your final output MUST be ONLY the cleaned, correctly formatted, and logically ordered dialogue. Do NOT add any commentary or explanation.
-
-Raw Transcript to Process:
----
-${preliminaryFormattedTranscript.trim()}
----
-
-Cleaned and Re-ordered Dialogue:`;
+        const cleaningPrompt = buildTranscriptCleaningPrompt(
+            preliminaryFormattedTranscript, 
+            userName, 
+            connector.profileName || "Partner"
+        );
 
         // --- 2. The S+ Tier Cleaning Carousel ----
         const cleanerProviderSequence = ['gemini', 'gemini', 'gemini', 'groq'];
@@ -266,14 +303,22 @@ Cleaned and Re-ordered Dialogue:`;
 
                 if (provider === 'gemini' && currentDeps._geminiInternalApiCaller) {
                     const geminiModel = currentDeps._aiApiConstants?.GEMINI_MODELS.RECAP || "gemini-1.5-flash-latest";
+                    
+                    // --- NEW: Define less strict safety settings JUST for this cleaning task ---
+                    const cleanerSafetySettings = [
+                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+                    ];
+                
                     const payload = {
                         contents: [{ role: "user", parts: [{ text: cleaningPrompt }] }],
                         generationConfig: { temperature: 0.1, maxOutputTokens: 3000 },
-                        safetySettings: currentDeps._aiApiConstants?.STANDARD_SAFETY_SETTINGS_GEMINI,
+                        safetySettings: cleanerSafetySettings, // <<< Use the new, more lenient settings
                     };
                     cleanedTranscript = await currentDeps._geminiInternalApiCaller(payload, geminiModel, "generateContent");
-
-                } else if (provider === 'groq' && currentDeps._openaiCompatibleApiCaller) {
+                }else if (provider === 'groq' && currentDeps._openaiCompatibleApiCaller) {
                     const groqModel = currentDeps._aiApiConstants?.GROQ_MODELS.TEXT_CHAT || "llama3-8b-8192";
                     const messages = [{ role: "user" as const, content: cleaningPrompt }];
                     cleanedTranscript = await currentDeps._openaiCompatibleApiCaller(messages, groqModel, 'groq', 'proxied-by-cloudflare-worker', { temperature: 0.1 });

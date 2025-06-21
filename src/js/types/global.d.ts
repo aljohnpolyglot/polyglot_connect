@@ -811,7 +811,10 @@ export interface MessageInStore { // Ensure this is also defined and exported if
     [key: string]: any;
     imageSemanticDescription?: string; // <<< ADD THIS LINE (AI-generated description of image content)
     imageInitialDescription?: string; // <--- NEW: AI's first-pass, quick description
-  }
+  
+    reactions?: {
+      [emoji: string]: string[]; // e.g., { "👍": ["user_player"], "❤️": ["some_other_user_id"] }
+  };  }
 export interface ActiveConversationsStore {
     [connectorId: string]: ConversationRecordInStore;
 
@@ -1025,10 +1028,14 @@ export interface ConversationManager {
       timestamp?: number,
       extraData?: Record<string, any>
   ) => Promise<MessageInStore | null>; // UPDATED
-  ensureConversationRecord: (
-      connectorId: string,
-      connectorData?: Connector | null
-  ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>; // UPDATED
+// REPLACE WITH THIS in global.d.ts
+ensureConversationRecord: (
+  connectorId: string,
+  connectorData?: Connector | null,
+  options?: { setLastActivity?: boolean } // <<< ADD THIS LINE
+) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
+
+
   addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>; // UPDATED
   markConversationActive: (connectorId: string) => boolean; // Stays sync
   addModelResponseMessage: ( 
@@ -1037,7 +1044,8 @@ export interface ConversationManager {
       geminiHistoryRefToUpdate?: GeminiChatItem[] // This param might be vestigial now
   ) => Promise<MessageInStore | null>; // UPDATED
   getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>; // UPDATED
-  clearConversationHistory: (connectorId: string) => Promise<void>; // UPDATED
+  clearConversationHistory: (connectorId: string) => Promise<void>; // 
+  saveAllConversationsToStorage?: () => void; // <<< ADD THIS LINE
 }
 export interface ChatSessionHandler {
   initialize?: () => void; 
@@ -1311,6 +1319,8 @@ export interface Conversation {
 export interface ConversationRecord {
     conversation: Conversation;
     isNew: boolean;
+    toxicityStrikes: number; // <<< ADD THIS. Default to 0.
+    isBlocked: boolean; // <<< ADD THIS. Default to false.
 }
 // Add these interfaces (or similar) if they are not already defined and exported
 
@@ -1332,7 +1342,13 @@ export interface SessionStateManager {
   // Add other methods from session_state_manager.js that are called by session_manager.ts
   [key: string]: any; // Keep for flexibility if other methods exist
 }
-
+export interface ChatUiUpdaterModule {
+  initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }): void;
+  appendSystemMessage(logEl: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean): HTMLElement | null;
+  appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options?: ChatMessageOptions): HTMLElement | null;
+  scrollChatLogToBottom(chatLogElement: HTMLElement | null): void;
+  clearLogCache(logElement: HTMLElement): void;
+}
 
 
 export interface LiveCallHandler {
@@ -1407,6 +1423,14 @@ export interface GeminiServiceModule {
 
 export interface ChatEventListeners { initializeEventListeners: (...args: any[]) => any; /* ... more methods */ }
 // ADD THIS NEW INTERFACE
+// =================== REPLACE WITH THIS IN global.d.ts ===================
+export interface ChatEventListenersModule {
+  initializeEventListeners: (
+      domElements: YourDomElements, 
+      conversationManager: ConversationManager
+  ) => void;
+}
+// =======================================================================
 export interface GeminiChatServiceModule {
   initialize: () => void;
   generateResponse: (
@@ -1468,6 +1492,7 @@ declare global {
     sessionManager?: SessionManager;
     modalHandler?: ModalHandler;
     uiUpdater?: UiUpdater;
+    chatUiUpdater?: ChatUiUpdaterModule; // <<< ADD THIS LINE
     cardRenderer?: CardRenderer;
     polyglotApp?: PolyglotApp; // Uses the exported PolyglotApp interface
     conversationManager?: ConversationManager; // Uses the exported ConversationManager

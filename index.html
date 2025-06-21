@@ -191,7 +191,7 @@
                         </div>
                         <div class="chat-header-actions">
                             <button id="embedded-chat-call-btn" class="control-btn" title="Start Direct Call"><i class="fas fa-phone-alt"></i></button>
-                            <button id="embedded-chat-info-btn" class="control-btn" title="View Profile"><i class="fas fa-info-circle"></i></button>
+                            <!-- The info button is now gone -->
                         </div>
                     </header>
                     
@@ -384,11 +384,11 @@
                     <p id="message-modal-header-details" class="chat-header-sub-details">Location | Age</p>
                 </div>
             </div>
-            <div class="modal-controls chat-header-actions">
-                <button id="message-modal-call-btn" class="control-btn" title="Start Direct Call"><i class="fas fa-phone-alt"></i></button>
-                <button id="message-modal-info-btn" class="control-btn" title="View Profile"><i class="fas fa-info-circle"></i></button>
-                <button id="close-messaging-modal-btn" class="modal-btn end-call-button"><i class="fas fa-times"></i></button>
-            </div>
+          <div class="modal-controls chat-header-actions">
+    <button id="message-modal-call-btn" class="control-btn" title="Start Direct Call"><i class="fas fa-phone-alt"></i></button>
+    <button id="close-messaging-modal-btn" class="modal-btn end-call-button"><i class="fas fa-times"></i></button>
+</div>
+
         </header>
 
         <!-- Messaging Modal Body -->
@@ -605,6 +605,7 @@
     <!-- ===================================================================== -->
     <script type="module" src="/src/js/ui/modal_handler.ts"></script>
     <script type="module" src="/src/js/ui/ui_updater.ts"></script>
+    <script type="module" src="/src/js/ui/chat_ui_updater.ts"></script>
     <script type="module" src="/src/js/ui/list_renderer.ts"></script>
     <script type="module" src="/src/js/ui/title_notifier.ts"></script> <!-- <<< ADD THIS LINE -->
     <script type="module" src="/src/js/ui/jump_button_manager.ts"></script>

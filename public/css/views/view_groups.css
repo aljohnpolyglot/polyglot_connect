@@ -448,6 +448,13 @@ body.dark-mode #groups-view .group-discovery-list-item .group-card-info-btn:hove
     #groups-view #group-chat-interface #group-chat-members-avatars .group-member-avatar-small{
         width: 20px; height: 20px;
     }
+    .gmm-group-name{
+        font-size: 0.86em;
+        width: 100%;
+        text-align: left;
+        margin-top: var(--spacing-xs,12px);
+       
+    }
 
 
 

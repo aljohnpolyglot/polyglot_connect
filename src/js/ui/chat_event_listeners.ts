@@ -3,6 +3,7 @@ console.log('chat_event_listeners.ts: SCRIPT EXECUTION STARTED - TOP OF FILE (TS
 import type {
     YourDomElements,
     PersonaModalManager,
+    ConversationManager, // <<< ADD THIS LINE
     ChatSessionHandler,
     ChatActiveTargetManager,
     VoiceMemoHandler,
@@ -22,7 +23,10 @@ import type {
 console.log('chat_event_listeners.ts: Script loaded, waiting for core dependencies (TS Version).');
 
 interface ChatEventListenersModule {
-    initializeEventListeners: () => void;
+    initializeEventListeners: (
+        domElements: YourDomElements,
+        conversationManager: ConversationManager
+    ) => void;
 }
 
 window.chatEventListeners = {} as ChatEventListenersModule;
@@ -42,12 +46,11 @@ type VerifiedDepsForCelInit = { // Renamed for clarity of its purpose
     uiUpdater: UiUpdater;
     modalHandler: ModalHandler;
     polyglotConnectors: Connector[];
-  // BECOMES:
-polyglotHelpers: PolyglotHelpersOnWindow; // <<< USE THE ALIAS FROM YOUR IMPORTS
+    polyglotHelpers: PolyglotHelpersOnWindow; // <<< USE THE ALIAS FROM YOUR IMPORTS
+    conversationManager: ConversationManager;
 };
 // Define getSafeDeps at the module scope or ensure it's correctly defined before its first call
 // D:\polyglot_connect\src\js\ui\chat_event_listeners.ts
-
 const getSafeDeps = (): VerifiedDepsForCelInit | null => {
     console.log("CEL_DEBUG_GETSAFEDEPS: --- Entered getSafeDeps (polyglotApp check removed) ---");
     const deps = {
@@ -58,12 +61,12 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
         voiceMemoHandler: window.voiceMemoHandler,
         textMessageHandler: window.textMessageHandler,
         groupManager: window.groupManager,
-        // polyglotApp: window.polyglotApp, // REMOVED from deps object
         sessionHistoryManager: window.sessionHistoryManager,
         uiUpdater: window.uiUpdater,
         modalHandler: window.modalHandler,
         polyglotConnectors: window.polyglotConnectors,
-        polyglotHelpers: window.polyglotHelpers // <<< ADD THIS LINE if missing
+        polyglotHelpers: window.polyglotHelpers,
+        conversationManager: window.conversationManager // <<< THIS WAS THE MISSING LINE
     };
     const missing: string[] = [];
 
@@ -74,21 +77,22 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
     if (!deps.voiceMemoHandler?.handleNewVoiceMemoInteraction) missing.push("voiceMemoHandler or its .handleNewVoiceMemoInteraction method");
     if (!deps.textMessageHandler?.sendEmbeddedTextMessage) missing.push("textMessageHandler or its .sendEmbeddedTextMessage method");
     if (!deps.groupManager?.handleUserMessageInGroup) missing.push("groupManager or its .handleUserMessageInGroup method");
-    
-    // REMOVED: The check for polyglotApp.initiateSession
-    // if (!deps.polyglotApp?.initiateSession) missing.push("polyglotApp or its .initiateSession method"); 
-    
     if (!deps.sessionHistoryManager?.getSessionById) missing.push("sessionHistoryManager or its .getSessionById method");
     if (!deps.uiUpdater?.populateRecapModal) missing.push("uiUpdater or its .populateRecapModal method");
     if (!deps.modalHandler?.open) missing.push("modalHandler or its .open method");
     if (!deps.polyglotConnectors || !Array.isArray(deps.polyglotConnectors)) missing.push("polyglotConnectors (must be an array)");
-    if (!deps.polyglotHelpers?.generateUUID) missing.push("polyglotHelpers or its .generateUUID method"); // <<< ADD THIS CHECK
+    if (!deps.polyglotHelpers?.generateUUID) missing.push("polyglotHelpers or its .generateUUID method");
+    
+    // VVVVVV ADD THIS CHECK VVVVVV
+    if (!deps.conversationManager?.getConversationById) missing.push("conversationManager or its .getConversationById method");
+    // ^^^^^^ ADD THIS CHECK ^^^^^^
+
     if (missing.length > 0) {
         console.error(`ChatEventListeners: getSafeDeps - FINAL VERDICT: MISSING/INVALID: ${missing.join(', ')}. RETURNING NULL.`);
         return null;
     }
-    // console.log("CEL_DEBUG_GETSAFEDEPS: --- All checks in getSafeDeps PASSED, RETURNING deps object ---");
-    return deps as VerifiedDepsForCelInit; // Cast to the new type
+    
+    return deps as VerifiedDepsForCelInit;
 };
 function initializeActualChatEventListeners(): void {
     console.log("chat_event_listeners.ts: initializeActualChatEventListeners() called.");
@@ -123,7 +127,7 @@ const { // Destructure all needed dependencies from resolvedDeps!
     chatActiveTargetManager, voiceMemoHandler, textMessageHandler,
     groupManager, /* polyglotApp, */ sessionHistoryManager, // polyglotApp REMOVED/COMMENTED
     uiUpdater, modalHandler, polyglotConnectors,
-    polyglotHelpers // <<< ADD THIS LINE if missing
+    polyglotHelpers, conversationManager // <<< ENSURE THIS IS HERE // <<< ADD THIS LINE if missing
 } = resolvedDeps!;
 
 // --- START OF MODIFIED BLOCK ---
@@ -572,7 +576,8 @@ function createSendHandler(
                 );
 
                 addSafeListener(domElements.embeddedMessageSendBtn, 'click', sendEmbeddedHandler);
-
+                addSafeListener(domElements.embeddedMessageSendBtn, 'mousedown', (e: Event) => e.preventDefault());
+                addSafeListener(domElements.embeddedMessageSendBtn, 'click', sendEmbeddedHandler);
                 addSafeListener(domElements.embeddedMessageTextInput, 'keydown', (e: Event) => { // CHANGED
                     if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
                         e.preventDefault();
@@ -646,7 +651,8 @@ function createSendHandler(
               
                  
                 addSafeListener(domElements.messageSendBtn, 'click', sendModalHandler);
-
+                addSafeListener(domElements.messageSendBtn, 'mousedown', (e: Event) => e.preventDefault());
+                addSafeListener(domElements.messageSendBtn, 'click', sendModalHandler);
                 addSafeListener(domElements.messageTextInput, 'keydown', (e: Event) => {
                     if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
                         e.preventDefault();
@@ -719,7 +725,8 @@ function createSendHandler(
                 );
 
                 addSafeListener(domElements.sendGroupMessageBtn, 'click', sendGroupHandler);
-
+                addSafeListener(domElements.sendGroupMessageBtn, 'mousedown', (e: Event) => e.preventDefault());
+                addSafeListener(domElements.sendGroupMessageBtn, 'click', sendGroupHandler);
                 addSafeListener(domElements.groupChatInput, 'keydown', (e: Event) => {
                     if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
                         e.preventDefault();
@@ -865,17 +872,21 @@ function createSendHandler(
             console.log("CEL_TS: setupAllChatInteractionListeners() - FINISHED.");
         } 
         
-        function initializeEventListeners(): void {
+        function initializeEventListeners(domElements: YourDomElements, conversationManager: ConversationManager): void {
             console.log("CEL_TS_DEBUG_FLOW: ENTERING initializeEventListeners() - ATTACHING LISTENERS NOW.");
             console.log("CEL_TS: initializeEventListeners() called.");
             if (listenersInitialized) {
                 console.warn("CEL_TS: Event listeners already initialized.");
                 return;
             }
-            
-            setupAllChatInteractionListeners(); 
-            setupChatAvatarClickListeners(); // <<< ADD THIS 
-            window.reactionHandler?.initialize(domElements);
+        
+            setupAllChatInteractionListeners();
+            setupChatAvatarClickListeners();
+        
+            if (window.reactionHandler?.initialize) {
+                // This will now correctly find both `domElements` and `conversationManager`
+                window.reactionHandler.initialize(domElements, conversationManager);
+            }
 
 
          // =================== START: ADD NEW RECAP CLOSE LISTENER ===================
@@ -908,13 +919,30 @@ addSafeListener(domElements.closeRecapBtn, 'click', async () => {
     window.shellController?.switchView('messages');
 });
 
+const handleChatLogClick = (event: Event) => {
+    const target = event.target as HTMLElement;
 
-if (domElements.embeddedChatLog) {
-    domElements.embeddedChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
-}
-if (domElements.messageChatLog) { 
-    domElements.messageChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
-}
+    // Check if a call event button was clicked
+    const callButton = target.closest('.call-event-action-btn');
+    if (callButton) {
+        console.log("Unified Handler: Detected click on a call event button.");
+        handleCallEventButtonClick(event);
+        return; // Stop processing
+    }
+
+    // You can add other checks here in the future if needed
+    // For example, if you wanted to handle clicks on images to open a lightbox:
+    // const chatImage = target.closest('.chat-message-image');
+    // if (chatImage) {
+    //     handleImageClick(chatImage);
+    //     return;
+    // }
+};
+
+// Attach the new unified handler to all relevant chat logs
+addSafeListener(domElements.embeddedChatLog, 'click', handleChatLogClick);
+addSafeListener(domElements.messageChatLog, 'click', handleChatLogClick);
+addSafeListener(domElements.groupChatLogDiv, 'click', handleChatLogClick); // Also add to group chat for consistency
 listenersInitialized = true; 
 
 
@@ -938,6 +966,52 @@ listenersInitialized = true;
             }
             listenersInitialized = true; 
         }
+
+// =================== ADD THIS BLOCK INSIDE initializeEventListeners ===================
+
+function setupInputFocusListeners(): void {
+    const inputsToWatch = [
+        domElements.embeddedMessageTextInput,
+        domElements.embeddedImageCaptionInput,
+        domElements.messageTextInput,
+        domElements.modalImageCaptionInput,
+        domElements.groupChatInput,
+        domElements.groupImageCaptionInput
+    ].filter(input => input); // Filter out any null elements
+
+    const handleFocus = () => {
+        document.body.classList.add('chat-input-active');
+        console.log("Body class 'chat-input-active' ADDED.");
+    };
+
+    const handleBlur = () => {
+        // A small delay is needed because focus can shift between caption/main input
+        // and we don't want the buttons to flicker.
+        setTimeout(() => {
+            // Check if focus is still within any of the chat inputs.
+            const isAnyChatInputFocused = inputsToWatch.some(input => document.activeElement === input);
+            if (!isAnyChatInputFocused) {
+                document.body.classList.remove('chat-input-active');
+                console.log("Body class 'chat-input-active' REMOVED.");
+            }
+        }, 100);
+    };
+
+    inputsToWatch.forEach(input => {
+        addSafeListener(input, 'focus', handleFocus);
+        addSafeListener(input, 'blur', handleBlur);
+    });
+
+    console.log("CEL: Setup input focus listeners for jump button visibility.");
+}
+
+// Call the new setup function
+setupInputFocusListeners();
+
+// ==================================================================================
+
+
+
         
         function setupChatAvatarClickListeners(): void {
             // personaModalManager and polyglotConnectors are already destructured from resolvedDeps at the top of the IIFE
@@ -988,10 +1062,9 @@ listenersInitialized = true;
         }
       
       
-      
-      
-      
-        initializeEventListeners(); // Call to attach listeners when the IIFE runs
+      // REPLACE WITH THIS
+        // Pass the dependencies from the main IIFE scope into the initializer
+        initializeEventListeners(domElements, conversationManager);
 
         console.log("chat_event_listeners.ts: IIFE (module definition) FINISHED.");
         return {

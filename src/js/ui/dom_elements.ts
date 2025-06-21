@@ -19,15 +19,17 @@ window.domElements = {
     // Home View
     homepageTipsList: document.getElementById('homepage-tips-list') as HTMLUListElement | null,
 
-    // Find Someone View
-    friendsView: document.getElementById('friends-view') as HTMLElement | null,
-    connectorHubGrid: document.getElementById('connector-hub') as HTMLElement | null,
-    friendsEmptyPlaceholder: document.getElementById('friends-empty-placeholder') as HTMLElement | null,
-    friendsFiltersPanel: document.getElementById('friendsFiltersPanel') as HTMLElement | null, // Match HTML id // HTML ID is find-filters
-    filterLanguageSelect: document.getElementById('filter-language') as HTMLSelectElement | null,
-    filterRoleSelect: document.getElementById('filter-role') as HTMLSelectElement | null,
-    applyFiltersBtn: document.getElementById('apply-filters-btn') as HTMLButtonElement | null,
-    filterConnectorNameInput: document.getElementById('filter-connector-name') as HTMLInputElement | null, // <<< ADD THIS
+     // Find Someone View (Now "Friends View")
+     friendsView: document.getElementById('friends-view') as HTMLElement | null,
+     connectorHubGrid: document.getElementById('connector-hub') as HTMLElement | null,
+     friendsEmptyPlaceholder: document.getElementById('friends-empty-placeholder') as HTMLElement | null,
+ 
+     // --- Filters for Friends/Discover View ---
+     friendsFiltersPanel: document.getElementById('friendsFiltersPanel') as HTMLElement | null,
+     filterConnectorNameInput: document.getElementById('filter-connector-name') as HTMLInputElement | null,
+     filterLanguageSelect: document.getElementById('filter-language') as HTMLSelectElement | null,
+     filterRoleSelect: document.getElementById('filter-role') as HTMLSelectElement | null,
+     applyFiltersBtn: document.getElementById('apply-filters-btn') as HTMLButtonElement | null,
   // Groups View
   groupsView: document.getElementById('groups-view') as HTMLElement | null,
   groupListContainer: document.getElementById('group-list-container') as HTMLElement | null,

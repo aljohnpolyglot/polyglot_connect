@@ -1,15 +1,18 @@
 // D:\polyglot_connect\src\js\ui\ui_updater.ts
 
+// D:\polyglot_connect\src\js\ui\ui_updater.ts
+
 import type {
     YourDomElements,
     PolyglotHelpersOnWindow as PolyglotHelpers,
+    ChatUiUpdaterModule, // <<< ADDED
     Connector,
-    ChatMessageOptions, // Ensure this is well-defined and exported in global.d.ts
-    RecapData,          // Ensure this is well-defined and exported in global.d.ts
-    RecapDataItem,      // Ensure this is well-defined and exported in global.d.ts
-    SessionData,        // Ensure this is well-defined and exported in global.d.ts
-    GroupManager,       // Ensure this is well-defined and exported in global.d.ts
-    SessionManager      // Ensure this is well-defined and exported in global.d.ts
+    ChatMessageOptions,
+    RecapData,
+    RecapDataItem,
+    SessionData,
+    GroupManager,
+    SessionManager
 } from '../types/global.d.ts';
 
 console.log('ui_updater.ts: Script loaded, waiting for core dependencies.');
@@ -105,39 +108,45 @@ function initializeActualUiUpdater(): void {
     console.log('ui_updater.ts: initializeActualUiUpdater() for FULL method population called.');
 
     // Define getSafeFunctionalDeps here or ensure it's accessible
-    const getSafeFunctionalDeps = (): {
+       // REPLACE WITH THIS
+       const getSafeFunctionalDeps = (): {
         domElements: YourDomElements,
         polyglotHelpers: PolyglotHelpers,
-        polyglotConnectors: Connector[] | undefined, // Optional based on usage
-        groupManager: GroupManager | undefined,    // Optional
-        sessionManager: SessionManager | undefined   // Optional
+        chatUiUpdater: ChatUiUpdaterModule, // <<< ADDED
+        polyglotConnectors: Connector[] | undefined,
+        groupManager: GroupManager | undefined,
+        sessionManager: SessionManager | undefined
     } | null => {
         const deps = {
             domElements: window.domElements as YourDomElements | undefined,
             polyglotHelpers: window.polyglotHelpers as PolyglotHelpers | undefined,
+            chatUiUpdater: window.chatUiUpdater as ChatUiUpdaterModule | undefined, // <<< ADDED
             polyglotConnectors: window.polyglotConnectors as Connector[] | undefined,
             groupManager: window.groupManager as GroupManager | undefined,
             sessionManager: window.sessionManager as SessionManager | undefined
         };
-        let allPresent = true;
-        // Check for essential ones (domElements, polyglotHelpers)
-        if (!deps.domElements || !deps.polyglotHelpers) {
-            console.error(`UiUpdater (Full Init): Missing essential domElements or polyglotHelpers.`);
-            allPresent = false;
+        // Check for essential ones (domElements, polyglotHelpers, and the new one)
+        if (!deps.domElements || !deps.polyglotHelpers || !deps.chatUiUpdater) { // <<< MODIFIED
+            console.error(`UiUpdater (Full Init): Missing essential domElements, polyglotHelpers, or chatUiUpdater.`);
+            return null;
         }
-        // Log missing optional ones if they are actually needed by any method
-        // For example: if (!deps.groupManager) console.warn("UiUpdater (Full Init): groupManager is undefined, some methods might be affected.");
-        return allPresent ? deps as { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers, polyglotConnectors: Connector[] | undefined, groupManager: GroupManager | undefined, sessionManager: SessionManager | undefined } : null;
+        return deps as any; // Cast to the full type
     };
     
     const functionalDeps = getSafeFunctionalDeps();
 
     if (!functionalDeps) {
-        console.error("ui_updater.ts: CRITICAL - Functional dependencies (domElements, polyglotHelpers) not ready for full UiUpdater setup. Methods will remain placeholders.");
-        // The structural 'uiUpdaterReady' was already dispatched.
-        // No need to dispatch another 'uiUpdaterReady' or a failed one here if placeholder exists.
+        console.error("ui_updater.ts: CRITICAL - Functional dependencies not ready for full UiUpdater setup.");
         return;
     }
+    
+    console.log('ui_updater.ts: Functional dependencies ready.');
+
+    // Initialize the new module INSIDE the safe block
+    functionalDeps.chatUiUpdater.initialize({
+        domElements: functionalDeps.domElements,
+        polyglotHelpers: functionalDeps.polyglotHelpers
+    });
     console.log('ui_updater.ts: Functional dependencies for full method population appear ready.');
 
     // Destructure essential deps, others can be fetched via getDeps() inside methods if preferred
@@ -145,27 +154,31 @@ function initializeActualUiUpdater(): void {
 
   // D:\polyglot_connect\src\js\ui\ui_updater.ts
 
-// This is inside initializeActualUiUpdater, replacing the original 'methods' IIFE
+// This is inside initializeActualUiUpdater, replacing the original 'methods' \\\
+
+
+
 const methods = ((): UiUpdaterModule => {
     'use strict';
     console.log("ui_updater.ts: IIFE for actual methods STARTING.");
     // Map to track the last displayed timestamp for each chat log
-    const lastDisplayedTimestamps: Map<HTMLElement, Date> = new Map();
-    // Map to track the last speaker's ID for each chat log to handle consecutive messages
-    const lastSpeakerPerLog: Map<HTMLElement, string> = new Map();
-    const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30; // Display new time if more than 30 mins passed
+ 
 
     try { // <<< WRAP THE ENTIRE IIFE CONTENT
         const getDepsLocal = () => {
             return {
                 domElements: window.domElements as YourDomElements,
                 polyglotHelpers: window.polyglotHelpers as PolyglotHelpers,
+                chatUiUpdater: window.chatUiUpdater as ChatUiUpdaterModule, // <<< ADDED
                 polyglotConnectors: window.polyglotConnectors as Connector[] | undefined,
                 groupManager: window.groupManager as GroupManager | undefined,
                 sessionManager: window.sessionManager as SessionManager | undefined
             };
         };
 
+        const appendSystemMessage = (logEl: HTMLElement | null, text: string, isError: boolean = false, isTimestamp: boolean = false): HTMLElement | null => {
+            return getDepsLocal().chatUiUpdater.appendSystemMessage(logEl, text, isError, isTimestamp);
+        };
       // D:\polyglot_connect\src\js\ui\ui_updater.ts
 // Inside the initializeActualUiUpdater -> const methods = ((): UiUpdaterModule => { ... })();
 
@@ -178,518 +191,37 @@ const methods = ((): UiUpdaterModule => {
 
 
 
-// PASTE THIS NEW FUNCTION:
-// REPLACE WITH THIS LINE (this is the correct version):
-function appendSystemMessage(logEl: HTMLElement | null, text: string, isError: boolean = false, isTimestamp: boolean = false): HTMLElement | null {
-    if (!logEl) return null;
-
-    const messageWrapper = document.createElement('div');
-    const messageDiv = document.createElement('div');
-
-    if (isTimestamp) {
-        messageWrapper.classList.add('system-event-wrapper');
-        messageDiv.classList.add('chat-session-timestamp');
-        messageDiv.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    } else {
-        messageWrapper.classList.add('system-message-wrapper');
-        messageDiv.classList.add('system-message');
-        if (isError) messageDiv.classList.add('error-message-bubble');
-        messageDiv.textContent = text;
-    }
-
-    messageWrapper.appendChild(messageDiv);
-    logEl.appendChild(messageWrapper);
-    scrollChatLogToBottom(logEl);
-    return messageWrapper;
-}
-
-
-
-function appendChatMessage(
-    logElement: HTMLElement | null,
-    text: string, // For voice memos, this might be empty if player is primary, or transcript
-    senderClass: string,
-    options: ChatMessageOptions = {}
-): HTMLElement | null {
-    const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
-
-    if (!logElement || !currentPolyglotHelpers) {
-        console.error("UIU_appendChatMessage: logElement or polyglotHelpers missing. LogEl:", logElement, "Helpers:", !!currentPolyglotHelpers);
-        return null;
-    }
-    
-    const scrollThreshold = 50; // A 50px buffer is good practice
-    const isScrolledToBottom = logElement.scrollHeight - logElement.clientHeight <= logElement.scrollTop + scrollThreshold;
-
-
-
-    const manualPlaceholder = logElement.querySelector('.chat-log-empty-placeholder, .log-is-loading');
-    if (manualPlaceholder) {
-        // If it exists, this must be the first message. Clear the log before proceeding.
-        logElement.innerHTML = '';
-    }
-
-   // REPLACE WITH THIS BLOCK:
-// =================== START: REPLACE WITH THIS BLOCK (in ui_updater.ts) ===================
-   // REPLACE WITH THIS BLOCK:
-// =================== START: REPLACE WITH THIS BLOCK (in ui_updater.ts) ===================
-const messageTimestamp = options.timestamp ? new Date(options.timestamp) : new Date();
-let lastDisplayedDate = lastDisplayedTimestamps.get(logElement);
-let shouldDisplayTimestamp = false;
-
-// Check if this is the very first message being added to a completely empty log.
-const isFirstMessageInLog = logElement.children.length === 0;
-
-if (isFirstMessageInLog) {
-    // FIX: Always show a timestamp for the very first message.
-    shouldDisplayTimestamp = true;
-} else if (lastDisplayedDate) {
-    // This is a subsequent message, check the time difference from the last displayed timestamp.
-    const timeDiffMinutes = (messageTimestamp.getTime() - lastDisplayedDate.getTime()) / (1000 * 60);
-    if (messageTimestamp.toDateString() !== lastDisplayedDate.toDateString() ||
-        timeDiffMinutes > TIME_DIFFERENCE_THRESHOLD_MINUTES) {
-        shouldDisplayTimestamp = true;
-    }
-} else if (!lastDisplayedDate) {
-    // This case handles when the log has content (from history), but no timestamp has been shown yet in this session.
-    shouldDisplayTimestamp = true;
-}
-// ===================  END: REPLACE WITH THIS BLOCK (in ui_updater.ts)  ===================
-
-    if (shouldDisplayTimestamp &&
-        options.type !== 'call_event' && // Don't show for call events if they have their own time
-        senderClass !== 'system-call-event' && // Same as above
-        !senderClass.includes('system-message')) { // Don't show for generic system messages if they are too frequent
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.classList.add('chat-session-timestamp');
-
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const messageDateOnly = new Date(messageTimestamp.getFullYear(), messageTimestamp.getMonth(), messageTimestamp.getDate());
-        let formattedSessionTimestampStr = "";
-        const timePart = messageTimestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-        if (messageDateOnly.getTime() === todayStart.getTime()) {
-            formattedSessionTimestampStr = timePart;
-        } else {
-            const yesterdayStart = new Date(todayStart);
-            yesterdayStart.setDate(todayStart.getDate() - 1);
-            if (messageDateOnly.getTime() === yesterdayStart.getTime()) {
-                formattedSessionTimestampStr = `Yesterday, ${timePart}`;
-            } else {
-                const sevenDaysAgoStart = new Date(todayStart);
-                sevenDaysAgoStart.setDate(todayStart.getDate() - 7);
-                if (messageTimestamp.getTime() > sevenDaysAgoStart.getTime() && messageTimestamp.getFullYear() === now.getFullYear()) {
-                    const dayOfWeek = messageTimestamp.toLocaleDateString([], { weekday: 'long' });
-                    formattedSessionTimestampStr = `${dayOfWeek}, ${timePart}`;
-                } else {
-                    const day = messageTimestamp.getDate();
-                    const month = messageTimestamp.toLocaleDateString([], { month: 'long' });
-                    const year = messageTimestamp.getFullYear();
-                    formattedSessionTimestampStr = `${month} ${day}, ${year}, ${timePart}`;
-                }
-            }
-        }
-        timestampDiv.textContent = formattedSessionTimestampStr;
-        logElement.appendChild(timestampDiv);
-        lastDisplayedTimestamps.set(logElement, messageTimestamp);
-    }
-    
-    // --- START: Consecutive Message Logic ---
-    const messageWrapper = document.createElement('div');
-    const currentSpeakerId = options.speakerId || options.connectorId;
-    
-    if (shouldDisplayTimestamp) {
-        // A timestamp breaks the sequence, so the next message is treated as a new one.
-        lastSpeakerPerLog.delete(logElement);
-    } else {
-        const lastSpeakerId = lastSpeakerPerLog.get(logElement);
-    
-        // Check if the current message is a consecutive one from the same non-user speaker.
-        if (currentSpeakerId && lastSpeakerId === currentSpeakerId && !options.isThinking && !senderClass.includes('user')) {
-            // It's a consecutive message, so add the class to hide the name.
-            messageWrapper.classList.add('is-consecutive');
-    
-            // Find the PREVIOUS message wrapper from this speaker to remove its avatar.
-            // This makes the avatar "move" to the newest message in the sequence.
-            const previousMessageWrapper = logElement.querySelector(`:scope > .chat-message-wrapper[data-speaker-id="${currentSpeakerId}"]:last-child`);
-            
-            if (previousMessageWrapper) {
-                const previousAvatar = previousMessageWrapper.querySelector('.chat-bubble-avatar');
-                if (previousAvatar) {
-                    previousAvatar.remove();
-                    previousMessageWrapper.classList.remove('has-avatar-left');
-                }
-            }
-        }
-    }
-    // --- END: Consecutive Message Logic ---
-
-    const messageDiv = document.createElement('div'); // This will hold the primary content bubble
-
-    if (options.messageId) messageWrapper.dataset.messageId = options.messageId;
-    messageWrapper.title = messageTimestamp.toLocaleString([], {
-        month: 'long', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit', second: '2-digit'
-    });
-
-    // Set speaker ID on the wrapper for the *next* message to check against.
-    if (currentSpeakerId) {
-        messageWrapper.dataset.speakerId = currentSpeakerId;
-    }
-
-    // --- BRANCH FOR DIFFERENT MESSAGE TYPES ---
-
-    if (options.type === 'call_event' || senderClass === 'system-call-event') {
-        // --- CALL EVENT RENDERING ---
-        messageWrapper.classList.add('system-event-wrapper');
-        messageDiv.classList.add('call-event-message');
-
-        let eventIconHtml = '';
-        let callActionHtml = '';
-        let eventMainText = currentPolyglotHelpers.sanitizeTextForDisplay(text || "Call event occurred.");
-        let eventDetailsHtml = '';
-
-        switch (options.eventType) {
-            case 'call_started':
-                eventIconHtml = '<i class="fas fa-phone-alt call-event-icon call-started"></i> ';
-                break;
-            case 'call_ended':
-                eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-ended"></i> ';
-                const sid = options.callSessionId || '';
-                callActionHtml = `
-                    <button class="call-event-action-btn" data-action="call_back" data-connector-id="${options.connectorIdForButton || ''}" data-session-id="${sid}">CALL BACK</button>
-                    <button class="call-event-action-btn summary-btn" data-action="view_summary" data-session-id="${sid}">VIEW SUMMARY</button>`;
-                break;
-            case 'call_failed_user_attempt':
-                eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> ';
-                callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`;
-                break;
-            case 'call_missed_connector':
-                eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> ';
-                eventMainText = `${options.connectorNameForDisplay || options.connectorName || 'Partner'} missed your call.`;
-                callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`;
-                break;
-        }
-
-        if (options.duration) eventDetailsHtml += `<span class="call-event-detail duration"><i class="far fa-clock"></i> ${currentPolyglotHelpers.sanitizeTextForDisplay(options.duration)}</span>`;
-        const eventTime = options.timestamp ? new Date(options.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-        if (eventDetailsHtml && eventTime) eventDetailsHtml += ' | ';
-        if (eventTime) eventDetailsHtml += `<span class="call-event-detail time">${eventTime}</span>`;
-
-        messageDiv.innerHTML = `<div class="call-event-main-text">${eventIconHtml}${eventMainText}</div><div class="call-event-details-container">${eventDetailsHtml}</div>${callActionHtml ? `<div class="call-event-actions">${callActionHtml}</div>` : ''}`;
-        messageWrapper.appendChild(messageDiv);
-
-    } else if (options.isVoiceMemo && options.audioSrc) {
-        // --- VOICE MEMO RENDERING (USER OR CONNECTOR) WITH WAVESURFER ---
-        messageWrapper.classList.add('chat-message-wrapper');
-        messageDiv.classList.add('chat-message-ui', 'voice-memo-message'); // Bubble
-    
-        let avatarHtml = '';
-        if (senderClass.includes('user')) {
-            messageWrapper.classList.add('user-wrapper');
-            messageDiv.classList.add('user');
-        } else { // Connector
-            messageWrapper.classList.add('connector-wrapper');
-            messageDiv.classList.add('connector');
-            const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-            const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
-            const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
-            if (options.avatarUrl) {
-                let avatarConnectorId = options.connectorId || options.speakerId || '';
-                if (!avatarConnectorId && (logElement?.id === currentDomElements?.embeddedChatLog?.id || logElement?.id === currentDomElements?.messageChatLog?.id)) {
-                    const parentContainer = logElement.id === currentDomElements?.embeddedChatLog?.id ? currentDomElements.embeddedChatContainer : currentDomElements.messagingInterface;
-                    avatarConnectorId = parentContainer?.dataset.currentConnectorId || '';
-                }
-                const altText = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
-                if (avatarConnectorId) {
-                    avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar clickable-chat-avatar" data-connector-id="${currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId)}" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-                } else {
-                    avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-                }
-            }
-        }
-    
-        // Create a dedicated container for play button and waveform
-        const playerControlsContainer = document.createElement('div');
-        playerControlsContainer.classList.add('voice-memo-player-controls');
-    
-        const playButtonId = `playbtn-${options.messageId || currentPolyglotHelpers.generateUUID()}`;
-        const playButton = document.createElement('button');
-        playButton.id = playButtonId;
-        playButton.type = 'button'; // Good practice for buttons not submitting forms
-        playButton.setAttribute('aria-label', 'Play audio message');
-        playButton.innerHTML = '<i class="fas fa-play"></i>';
-        playButton.classList.add('voice-memo-play-btn');
-        playerControlsContainer.appendChild(playButton);
-    
-        const waveformContainerId = `waveform-${options.messageId || currentPolyglotHelpers.generateUUID()}`;
-        const waveformDiv = document.createElement('div');
-        waveformDiv.id = waveformContainerId;
-        waveformDiv.classList.add('voice-memo-waveform-container'); // Added class for styling
-        playerControlsContainer.appendChild(waveformDiv);
-    
-        messageDiv.appendChild(playerControlsContainer); // Add controls container to bubble
-    
-        requestAnimationFrame(() => {
-            const waveformElement = document.getElementById(waveformContainerId);
-            if (waveformElement && (window as any).WaveSurfer) {
-                try {
-                    const wavesurfer = (window as any).WaveSurfer.create({
-                        container: waveformElement, // Pass the element directly
-                        waveColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.5)' : 'rgba(100, 100, 100, 0.5)', // Lighter for user, darker for connector base
-                        progressColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.7)', // More opaque progress
-                        barWidth: 2,
-                        barRadius: 2, // Slightly less radius for a flatter look if desired
-                        cursorWidth: 0, // Hide cursor for a cleaner look like the image
-                        height: 30,     // Adjust height to match reference
-                        barGap: 2,      // Space between bars
-                        responsive: true,
-                        hideScrollbar: true,
-                    });
-                    wavesurfer.load(options.audioSrc);
-    
-                    const btnElement = document.getElementById(playButtonId);
-                    if (btnElement) {
-                        btnElement.onclick = () => {
-                            wavesurfer.playPause();
-                        };
-                        wavesurfer.on('play', () => { btnElement.innerHTML = '<i class="fas fa-pause"></i>'; btnElement.setAttribute('aria-label', 'Pause audio message');});
-                        wavesurfer.on('pause', () => { btnElement.innerHTML = '<i class="fas fa-play"></i>'; btnElement.setAttribute('aria-label', 'Play audio message');});
-                        wavesurfer.on('finish', () => { btnElement.innerHTML = '<i class="fas fa-play"></i>'; wavesurfer.seekTo(0); btnElement.setAttribute('aria-label', 'Play audio message');});
-                    }
-                } catch (e) {
-                    console.error("WaveSurfer initialization error:", e);
-                    const fallbackPlayer = document.createElement('audio'); /* ... your fallback ... */
-                    fallbackPlayer.controls = true;
-                    fallbackPlayer.src = options.audioSrc!;
-                    fallbackPlayer.preload = "metadata";
-                    fallbackPlayer.classList.add('chat-audio-player', 'fallback-player');
-                    if(waveformElement.parentNode) waveformElement.parentNode.replaceChild(fallbackPlayer, waveformElement);
-                    playButton.remove();
-                }
-            } else {
-                console.warn("WaveSurfer container or WaveSurfer library not found for ID:", waveformContainerId);
-                 const fallbackPlayer = document.createElement('audio'); /* ... your fallback ... */
-                 fallbackPlayer.controls = true;
-                 fallbackPlayer.src = options.audioSrc!;
-                 fallbackPlayer.preload = "metadata";
-                 fallbackPlayer.classList.add('chat-audio-player', 'fallback-player');
-                 if(waveformDiv.parentNode) waveformDiv.parentNode.replaceChild(fallbackPlayer, waveformDiv);
-                 playButton.remove();
-            }
-        });
-    
-        if (text && text.trim() !== "") {
-            const transcriptSpan = document.createElement('span');
-            transcriptSpan.className = 'voice-memo-transcript'; // Changed class for specific styling
-            transcriptSpan.textContent = `(Transcript: ${currentPolyglotHelpers.sanitizeTextForDisplay(text)})`;
-            messageDiv.appendChild(transcriptSpan);
-        }
-    
-      
-
-    // Create and append the avatar as a proper DOM element.
-    // This allows the logic from Step 1 to find and remove it later.
-    const shouldShowAvatar = !senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl;
-
-    if (shouldShowAvatar) {
-        // Create the avatar image element
-        const avatarElement = document.createElement('img');
-        const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-        const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
-        const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
-
-        avatarElement.src = currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl || '');
-        avatarElement.alt = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
-        avatarElement.className = 'chat-bubble-avatar left-avatar'; // The classes needed for styling
-        avatarElement.onerror = () => { if(avatarElement) { avatarElement.onerror = null; avatarElement.src = placeholderAvatarSrc; }};
-
-        // Make the avatar clickable if it has an ID
-        let avatarConnectorId = options.connectorId || options.speakerId || '';
-        if (avatarConnectorId) {
-            avatarElement.classList.add('clickable-chat-avatar');
-            avatarElement.dataset.connectorId = currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId);
-        }
-
-        // Add the avatar to the wrapper.
-        messageWrapper.appendChild(avatarElement);
-        messageWrapper.classList.add('has-avatar-left');
-    }
-
-    // Add the message bubble next to the avatar (or by itself).
-    messageWrapper.appendChild(messageDiv);
-
-    } else {
-        // --- REGULAR TEXT/IMAGE OR SYSTEM MESSAGE RENDERING ---
-        messageWrapper.classList.add('chat-message-wrapper');
-        messageDiv.classList.add('chat-message-ui');
-
-        // Add sender-specific wrapper and bubble classes
-        if (senderClass.includes('user')) {
-            messageWrapper.classList.add('user-wrapper');
-            messageDiv.classList.add('user');
-        } else if (senderClass.includes('system-message')) {
-            messageWrapper.classList.add('system-message-wrapper');
-            messageDiv.classList.add('system-message');
-        } else { // Connector
-            messageWrapper.classList.add('connector-wrapper');
-            messageDiv.classList.add('connector');
-        }
-
-        // Add conditional classes to the bubble itself
-        if (options.isThinking) messageDiv.classList.add('connector-thinking');
-        if (options.isError) messageDiv.classList.add('error-message-bubble');
-        if (senderClass && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking) {
-            const groupClasses = senderClass.split(' ').filter(cls => cls !== 'connector');
-            if (groupClasses.length) messageDiv.classList.add(...groupClasses);
-        }
-
-        let avatarHtml = ''; // To store potential avatar HTML for this branch
-        const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-        const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
-        const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
-
-        if (!senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl) {
-            let avatarConnectorId = options.connectorId || options.speakerId || '';
-            if (!avatarConnectorId && (logElement?.id === currentDomElements?.embeddedChatLog?.id || logElement?.id === currentDomElements?.messageChatLog?.id)) {
-                const parentContainer = logElement.id === currentDomElements?.embeddedChatLog?.id ? currentDomElements.embeddedChatContainer : currentDomElements.messagingInterface;
-                avatarConnectorId = parentContainer?.dataset.currentConnectorId || '';
-            }
-            const altText = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
-            if (avatarConnectorId) {
-                avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar clickable-chat-avatar" data-connector-id="${currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId)}" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-            } else {
-                avatarHtml = `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl)}" alt="${altText}" class="chat-bubble-avatar left-avatar" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}';">`;
-            }
-        }
-
-        // Content for the bubble (text and/or image)
-        let contentHtml = '';
-        const isGroupChatLog = logElement?.id === currentDomElements?.groupChatLogDiv?.id;
-
-        // Always show sender name for AI in group chat (if provided and not thinking bubble)
-        if (options.senderName && !senderClass.includes('user') && !senderClass.includes('system-message') && !options.isThinking && options.showSenderName !== false && isGroupChatLog) {
-            contentHtml += `<strong class="chat-message-sender-name">${currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName)}</strong>`;
-        }
-
-        // --- START OF THE FIX ---
-        
-        // FIX #1: Create the image tag FIRST if an imageUrl is provided.
-        if (options.imageUrl) {
-            contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
-        }
-
-        // FIX #2: Create the text tag SECOND if text content exists.
-        if (text && text.trim() !== "") {
-            // Add a line break if there is BOTH an image AND text, for spacing.
-            if (options.imageUrl) {
-                contentHtml += '<br>';
-            }
-            let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
-            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
-            contentHtml += `<span class="chat-message-text">${processedText}</span>`;
-        }
-        
-        // --- END OF THE FIX ---
-
-        messageDiv.innerHTML = contentHtml;
-
-        // Create and append the avatar as a proper DOM element if needed.
-        // This allows the consecutive message logic to find and remove it later.
-        const shouldShowAvatar = !senderClass.includes('user') && !senderClass.includes('system-message') && options.avatarUrl;
-        
-        if (shouldShowAvatar) {
-            // Create the avatar image element
-            const avatarElement = document.createElement('img');
-            const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-            const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
-            const placeholderAvatarSrc = `${safePlaceholderBase}images/placeholder_avatar.png`;
-        
-            // FIX is applied in the line below
-            avatarElement.src = currentPolyglotHelpers.sanitizeTextForDisplay(options.avatarUrl || '');
-            avatarElement.alt = currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName || 'Partner');
-            avatarElement.className = 'chat-bubble-avatar left-avatar'; 
-            avatarElement.onerror = () => { if(avatarElement) { avatarElement.onerror = null; avatarElement.src = placeholderAvatarSrc; }};
-        
-            // Make the avatar clickable if it has an ID
-            let avatarConnectorId = options.connectorId || options.speakerId || '';
-            if (avatarConnectorId) {
-                avatarElement.classList.add('clickable-chat-avatar');
-                avatarElement.dataset.connectorId = currentPolyglotHelpers.sanitizeTextForDisplay(avatarConnectorId);
-            }
-        
-            // Add the avatar to the wrapper.
-            messageWrapper.appendChild(avatarElement);
-            messageWrapper.classList.add('has-avatar-left');
-        }
-        
-        // Add the message bubble next to the avatar (or by itself).
-        messageWrapper.appendChild(messageDiv);
-    }
-  // =================== START: NEW REACTION FEATURE ===================
-    // This logic runs for ALL message types (text, image, voice memo) except system events.
-    if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
-        const messageBubble = messageWrapper.querySelector('.chat-message-ui');
-        if (messageBubble) {
-            // 1. Create the reaction picker and hide it by default.
-            const reactionPicker = document.createElement('div');
-            reactionPicker.className = 'reaction-picker';
-            
-            // Define the emojis you want to offer.
-            const EMOJIS = ['👍', '❤️', '😂', '😯', '😢', '😡'];
-            EMOJIS.forEach(emoji => {
-                const button = document.createElement('button');
-                button.className = 'reaction-btn';
-                button.type = 'button';
-                button.textContent = emoji;
-                button.setAttribute('aria-label', `React with ${emoji}`);
-                reactionPicker.appendChild(button);
-            });
-            
-            // Add the picker inside the message bubble itself for easy positioning.
-            messageBubble.appendChild(reactionPicker);
-
-            // 2. Add a container below the bubble where selected reactions will be displayed.
-            const reactionsContainer = document.createElement('div');
-            reactionsContainer.className = 'message-reactions';
-            messageWrapper.appendChild(reactionsContainer); // Append to the outer wrapper, below the bubble.
-        }
-    }
-
-
-
-
-
-    logElement.appendChild(messageWrapper);
-
-    // --- FINAL: Update state and scroll ---
-    if (currentSpeakerId && !options.isThinking) {
-        lastSpeakerPerLog.set(logElement, currentSpeakerId);
-    }
-    
-    requestAnimationFrame(() => {
-        if (isScrolledToBottom && logElement) {
-            logElement.scrollTop = logElement.scrollHeight;
-        }
-    });
-    return messageWrapper;
-} // End of appendChatMessage
-
-        function scrollChatLogToBottom(chatLogElement: HTMLElement | null): void {
-            if (chatLogElement) requestAnimationFrame(() => { chatLogElement.scrollTop = chatLogElement.scrollHeight; });
-        }
+const scrollChatLogToBottom = (chatLogElement: HTMLElement | null): void => {
+    if (chatLogElement) getDepsLocal().chatUiUpdater.scrollChatLogToBottom(chatLogElement);
+};
         const scrollEmbeddedChatToBottom = (): void => scrollChatLogToBottom(getDepsLocal().domElements.embeddedChatLog);
         const scrollMessageModalToBottom = (): void => scrollChatLogToBottom(getDepsLocal().domElements.messageChatLog);
 
-        function showImageInActivityArea(activityAreaEl: HTMLElement | null, imgDisplayEl: HTMLImageElement | null, logToScrollEl: HTMLElement | null, imageUrl: string | null | undefined): void {
+
+// =================== ADD THIS FUNCTION ===================
+const clearVoiceChatLog = (): void => {
+    const { domElements, chatUiUpdater } = getDepsLocal();
+    if (domElements.directCallMainContent) {
+        domElements.directCallMainContent.innerHTML = '';
+        chatUiUpdater.clearLogCache(domElements.directCallMainContent);
+    }
+    if (domElements.directCallActivityArea) (domElements.directCallActivityArea as HTMLElement).style.display = 'none';
+    if (domElements.directCallActivityImageDisplay) (domElements.directCallActivityImageDisplay as HTMLImageElement).src = '';
+};
+// =========================================================
+
+
+        const showImageInActivityArea = (activityAreaEl: HTMLElement | null, imgDisplayEl: HTMLImageElement | null, logToScrollEl: HTMLElement | null, imageUrl: string | null | undefined): void => {
             if (!activityAreaEl || !imgDisplayEl || !logToScrollEl) return;
             if (imageUrl) {
-                imgDisplayEl.src = imageUrl; activityAreaEl.style.display = 'block';
+                imgDisplayEl.src = imageUrl;
+                activityAreaEl.style.display = 'block';
                 requestAnimationFrame(() => { logToScrollEl.scrollTop = logToScrollEl.scrollHeight; });
-            } else { imgDisplayEl.src = ''; activityAreaEl.style.display = 'none'; }
-        }
+            } else {
+                imgDisplayEl.src = '';
+                activityAreaEl.style.display = 'none';
+            }
+        };
 
         const populateListInRecap = (ulEl: HTMLElement | null, items: Array<string | RecapDataItem> | null | undefined, itemType: 'simple' | 'vocabulary' | 'improvementArea' = 'simple'): void => {
             const { polyglotHelpers: currentPolyglotHelpers } = getDepsLocal();
@@ -738,9 +270,7 @@ if (isFirstMessageInLog) {
         };
 
         const appendToVoiceChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null =>
-            appendChatMessage(getDepsLocal().domElements.directCallMainContent, text, senderClass, options); 
-
-        const showImageInVoiceChat = (imageUrl: string | null): void => {
+            getDepsLocal().chatUiUpdater.appendChatMessage(getDepsLocal().domElements.directCallMainContent, text, senderClass, options);   const showImageInVoiceChat = (imageUrl: string | null): void => {
             const { domElements: currentDomElements } = getDepsLocal();
             showImageInActivityArea(currentDomElements.directCallActivityArea, currentDomElements.directCallActivityImageDisplay, currentDomElements.directCallMainContent, imageUrl);
         };
@@ -752,15 +282,7 @@ if (isFirstMessageInLog) {
             (currentDomElements.directCallActiveName as HTMLElement).textContent = currentPolyglotHelpers.sanitizeTextForDisplay(connector.profileName || connector.name || 'Partner');
         };
 
-        const clearVoiceChatLog = (): void => {
-            const { domElements: currentDomElements } = getDepsLocal();
-            if (currentDomElements.directCallMainContent) {
-                 (currentDomElements.directCallMainContent as HTMLElement).innerHTML = '';
-                 lastSpeakerPerLog.delete(currentDomElements.directCallMainContent);
-            }
-            if (currentDomElements.directCallActivityArea) (currentDomElements.directCallActivityArea as HTMLElement).style.display = 'none';
-            if (currentDomElements.directCallActivityImageDisplay) (currentDomElements.directCallActivityImageDisplay as HTMLImageElement).src = '';
-        };
+     
 
         const resetVoiceChatInput = (): void => { /* Placeholder */ };
         const updateVoiceChatTapToSpeakButton = (state: 'listening' | 'processing' | 'idle', text: string = ''): void => { /* Placeholder */ };
@@ -831,19 +353,16 @@ if (isFirstMessageInLog) {
         };
 
         const appendToMessageLogModal = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
-            const { domElements: currentDomElements, polyglotConnectors: currentConnectors } = getDepsLocal();
+            const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
             let finalOptions = { ...options };
-            if (!senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('system-call-event')) {
-                const connectorId = (currentDomElements.messagingInterface as HTMLElement)?.dataset.currentConnectorId;
-                const connector = currentConnectors?.find(c => c.id === connectorId);
-                if (connector) { 
-                    finalOptions.avatarUrl = connector.avatarModern; 
-                    if(options.type !== 'call_event') finalOptions.senderName = connector.profileName; 
-                    finalOptions.speakerId = connector.id;
-                    finalOptions.connectorId = connector.id;
+            if (!senderClass.includes('user') && !senderClass.includes('system')) {
+                const connectorId = (cd.messagingInterface as HTMLElement)?.dataset.currentConnectorId;
+                const connector = pc?.find(c => c.id === connectorId);
+                if (connector) {
+                    finalOptions = { ...finalOptions, avatarUrl: connector.avatarModern, senderName: connector.profileName, speakerId: connector.id, connectorId: connector.id };
                 }
             }
-            return appendChatMessage(currentDomElements.messageChatLog, text, senderClass, finalOptions);
+            return chatUiUpdater.appendChatMessage(cd.messageChatLog, text, senderClass, finalOptions);
         };
 
         const showImageInMessageModal = (imageUrl: string | null): void => {
@@ -879,28 +398,23 @@ if (isFirstMessageInLog) {
         };
 
         const clearMessageModalLog = (): void => {
-            const { domElements: cd } = getDepsLocal();
+            const { domElements: cd, chatUiUpdater } = getDepsLocal();
             if (cd.messageChatLog) {
                 cd.messageChatLog.innerHTML = '';
-                lastDisplayedTimestamps.delete(cd.messageChatLog);
-                lastSpeakerPerLog.delete(cd.messageChatLog);
+                chatUiUpdater.clearLogCache(cd.messageChatLog);
             }
         };
-        const appendToEmbeddedChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
-            const { domElements: cd, polyglotConnectors: pc } = getDepsLocal();
+             const appendToEmbeddedChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
+            const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
             let finalOptions = { ...options };
-         // Use the same robust logic as appendToMessageLogModal
-if (!senderClass.includes('user') && !senderClass.includes('system-message') && !senderClass.includes('system-call-event')) {
-    const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
-    const connector = pc?.find(c => c.id === connectorId);
-    if (connector) { 
-        finalOptions.avatarUrl = connector.avatarModern; 
-        if(options.type !== 'call_event') finalOptions.senderName = connector.profileName;
-        finalOptions.speakerId = connector.id;
-        finalOptions.connectorId = connector.id;
-    }
-}
-            return appendChatMessage(cd.embeddedChatLog, text, senderClass, finalOptions);
+            if (!senderClass.includes('user') && !senderClass.includes('system')) {
+                const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
+                const connector = pc?.find(c => c.id === connectorId);
+                if (connector) {
+                    finalOptions = { ...finalOptions, avatarUrl: connector.avatarModern, senderName: connector.profileName, speakerId: connector.id, connectorId: connector.id };
+                }
+            }
+            return chatUiUpdater.appendChatMessage(cd.embeddedChatLog, text, senderClass, finalOptions);
         };
 
         const showImageInEmbeddedChat = (imageUrl: string | null): void => {
@@ -940,11 +454,10 @@ if (!senderClass.includes('user') && !senderClass.includes('system-message') && 
             if(cd.embeddedMessageSendBtn) cd.embeddedMessageSendBtn.disabled = !enable;
         };
         const clearEmbeddedChatLog = (): void => {
-            const { domElements: cd } = getDepsLocal();
+            const { domElements: cd, chatUiUpdater } = getDepsLocal();
             if (cd.embeddedChatLog) {
                 cd.embeddedChatLog.innerHTML = '<div class="log-is-loading" style="display: none;"></div>';
-                lastDisplayedTimestamps.delete(cd.embeddedChatLog);
-                lastSpeakerPerLog.delete(cd.embeddedChatLog);
+                chatUiUpdater.clearLogCache(cd.embeddedChatLog);
             }
         };
 
@@ -952,48 +465,20 @@ if (!senderClass.includes('user') && !senderClass.includes('system-message') && 
 // <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
     // <<< REPLACE THE ENTIRE appendToGroupChatLog FUNCTION WITH THIS >>>
 // <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
-const appendToGroupChatLog = (
-    text: string,
-    senderNameFromArg: string,
-    isUser: boolean,
-    speakerId: string, // <<< This is the ground truth for who is speaking
-    options: ChatMessageOptions = {}
-): HTMLElement | null => {
-    const { domElements: cd, polyglotConnectors: pc } = getDepsLocal();
-    
-    let finalSenderClass = isUser ? 'user' : 'connector group-chat-connector';
-    
-    // Start with the data passed in for THIS specific message
-    let finalChatMessageOptions: ChatMessageOptions = {
-        ...options, 
-        senderName: senderNameFromArg,
-        showSenderName: !isUser,
-        speakerId: speakerId, // Use the passed-in speakerId
-        connectorId: speakerId, // Also use it for the connectorId
-    };
-
+const appendToGroupChatLog = (text: string, senderNameFromArg: string, isUser: boolean, speakerId: string, options: ChatMessageOptions = {}): HTMLElement | null => {
+    const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
+    const finalSenderClass = isUser ? 'user' : 'connector group-chat-connector';
+    let finalOpts: ChatMessageOptions = { ...options, senderName: senderNameFromArg, showSenderName: !isUser, speakerId, connectorId: speakerId, timestamp: options.timestamp || Date.now() };
     if (!isUser) {
-        // Find the speaker based ONLY on the passed-in speakerId
         const speakerConnector = pc?.find(c => c.id === speakerId);
-        
         if (speakerConnector) {
-            finalChatMessageOptions.avatarUrl = speakerConnector.avatarModern;
-            // You can add more specific logic here if needed (e.g., tutor class)
+            finalOpts.avatarUrl = speakerConnector.avatarModern;
         } else {
-            // Fallback if the speaker can't be found (should be rare)
-            console.warn(`UIU.appendToGroupChatLog: Could not find connector data for speakerId: ${speakerId}. Using placeholder avatar.`);
             const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-            const safePlaceholderBase = placeholderBase.endsWith('/') ? placeholderBase : placeholderBase + '/';
-            finalChatMessageOptions.avatarUrl = `${safePlaceholderBase}images/placeholder_avatar.png`;
+            finalOpts.avatarUrl = `${placeholderBase}images/placeholder_avatar.png`;
         }
     }
-    
-    if (!finalChatMessageOptions.timestamp) {
-        finalChatMessageOptions.timestamp = Date.now();
-    }
-
-    // Call the master chat message append function with fully resolved data
-    return appendChatMessage(cd.groupChatLogDiv, text, finalSenderClass, finalChatMessageOptions);
+    return chatUiUpdater.appendChatMessage(cd.groupChatLogDiv, text, finalSenderClass, finalOpts);
 };
         const updateGroupChatHeader = (groupName: string, members: Connector[]): void => {
             const { domElements: cd, polyglotHelpers: ph } = getDepsLocal();
@@ -1042,12 +527,12 @@ const appendToGroupChatLog = (
       
       
         const clearGroupChatInput = (): void => { /* Placeholder */ };
+     
         const clearGroupChatLog = (): void => { 
-            const { domElements: cd } = getDepsLocal();
+            const { domElements: cd, chatUiUpdater } = getDepsLocal();
             if(cd.groupChatLogDiv) {
                 cd.groupChatLogDiv.innerHTML = '';
-                lastDisplayedTimestamps.delete(cd.groupChatLogDiv);
-                lastSpeakerPerLog.delete(cd.groupChatLogDiv);
+                chatUiUpdater.clearLogCache(cd.groupChatLogDiv);
             }
         };
 
@@ -1139,19 +624,47 @@ const appendToGroupChatLog = (
       
       
       
-        return {
-            updateVirtualCallingScreen, appendToVoiceChatLog, showImageInVoiceChat, updateVoiceChatHeader,
-            clearVoiceChatLog, resetVoiceChatInput, updateVoiceChatTapToSpeakButton, updateDirectCallHeader,
-            updateDirectCallStatus, updateDirectCallMicButtonVisual, updateDirectCallSpeakerButtonVisual,
-            showImageInDirectCall, clearDirectCallActivityArea, appendToMessageLogModal, showImageInMessageModal,
-            updateMessageModalHeader, resetMessageModalInput, clearMessageModalLog, appendToEmbeddedChatLog,
-            showImageInEmbeddedChat, updateEmbeddedChatHeader, clearEmbeddedChatInput, toggleEmbeddedSendButton,
-            clearEmbeddedChatLog, appendToGroupChatLog, updateGroupChatHeader, /* <<< setGroupTypingIndicatorText REMOVED */
-            clearGroupChatInput, clearGroupChatLog, populateRecapModal, displaySummaryInView,
-            updateTTSToggleButtonVisual, updateSendPhotoButtonVisibility, showProcessingSpinner,
-            removeProcessingSpinner, appendSystemMessage,
-            scrollEmbeddedChatToBottom, scrollMessageModalToBottom
-        };
+    // =================== REPLACE THE OLD RETURN BLOCK WITH THIS ===================
+    return {
+        updateVirtualCallingScreen, 
+        appendToVoiceChatLog, 
+        showImageInVoiceChat, 
+        updateVoiceChatHeader,
+        clearVoiceChatLog, 
+        resetVoiceChatInput, 
+        updateVoiceChatTapToSpeakButton, 
+        updateDirectCallHeader,
+        updateDirectCallStatus, 
+        updateDirectCallMicButtonVisual, 
+        updateDirectCallSpeakerButtonVisual,
+        showImageInDirectCall, 
+        clearDirectCallActivityArea, 
+        appendToMessageLogModal, 
+        showImageInMessageModal,
+        updateMessageModalHeader, 
+        resetMessageModalInput, 
+        clearMessageModalLog, 
+        appendToEmbeddedChatLog,
+        showImageInEmbeddedChat, 
+        updateEmbeddedChatHeader, 
+        clearEmbeddedChatInput, 
+        toggleEmbeddedSendButton,
+        clearEmbeddedChatLog, 
+        appendToGroupChatLog, 
+        updateGroupChatHeader,
+        clearGroupChatInput, 
+        clearGroupChatLog, 
+        populateRecapModal, 
+        displaySummaryInView,
+        updateTTSToggleButtonVisual, 
+        updateSendPhotoButtonVisibility, 
+        showProcessingSpinner,
+        removeProcessingSpinner, 
+        appendSystemMessage,
+        scrollEmbeddedChatToBottom, 
+        scrollMessageModalToBottom
+    };
+// ============================================================================
 
     } catch (e: any) {
         console.error("CRITICAL ERROR INSIDE UiUpdater IIFE:", e.message, e.stack);
@@ -1196,13 +709,15 @@ const appendToGroupChatLog = (
 
 // ui_updater.ts - at the bottom in the dependency checking section
 
-const dependenciesForUiUpdater = ['domElementsReady', 'polyglotHelpersReady', 'polyglotDataReady', 'groupManagerReady'];
+// REPLACE THESE TWO BLOCKS at the bottom of the file
+const dependenciesForUiUpdater = ['domElementsReady', 'polyglotHelpersReady', 'polyglotDataReady', 'groupManagerReady', 'chatUiUpdaterReady'];
 let uiUpdaterDepsMetCount = 0;
 const uiUpdaterMetDependenciesLog: { [key: string]: boolean } = {
     'domElementsReady': false,
     'polyglotHelpersReady': false,
     'polyglotDataReady': false,
-    'groupManagerReady': false
+    'groupManagerReady': false,
+    'chatUiUpdaterReady': false
 };
 
 function checkAndInitUiUpdater(receivedEventName?: string) {
@@ -1254,6 +769,10 @@ dependenciesForUiUpdater.forEach(eventName => {
         case 'groupManagerReady':
             isReadyNow = !!window.groupManager;
             isVerifiedNow = !!(isReadyNow && typeof window.groupManager?.initialize === 'function');
+            break;
+        case 'chatUiUpdaterReady':
+            isReadyNow = !!window.chatUiUpdater;
+            isVerifiedNow = !!(isReadyNow && typeof window.chatUiUpdater?.initialize === 'function');
             break;
       
         default:

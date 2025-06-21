@@ -1,12 +1,15 @@
 // D:\polyglot_connect\src\js\handlers\reaction_handler.ts
 
-import type { YourDomElements } from '../types/global.d.ts';
+// At the top of the file
+import type { YourDomElements, ConversationManager } from '../types/global.d.ts'; // <<< ADD ConversationManager
 
-console.log('reaction_handler.ts: Script loaded.');
+// ...
 
 interface ReactionHandlerModule {
-    initialize: (domElements: YourDomElements) => void;
+    initialize: (domElements: YourDomElements, conversationManager: ConversationManager) => void; // <<< ADD ConversationManager
 }
+
+console.log('reaction_handler.ts: Script loaded.');
 
 // Create a placeholder on the window object
 window.reactionHandler = {} as ReactionHandlerModule;
@@ -28,159 +31,303 @@ window.reactionHandler = {} as ReactionHandlerModule;
 
     const reactionHandlerMethods = ((): ReactionHandlerModule => {
         
-        const initialize = (domElements: YourDomElements): void => {
-            console.log('ReactionHandler: Initializing listeners...');
+   // REPLACE WITH 
+   
 
-            const chatLogs = [
-                domElements.embeddedChatLog,
-                domElements.messageChatLog,
-                domElements.groupChatLogDiv
-            ].filter(el => el) as HTMLElement[];
+   const initialize = (domElements: YourDomElements, conversationManager: ConversationManager): void => {
+    console.log('ReactionHandler: Initializing listeners...');
 
-            let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-            let activePicker: HTMLElement | null = null;
-            let isLongPress = false;
+    const chatLogs = [
+        domElements.embeddedChatLog,
+        domElements.messageChatLog,
+        domElements.groupChatLogDiv
+    ].filter(el => el) as HTMLElement[];
 
-            const closeActivePicker = () => {
-                if (activePicker) {
-                    activePicker.classList.remove('visible');
-                    activePicker.querySelectorAll('.reaction-btn.selected').forEach(btn => {
-                        btn.classList.remove('selected');
-                    });
-                    activePicker = null;
-                }
-            };
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let activePicker: HTMLElement | null = null;
+    let isLongPress = false;
 
-            const openPickerForBubble = (bubble: HTMLElement) => {
-                const picker = bubble.querySelector<HTMLElement>('.reaction-picker');
-                const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
-                if (!picker || !wrapper) return;
+    // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
+    const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
+        const messageId = messageWrapper.dataset.messageId;
+        const chatLog = messageWrapper.closest('.chat-log-area');
+        const chatContainer = chatLog?.closest<HTMLElement>('[data-current-connector-id]');
+        const connectorId = chatContainer?.dataset.currentConnectorId;
 
-                closeActivePicker(); 
+        if (!messageId || !connectorId) {
+            console.error("ReactionHandler: Cannot save reaction, missing messageId or connectorId.", { messageId, connectorId });
+            return;
+        }
 
-                const currentUserReaction = wrapper.dataset.userReaction;
-                if (currentUserReaction) {
-                    const selectedBtn = picker.querySelector<HTMLButtonElement>(`button[aria-label="React with ${currentUserReaction}"]`);
-                    if (selectedBtn) selectedBtn.classList.add('selected');
-                }
+        // Now this `conversationManager` is correctly scoped from the initialize function's arguments.
+        const convo = conversationManager.getConversationById(connectorId);
+        if (!convo?.messages) {
+            console.error(`ReactionHandler: Could not get conversation for connectorId: ${connectorId}`);
+            return;
+        }
 
-                picker.classList.add('visible');
-                activePicker = picker;
-            };
+        const messageToUpdate = convo.messages.find(msg => msg.id === messageId);
+        if (!messageToUpdate) {
+            console.error(`ReactionHandler: Could not find message with ID ${messageId}.`);
+            return;
+        }
 
-            // Global click listener to close the picker when clicking away
-            addSafeListener(document, 'click', (e: Event) => {
-                const target = e.target as HTMLElement;
-                if (activePicker && !target.closest('.reaction-picker') && !target.closest('.message-reactions')) {
-                    closeActivePicker();
-                }
+        if (!messageToUpdate.reactions) {
+            messageToUpdate.reactions = {};
+        }
+
+        // Remove any old reaction from the player
+        Object.keys(messageToUpdate.reactions).forEach(key => {
+            const filtered = messageToUpdate.reactions![key].filter(uid => uid !== 'user_player');
+            if (filtered.length > 0) {
+                messageToUpdate.reactions![key] = filtered;
+            } else {
+                delete messageToUpdate.reactions![key];
+            }
+        });
+
+        // Add the new reaction if provided
+        if (newEmoji) {
+            if (!messageToUpdate.reactions[newEmoji]) {
+                messageToUpdate.reactions[newEmoji] = [];
+            }
+            messageToUpdate.reactions[newEmoji].push('user_player');
+        }
+
+        // Trigger the save operation through the conversation manager
+        if (conversationManager.saveAllConversationsToStorage) {
+            conversationManager.saveAllConversationsToStorage();
+             console.log(`Reaction saved for msg ${messageId}:`, messageToUpdate.reactions);
+        } else {
+             console.warn("ReactionHandler: conversationManager.saveAllConversationsToStorage is not available.")
+        }
+    };
+    // ^^^^^^ END OF MOVED FUNCTION ^^^^^^
+
+    const closeActivePicker = () => {
+        if (activePicker) {
+            activePicker.classList.remove('visible');
+            activePicker.querySelectorAll('.reaction-btn.selected').forEach(btn => {
+                btn.classList.remove('selected');
             });
+            activePicker = null;
+        }
+    };
 
-            chatLogs.forEach(log => {
-                // --- Logic to SHOW the picker (Hover on Desktop) ---
-                addSafeListener(log, 'mouseover', (e: Event) => {
-                    const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-                    if (!bubble) return;
-                    
-                    const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
-                    
-                    // BUG FIX: Only show picker on hover IF the user has NOT already reacted.
-                    if (wrapper && wrapper.dataset.userReaction) {
-                        return; // Do nothing on hover if a reaction is set.
+    const openPickerForBubble = (bubble: HTMLElement) => {
+        const picker = bubble.querySelector<HTMLElement>('.reaction-picker');
+        const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+        if (!picker || !wrapper) return;
+
+        closeActivePicker(); 
+
+        const currentUserReaction = wrapper.dataset.userReaction;
+        if (currentUserReaction) {
+            const selectedBtn = picker.querySelector<HTMLButtonElement>(`button[aria-label="React with ${currentUserReaction}"]`);
+            if (selectedBtn) selectedBtn.classList.add('selected');
+        }
+
+        picker.classList.add('visible');
+        activePicker = picker;
+    };
+
+    // Global click listener to close the picker when clicking away
+    addSafeListener(document, 'click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (activePicker && !target.closest('.reaction-picker') && !target.closest('.message-reactions')) {
+            closeActivePicker();
+        }
+    });
+
+ 
+    chatLogs.forEach(log => {
+
+        // --- Logic to SHOW the picker on Hover (Desktop) ---
+        addSafeListener(log, 'mouseover', (e: Event) => {
+            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+            if (!bubble) return;
+            if (activePicker) return; 
+            openPickerForBubble(bubble);
+        });
+
+        // --- Logic to HIDE the picker when the mouse leaves the bubble/picker area ---
+        addSafeListener(log, 'mouseout', (e: Event) => {
+            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+            if (bubble && activePicker) {
+                setTimeout(() => {
+                    if (activePicker && !activePicker.matches(':hover')) {
+                        closeActivePicker();
                     }
+                }, 300);
+            }
+        });
+        
+        // --- Logic to SHOW the picker (Long Press on Mobile) ---
+        addSafeListener(log, 'touchstart', (e: Event) => {
+            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+            if (!bubble) return;
+            
+            isLongPress = false;
+            longPressTimer = setTimeout(() => {
+                e.preventDefault();
+                isLongPress = true;
+                openPickerForBubble(bubble);
+                longPressTimer = null;
+            }, 500);
+        }, { passive: false });
 
+        const cancelLongPress = () => {
+            if (longPressTimer) clearTimeout(longPressTimer);
+            longPressTimer = null;
+        };
+        
+        addSafeListener(log, 'touchend', cancelLongPress);
+        addSafeListener(log, 'touchmove', cancelLongPress);
+        // =======================================================================
+           
+           
+           
+             // =================== REPLACE THE ENTIRE 'click' LISTENER WITH THIS FINAL VERSION ===================
+             addSafeListener(log, 'click', (e: Event) => {
+                if (isLongPress) {
+                    e.preventDefault();
+                    return;
+                }
+                const target = e.target as HTMLElement;
+
+                // CASE 1: Clicked on a displayed reaction badge (e.g., "👍 1").
+                const reactionBadge = target.closest<HTMLElement>('.reaction-item');
+                if (reactionBadge) {
+                    const bubble = reactionBadge.closest<HTMLElement>('.chat-message-wrapper')?.querySelector<HTMLElement>('.chat-message-ui');
+                    if (!bubble) return;
                     const picker = bubble.querySelector<HTMLElement>('.reaction-picker');
-                    if (picker && !activePicker) {
-                       openPickerForBubble(bubble);
-                    }
-                });
-
-                // --- Logic to HIDE the picker (when mouse leaves) ---
-                addSafeListener(log, 'mouseout', (e: Event) => {
-                    const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-                    if (bubble && activePicker) {
-                        setTimeout(() => {
-                            if (activePicker && !activePicker.matches(':hover')) {
-                                closeActivePicker();
-                            }
-                        }, 300);
-                    }
-                });
-                
-                // --- Logic to SHOW the picker (Long Press on Mobile) ---
-                addSafeListener(log, 'touchstart', (e: Event) => {
-                    const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-                    if (!bubble) return;
-                    
-                    isLongPress = false;
-                    longPressTimer = setTimeout(() => {
-                        e.preventDefault();
-                        isLongPress = true;
+                    if (picker && activePicker === picker) {
+                        closeActivePicker();
+                    } else {
                         openPickerForBubble(bubble);
-                        longPressTimer = null;
-                    }, 500);
-                }, { passive: false });
-
-                const cancelLongPress = () => {
-                    if (longPressTimer) clearTimeout(longPressTimer);
-                    longPressTimer = null;
-                };
-                
-                addSafeListener(log, 'touchend', cancelLongPress);
-                addSafeListener(log, 'touchmove', cancelLongPress);
-
-                // --- MASTER CLICK HANDLER ---
-                addSafeListener(log, 'click', (e: Event) => {
-                    if (isLongPress) {
-                        e.preventDefault();
-                        return;
                     }
-                    const target = e.target as HTMLElement;
-                    
-                    // CASE 1: Clicked on a displayed reaction to re-open picker
-                    const reactionsContainer = target.closest<HTMLElement>('.message-reactions');
-                    if (reactionsContainer) {
-                        const bubble = reactionsContainer.closest<HTMLElement>('.chat-message-wrapper')?.querySelector<HTMLElement>('.chat-message-ui');
-                        if (bubble) openPickerForBubble(bubble);
-                        return;
-                    }
+                    e.stopPropagation();
+                    return;
+                }
 
-                    // CASE 2: Clicked a button inside the picker
-                    const reactionBtn = target.closest<HTMLElement>('.reaction-btn');
-                    if (reactionBtn && activePicker) {
-                        const wrapper = reactionBtn.closest<HTMLElement>('.chat-message-wrapper');
+                // CASE 2: Clicked a button inside the picker.
+              // =================== REPLACE CASE 2 WITH THIS CORRECTED VERSION ===================
+// CASE 2: Clicked a button inside the picker.
+// =================== REPLACE CASE 2 WITH THIS CORRECTED VERSION ===================
+                    // CASE 2: Clicked on a button inside the picker itself.
+                    const pickerButton = target.closest<HTMLElement>('.reaction-btn');
+                    if (pickerButton && activePicker) {
+                        const wrapper = pickerButton.closest<HTMLElement>('.chat-message-wrapper');
                         const reactionsDisplay = wrapper?.querySelector<HTMLElement>('.message-reactions');
-                        if (!wrapper || !reactionsDisplay) return;
-
-                        const emoji = reactionBtn.textContent || '';
-                        const currentReaction = wrapper.dataset.userReaction;
-
-                        // Remove existing reaction display
-                        const existingEl = reactionsDisplay.querySelector('.reaction-item');
-                        if (existingEl) existingEl.remove();
                         
-                        if (currentReaction === emoji) {
-                            delete wrapper.dataset.userReaction;
-                        } else {
-                            wrapper.dataset.userReaction = emoji;
-                            const reactionEl = document.createElement('button');
-                            reactionEl.className = 'reaction-item';
-                            reactionEl.type = 'button';
-                            reactionEl.innerHTML = `${emoji} <span class="reaction-count">1</span>`;
-                            reactionsDisplay.appendChild(reactionEl);
+                        if (wrapper && reactionsDisplay) {
+                           const emoji = pickerButton.textContent || '';
+                           const currentReaction = wrapper.dataset.userReaction;
+                    
+                           const existingEl = reactionsDisplay.querySelector('.reaction-item');
+                           if (existingEl) existingEl.remove();
+                    
+                           if (currentReaction === emoji) {
+                               delete wrapper.dataset.userReaction;
+                               updateReactionInData(wrapper, null);
+                           } else {
+                               wrapper.dataset.userReaction = emoji;
+                               const newReactionEl = document.createElement('button');
+                               newReactionEl.className = 'reaction-item';
+                               newReactionEl.type = 'button';
+                               newReactionEl.innerHTML = `${emoji} <span class="reaction-count">1</span>`;
+                               reactionsDisplay.appendChild(newReactionEl);
+                               updateReactionInData(wrapper, emoji);
+                           }
                         }
                         
+                        // --- THIS IS THE FIX ---
+                        // After the user makes a selection, always close the picker.
                         closeActivePicker();
+                        // --- END OF FIX ---
+                        
                         e.stopPropagation();
                         return;
                     }
+// ==============================================================================
+// ==============================================================================
 
-                    // CASE 3: A simple click on a message bubble
-                    const bubble = target.closest<HTMLElement>('.chat-message-ui');
-                    if (bubble && activePicker) {
-                        closeActivePicker();
+                // CASE 3: Clicked anywhere else.
+                // If it's on a bubble, open its picker. If not, close any active picker.
+                const bubble = target.closest<HTMLElement>('.chat-message-ui');
+                if (bubble) {
+                    const isMobile = window.innerWidth <= 768;
+
+                    // --- MOBILE: TAP-TO-REVEAL TIMESTAMP ---
+                    if (isMobile) {
+                        const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+                        if (wrapper) {
+                            // Find any temporary timestamp that might already be visible and remove it.
+                            const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+                            const parentOfOldTimestamp = existingTempTimestamp?.parentElement;
+                            if (existingTempTimestamp) {
+                                existingTempTimestamp.remove();
+                            }
+
+                            // If the user tapped the bubble that *was* showing the timestamp, we're done. Just hide it.
+                            if (parentOfOldTimestamp === wrapper) {
+                                e.stopPropagation();
+                                return;
+                            }
+
+                            // Create a new, temporary timestamp divider.
+                            const timestamp = wrapper.title; // The full timestamp is stored in the 'title' attribute
+                            if (timestamp && window.polyglotHelpers) {
+                                const date = new Date(timestamp);
+                                const now = new Date();
+                                let formattedText = '';
+                                
+                                const timePart = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                                
+                                // Use logic similar to the main UI updater for consistent formatting.
+                                if (date.toDateString() === now.toDateString()) {
+                                    formattedText = `Today, ${timePart}`;
+                                } else {
+                                    const yesterday = new Date();
+                                    yesterday.setDate(now.getDate() - 1);
+                                    if (date.toDateString() === yesterday.toDateString()) {
+                                        formattedText = `Yesterday, ${timePart}`;
+                                    } else {
+                                        formattedText = date.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ` at ${timePart}`;
+                                    }
+                                }
+
+                                const timestampDiv = document.createElement('div');
+                                timestampDiv.id = 'temp-chat-timestamp'; // Give it a unique ID for easy removal
+                                timestampDiv.className = 'chat-session-timestamp'; // Use the same class as other dividers
+                                timestampDiv.textContent = formattedText;
+                                
+                                // Insert the new timestamp directly before the clicked message's wrapper.
+                                wrapper.before(timestampDiv);
+                            }
+                            
+                            // CRITICAL: Stop the event here so it doesn't also try to open the reaction picker.
+                            e.stopPropagation();
+                            return;
+                        }
                     }
-                });
+                    
+                    // --- DESKTOP: OPEN REACTION PICKER (only runs if not mobile) ---
+                    openPickerForBubble(bubble);
+
+                } else if (activePicker) {
+                    // Clicked on empty space, close any active picker and remove temp timestamp.
+                    const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+                    if (existingTempTimestamp) existingTempTimestamp.remove();
+                    closeActivePicker();
+                } else {
+                    // Also handle clicks on empty space when picker is not active
+                    const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+                    if (existingTempTimestamp) existingTempTimestamp.remove();
+                }
+            });
+// ============================================================================================
+// ===================================================================================
             });
         };
 

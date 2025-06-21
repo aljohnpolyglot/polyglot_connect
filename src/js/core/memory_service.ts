@@ -488,14 +488,15 @@ async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, f
         const userPromotions: { index: number, type: 'episodic' | 'fragile' }[] = [];
         userMemory.core.forEach(fact => recalledFacts.push(`// USER_CORE // confidence=1.0\n[persona_all] user.${fact.key} = "${fact.value}"`));
         userMemory.episodic.forEach((fact, index) => {
-            if ((fact.source_context === 'group' || fact.source_context === 'live_call' || fact.source_persona_id === personaId) && processAndReinforce(fact, userMemory, 'episodic', USER_EPISODIC_HALFLIFE_HOURS, 'user')) {
-               
-               
+            // A persona can only recall a fact if it was the direct recipient in a 1-on-1/live_call,
+            // OR if the fact was learned in a group chat (which is considered public knowledge among participants).
+            if ((fact.source_persona_id === personaId || fact.source_context === 'group') && processAndReinforce(fact, userMemory, 'episodic', USER_EPISODIC_HALFLIFE_HOURS, 'user')) {
                 userPromotions.push({ index, type: 'episodic' });
             }
         });
         userMemory.fragile.forEach((fact, index) => {
-            if ((fact.source_context === 'group' || fact.source_context === 'live_call' || fact.source_persona_id === personaId) && processAndReinforce(fact, userMemory, 'fragile', USER_FRAGILE_HALFLIFE_HOURS, 'user')) {
+            // Apply the exact same strict logic here.
+            if ((fact.source_persona_id === personaId || fact.source_context === 'group') && processAndReinforce(fact, userMemory, 'fragile', USER_FRAGILE_HALFLIFE_HOURS, 'user')) {
                 userPromotions.push({ index, type: 'fragile' });
             }
         });

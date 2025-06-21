@@ -55,7 +55,8 @@ function initializeActualShellController(): void {
             sessionHistoryManager: window.sessionHistoryManager as import('../types/global').SessionHistoryManager | undefined,
             chatActiveTargetManager: window.chatActiveTargetManager as import('../types/global').ChatActiveTargetManager | undefined,
             sidebarPanelManager: window.sidebarPanelManager as import('../types/global').SidebarPanelManagerModule | undefined,
-            filterController: window.filterController as import('../types/global').FilterController | undefined
+            filterController: window.filterController as import('../types/global').FilterController | undefined,
+            personaModalManager: window.personaModalManager as import('../types/global').PersonaModalManager | undefined
         });
         let currentActiveTab = 'home'; // This was also in view_manager. Consider consolidating.
 
@@ -89,7 +90,7 @@ function initializeActualShellController(): void {
             console.log("ui/shell_controller.ts: Shell Initialized and initializeAppShell COMPLETED.");
         }
         function setupShellEventListeners(): void {
-            const { domElements, modalHandler, groupManager, chatManager } = getDeps();
+            const { domElements, modalHandler, groupManager, chatManager, personaModalManager } = getDeps();
 
             if (!domElements || !modalHandler) {
                 console.warn("ShellController: Missing domElements or modalHandler for event listeners.");
@@ -115,6 +116,42 @@ function initializeActualShellController(): void {
                     }
                 });
             }
+
+// =================== ADD THIS NEW, CORRECTED BLOCK ===================
+
+        // NEW: Make chat header avatars clickable to open the persona modal.
+  
+        if (domElements.embeddedChatHeaderAvatar) {
+            // Add the class that provides the pointer cursor and hover effect.
+            domElements.embeddedChatHeaderAvatar.classList.add('clickable-chat-avatar');
+
+            domElements.embeddedChatHeaderAvatar.addEventListener('click', () => {
+                console.log("Embedded chat header AVATAR clicked.");
+                const targetId = chatOrchestrator?.getCurrentEmbeddedChatTargetId?.();
+                if (targetId) {
+                    const connector = (window.polyglotConnectors || []).find(c => c.id === targetId);
+                    if (connector) {
+                        personaModalManager?.openDetailedPersonaModal(connector);
+                    }
+                }
+            });
+        }
+
+        // 2. For the Message Modal Header Avatar
+        if (domElements.messageModalHeaderAvatar) {
+            // Add the class that provides the pointer cursor and hover effect.
+            domElements.messageModalHeaderAvatar.classList.add('clickable-chat-avatar');
+            
+            domElements.messageModalHeaderAvatar.addEventListener('click', () => {
+                console.log("Message modal header AVATAR clicked.");
+                const connector = chatOrchestrator?.getCurrentModalMessageTarget?.();
+                if (connector) {
+                    personaModalManager?.openDetailedPersonaModal(connector);
+                }
+            });
+        }
+
+// =====================================================================
             // Add this inside setupShellEventListeners
    // AFTER
 if (domElements.connectorHubGrid) {
@@ -138,7 +175,9 @@ if (domElements.connectorHubGrid) {
             e.preventDefault();
             console.log(`View Chat clicked for ${connector.profileName}`);
             if (window.chatSessionHandler?.openConversationInEmbeddedView) {
-                switchView('messages');
+                if (window.tabManager?.switchToTab) {
+                    window.tabManager.switchToTab('messages');
+                }
                 window.chatSessionHandler.openConversationInEmbeddedView(connector);
             }
         }
@@ -166,21 +205,7 @@ if (domElements.connectorHubGrid) {
 
        // Add this new block
             // --- NEW: Event Listeners for Friends/Groups Sub-Tabs ---
-            const myFriendsTabBtn = document.getElementById('my-friends-tab-btn');
-            const discoverFriendsTabBtn = document.getElementById('discover-friends-tab-btn');
-            const myGroupsTabBtn = document.getElementById('my-groups-tab-btn');
-            const discoverGroupsTabBtn = document.getElementById('discover-groups-tab-btn');
-
-            if (myFriendsTabBtn && discoverFriendsTabBtn) {
-                myFriendsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('friends', 'my-friends'));
-                discoverFriendsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('friends', 'discover'));
-            }
-
-            if (myGroupsTabBtn && discoverGroupsTabBtn) {
-                myGroupsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('groups', 'my-groups'));
-                discoverGroupsTabBtn.addEventListener('click', () => handleSubTabViewSwitch('groups', 'discover'));
-            }
-
+      
     // ===================================================================
     // ==   ADD THIS ENTIRE BLOCK FOR SIDEBAR SEARCH LISTENERS          ==
     // ===================================================================
@@ -248,6 +273,8 @@ if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessio
                     (domElements.embeddedMessageImageUpload as HTMLInputElement).click();
                 });
             }
+
+            
         }
 
 
@@ -294,14 +321,18 @@ function setupMasterViewCoordinator(initialTab: string) {
         if (tabName === 'home') {
             populateHomepageTips();
         } else if (tabName === 'friends') {
-            filterController?.applyFindConnectorsFilters?.();
+            // This tells the filter controller to reset its state to the default "Discover" view.
+            // This will, in turn, trigger applyFindConnectorsFilters with the correct state.
+            console.log("[Shell Coordinator] Friends tab activated. Resetting filters to default view.");
+            filterController?.resetToDefaultFriendsView(); 
         } else if (tabName === 'groups') {
-            chatOrchestrator?.handleGroupsTabActive?.(); // <<< THIS IS THE FIX
+            // The groups flow is already correct.
+            chatOrchestrator?.handleGroupsTabActive();
         } else if (tabName === 'messages') {
-            chatManager?.handleMessagesTabActive?.();
+            chatManager?.handleMessagesTabActive();
         } else if (tabName === 'summary') {
-            sessionHistoryManager?.updateSummaryListUI?.();
-            uiUpdater?.displaySummaryInView?.(null);
+            sessionHistoryManager?.updateSummaryListUI();
+            uiUpdater?.displaySummaryInView(null);
         }
     };
 
@@ -318,29 +349,6 @@ function setupMasterViewCoordinator(initialTab: string) {
     handleViewChange(initialTab);
 }
 
-function handleSubTabViewSwitch(mainView: 'friends' | 'groups', subView: 'my-friends' | 'discover' | 'my-groups') {
-    console.log(`ShellController: Handling sub-tab switch for ${mainView}, new sub-view: ${subView}`);
-
-    if (mainView === 'friends') {
-        const myFriendsBtn = document.getElementById('my-friends-tab-btn');
-        const discoverFriendsBtn = document.getElementById('discover-friends-tab-btn');
-        myFriendsBtn?.classList.toggle('active', subView === 'my-friends');
-        discoverFriendsBtn?.classList.toggle('active', subView === 'discover');
-
-        // Call the main filter/render function, which should now be smart enough
-        // to check which sub-tab is active.
-        applyFindFilters();
-
-    } else if (mainView === 'groups') {
-        const myGroupsBtn = document.getElementById('my-groups-tab-btn');
-        const discoverGroupsBtn = document.getElementById('discover-groups-tab-btn');
-        myGroupsBtn?.classList.toggle('active', subView === 'my-groups');
-        discoverGroupsBtn?.classList.toggle('active', subView === 'discover');
-
-        // Call the main filter/render function for groups
-        applyGroupFilters();
-    }
-}
 
 
        // --- START OF MODIFICATION for populateHomepageTips (SC.DEBUG.3) ---
@@ -643,6 +651,7 @@ function showEmbeddedChat(connector: Connector): void {
             hideEmbeddedChat,
             showGroupChatInterface,
             hideGroupChatInterface,
+         
         };
     })(); // End of IIFE
 

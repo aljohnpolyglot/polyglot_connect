@@ -21,9 +21,10 @@ console.log('filter_controller.ts: Script loaded, waiting for core dependencies.
 
 interface FilterControllerModule {
     initializeFilters: () => void;
-    populateFilterDropdowns: () => void; // If this needs to be public
+    populateFilterDropdowns: () => void;
     applyFindConnectorsFilters: () => void;
-    applyGroupSearchFilters: () => void; // Renamed from applyGroupFilters in original JS
+    applyGroupSearchFilters: () => void;
+    resetToDefaultFriendsView: () => void; // <<< ADD THIS LINE
 }
 
 function initializeActualFilterController(): void {
@@ -78,95 +79,83 @@ function initializeActualFilterController(): void {
         let activeGroupView: 'my-groups' | 'discover' = 'my-groups'; // Default to 'my-groups'
 
         let activeFriendsView: 'my-friends' | 'discover' = 'my-friends'; // Default to 'my-friends'
+
         
-        function initializeFilters(): void {
-            console.log("filterController.ts: initializeFilters() - STARTING.");
-            populateFilterDropdowns(); // Call internal function
-            setupFilterEventListeners();
 
 
-            const { domElements } = getDeps();
-        if (domElements.filterRoleSelect) {
-            domElements.filterRoleSelect.disabled = true; // Disable initially
-            // domElements.filterRoleSelect.value = 'all'; // Optionally ensure it's set to 'all'
-        }
-        if (domElements.filterConnectorNameInput && polyglotHelpers?.debounce) { // Ensure polyglotHelpers is in getDeps()
-            domElements.filterConnectorNameInput.addEventListener('input', polyglotHelpers.debounce(applyFindConnectorsFilters, 500));
-        }
+// =================== ADD THIS NEW HELPER FUNCTION ===================
+/**
+ * Updates the visibility and text of a placeholder message for a list.
+ * @param placeholderEl The HTMLElement for the placeholder.
+ * @param listLength The number of items in the list after filtering.
+ * @param baseEmptyMessage The message to show when the list is empty and no filters are active.
+ * @param filteredEmptyMessage The message to show when the list is empty because of active filters.
+ * @param areFiltersActive A boolean indicating if any filters are currently applied.
+ */
+function updateEmptyMessage(
+    placeholderEl: HTMLElement | null | undefined, 
+    listLength: number, 
+    baseEmptyMessage: string, 
+    filteredEmptyMessage: string,
+    areFiltersActive: boolean = true // Default to true for simplicity in 'my-friends'
+) {
+    if (!placeholderEl) return;
 
-     
-            console.log("filterController.ts: initializeFilters() - FINISHED.");
-        }
+    if (listLength > 0) {
+        placeholderEl.style.display = 'none';
+    } else {
+        placeholderEl.style.display = 'block'; // Or 'flex' depending on your styling
+        // Choose the message based on whether filters were used to get to the empty state.
+        placeholderEl.textContent = areFiltersActive ? filteredEmptyMessage : baseEmptyMessage;
+    }
+}
+// =================== REPLACE THE initializeFilters FUNCTION ===================
+// =================== REPLACE initializeFilters ===================
+function initializeFilters(): void {
+    console.log("FilterController: Initializing filters and listeners.");
+    populateFilterDropdowns();
+    setupFilterEventListeners();
 
-        function setupFilterEventListeners(): void {
-            // console.log("filterController.ts: setupFilterEventListeners() - START.");
-            const { domElements } = getDeps(); // domElements is checked by outer function
+    // Set the initial UI state for the default "My Friends" view
+    const { domElements } = getDeps();
+    if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = true;
+    if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = true;
+    if (domElements.filterConnectorNameInput) domElements.filterConnectorNameInput.disabled = false;
+}
+// =================================================================
+// ============================================================================
 
+      // =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
 
+// ===================================================================================
+// ============================================================================
+// =================== REPLACE THE ENTIRE setupFilterEventListeners FUNCTION ===================
+// =================== REPLACE setupFilterEventListeners ===================
+function setupFilterEventListeners(): void {
+    const { domElements, polyglotHelpers } = getDeps();
 
+    // --- SUB-TAB LISTENERS ---
+    document.getElementById('my-friends-tab-btn')?.addEventListener('click', () => switchFriendsViewTab('my-friends'));
+    document.getElementById('discover-friends-tab-btn')?.addEventListener('click', () => switchFriendsViewTab('discover'));
+    document.getElementById('my-groups-tab-btn')?.addEventListener('click', () => switchGroupViewTab('my-groups'));
+    document.getElementById('discover-groups-tab-btn')?.addEventListener('click', () => switchGroupViewTab('discover'));
 
-            if (domElements.applyFiltersBtn) {
-                domElements.applyFiltersBtn.addEventListener('click', applyFindConnectorsFilters);
-            } else { console.warn("filterController.ts: 'applyFiltersBtn' not found."); }
+    // --- LIVE FILTERING LISTENERS ---
+    const debouncedApplyFriends = polyglotHelpers.debounce(applyFindConnectorsFilters, 400);
+    const debouncedApplyGroups = polyglotHelpers.debounce(applyGroupSearchFilters, 400);
 
-            if (domElements.applyGroupFiltersBtn) {
-                domElements.applyGroupFiltersBtn.addEventListener('click', applyGroupSearchFilters);
-            } else { console.warn("filterController.ts: 'applyGroupFiltersBtn' not found."); }
-            // console.log("filterController.ts: setupFilterEventListeners() - FINISHED.");
-            if (domElements.applyFiltersBtn) {
-                console.log("FC_DEBUG: Attaching click listener to applyFiltersBtn"); // ADD THIS
-                domElements.applyFiltersBtn.addEventListener('click', applyFindConnectorsFilters);
-            } else { console.warn("filterController.ts: 'applyFiltersBtn' not found."); }
-
-            if (domElements.filterLanguageSelect && domElements.filterRoleSelect) {
-                domElements.filterLanguageSelect.addEventListener('change', () => {
-                    const selectedLang = domElements.filterLanguageSelect!.value;
-                    const roleSelect = domElements.filterRoleSelect!; // Assert non-null as we checked
+    // Friends Filters
+    domElements.filterConnectorNameInput?.addEventListener('input', debouncedApplyFriends);
+    domElements.filterLanguageSelect?.addEventListener('change', debouncedApplyFriends);
+    domElements.filterRoleSelect?.addEventListener('change', debouncedApplyFriends);
     
-                    if (selectedLang && selectedLang !== 'all') {
-                        roleSelect.disabled = false; // Enable role filter
-                        console.log("FC: Role filter ENABLED because language selected:", selectedLang);
-                    } else {
-                        roleSelect.disabled = true;  // Disable role filter
-                        roleSelect.value = 'all';   // Reset role to "Any Role"
-                        console.log("FC: Role filter DISABLED because language is 'all'. Role reset.");
-                        // Optionally, you might want to automatically re-apply filters here if desired:
-                        // applyFindConnectorsFilters();
-                    }
-                });
-            } else {
-                if (!domElements.filterLanguageSelect) console.warn("FC ListenerSetup: filterLanguageSelect not found.");
-                if (!domElements.filterRoleSelect) console.warn("FC ListenerSetup: filterRoleSelect not found.");
-            }
-            if (domElements.filterGroupNameInput && polyglotHelpers?.debounce) {
-                console.log("FC_DEBUG: Attaching debounced 'input' listener to filterGroupNameInput");
-                domElements.filterGroupNameInput.addEventListener('input', polyglotHelpers.debounce(applyGroupSearchFilters, 500));
-            } else {
-                if (!domElements.filterGroupNameInput) console.warn("FC ListenerSetup: filterGroupNameInput not found.");
-                if (!polyglotHelpers?.debounce) console.warn("FC ListenerSetup: polyglotHelpers.debounce not available for group name search.");
-            }
-  // ===== START: ADD THIS BLOCK =====
-  const myGroupsBtn = document.getElementById('my-groups-tab-btn');
-  const discoverBtn = document.getElementById('discover-groups-tab-btn');
-
-  if (myGroupsBtn) {
-      myGroupsBtn.addEventListener('click', () => switchGroupViewTab('my-groups'));
-  }
-  if (discoverBtn) {
-      discoverBtn.addEventListener('click', () => switchGroupViewTab('discover'));
-  }
-  // AFTER (add this part)
-const myFriendsBtn = document.getElementById('my-friends-tab-btn');
-const discoverFriendsBtn = document.getElementById('discover-friends-tab-btn');
-
-if (myFriendsBtn) {
-    myFriendsBtn.addEventListener('click', () => switchFriendsViewTab('my-friends'));
+    // Groups Filters
+    domElements.filterGroupNameInput?.addEventListener('input', debouncedApplyGroups);
+    domElements.filterGroupLanguageSelect?.addEventListener('change', debouncedApplyGroups);
+    domElements.filterGroupCategorySelect?.addEventListener('change', debouncedApplyGroups);
 }
-if (discoverFriendsBtn) {
-    discoverFriendsBtn.addEventListener('click', () => switchFriendsViewTab('discover'));
-}
-        }
-
+// ==================================================================
+// =======================================================================================
 
         function switchGroupViewTab(targetView: 'my-groups' | 'discover') {
             if (activeGroupView === targetView) return; // Do nothing if already on the active tab
@@ -433,100 +422,99 @@ function filterAndDisplayConnectors(): void {
 } // End of filterAndDisplayConnectors
     // AFTER (The new, tab-aware function)
 
+// =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
 
+// =================== REPLACE THE ENTIRE applyFindConnectorsFilters FUNCTION ===================
+// =================== REPLACE THE applyFindConnectorsFilters FUNCTION ===================
 
+// =================== REPLACE applyFindConnectorsFilters ===================
 function applyFindConnectorsFilters(): void {
-    console.log(`FC_DEBUG: applyFindConnectorsFilters() triggered for view: ${activeFriendsView}`);
-    const { cardRenderer, domElements, activityManager } = getDeps();
-    
-    // Safety check for critical components
-    if (!cardRenderer || !domElements || !activityManager) {
-        console.error("FC: applyFindConnectorsFilters missing critical dependencies.");
+    console.log(`%c[FC] applyFindConnectorsFilters START. Active Friends View: '${activeFriendsView}'`, 'color: #ffc107; font-weight: bold;');
+    const { cardRenderer, domElements, polyglotHelpers } = getDeps();
+    const allConnectors = window.polyglotConnectors || [];
+
+    if (!cardRenderer || !domElements || !polyglotHelpers) {
+        console.error("FC: applyFindConnectorsFilters missing critical deps.");
         return;
     }
 
-    // --- Logic for "My Friends" Tab ---
+    const langFilter = domElements.filterLanguageSelect?.value || 'all';
+    const roleFilter = domElements.filterRoleSelect?.value || 'all';
+    const nameSearch = domElements.filterConnectorNameInput?.value.trim() || "";
+    const normalizedNameSearch = polyglotHelpers.normalizeText(nameSearch);
+
+    // --- UI State Management (Enable/Disable inputs) ---
+    // The filters should ALWAYS be enabled, except for the role filter which depends on the language filter.
+    if (domElements.filterConnectorNameInput) domElements.filterConnectorNameInput.disabled = false;
+    if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = false;
+    if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = (langFilter === 'all');
+    console.log(`[FC] UI State Updated: Name/Lang enabled. Role enabled: ${!domElements.filterRoleSelect?.disabled}`);
+
+    // --- Data Filtering Logic ---
+    let sourceConnectors: Connector[];
+    let emptyMessage: string;
+    let filteredEmptyMessage: string;
+
     if (activeFriendsView === 'my-friends') {
-        // Disable sidebar filters because they don't apply here
-        if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = true;
-        if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = true;
+        sourceConnectors = (window.conversationManager?.getActiveConversations() || [])
+            .filter(c => !c.isGroup)
+            .map(c => c.connector);
+        emptyMessage = 'You have no friends yet. Find some in the Discover tab!';
+        filteredEmptyMessage = 'None of your friends match your filters.';
+    } else { // 'discover' view
+        const friendIds = new Set((window.conversationManager?.getActiveConversations() || []).map(c => c.connector.id));
+        sourceConnectors = allConnectors.filter(c => !friendIds.has(c.id));
+        emptyMessage = 'No new people to discover right now.';
+        filteredEmptyMessage = 'No one matches your filters. Try different criteria!';
+    }
 
-        const conversationManager = window.conversationManager;
-        if (!conversationManager) {
-            console.error("FC: conversationManager not available for 'my-friends' view.");
-            return;
-        }
-        
-        // Get friends from active chats
-        const friendConversations = conversationManager.getActiveConversations();
-        let friends = friendConversations.filter(c => !c.isGroup).map(c => c.connector);
-        
-        // Apply the name filter
-        const nameSearchTerm = domElements.filterConnectorNameInput?.value.trim().toLowerCase() || "";
-        if (nameSearchTerm) {
-            friends = friends.filter(friend =>
-                (friend.name?.toLowerCase().includes(nameSearchTerm)) ||
-                (friend.profileName?.toLowerCase().includes(nameSearchTerm))
-            );
-        }
-        
-        // Render the cards for friends
-        cardRenderer.renderCards(friends, 'my-friends');
+    let filteredResult = [...sourceConnectors];
 
-        // Update the empty message
-        if (domElements.connectorHubGrid) {
-            const loadingMsgEl = domElements.connectorHubGrid.querySelector('.loading-message') as HTMLElement | null;
-            if (loadingMsgEl) {
-                loadingMsgEl.style.display = friends.length > 0 ? 'none' : 'block';
-                loadingMsgEl.textContent = 'You have no active chats. Find someone in the Discover tab!';
-            }
-        }
-    } 
-    // --- Logic for "Discover" Tab ---
-    else {
-        // 1. Enable the sidebar filters for the Discover view
-        if (domElements.filterLanguageSelect) domElements.filterLanguageSelect.disabled = false;
-        if (domElements.filterRoleSelect) domElements.filterRoleSelect.disabled = false;
+    const hasActiveFilters = langFilter !== 'all' || roleFilter !== 'all' || nameSearch !== "";
 
-        // 2. Get the list of friends to EXCLUDE them from the Discover view
-        const conversationManager = window.conversationManager;
-        if (!conversationManager) {
-            console.error("FC: conversationManager not available for 'discover' view.");
-            cardRenderer.renderCards([], 'discover'); // Render an empty list on error
-            return;
-        }
-        const friendConnectorIds = new Set(
-            conversationManager.getActiveConversations().map(convo => convo.connector.id)
+    // Apply filters sequentially
+    if (nameSearch) {
+        filteredResult = filteredResult.filter(c => polyglotHelpers.normalizeText(c.profileName).includes(normalizedNameSearch));
+    }
+    if (langFilter !== 'all') {
+        filteredResult = filteredResult.filter(c =>
+            c.nativeLanguages?.some(l => l.lang === langFilter) ||
+            c.practiceLanguages?.some(l => l.lang === langFilter)
         );
+    }
+    if (langFilter !== 'all' && roleFilter !== 'all') {
+        filteredResult = filteredResult.filter(c => c.languageRoles?.[langFilter]?.includes(roleFilter));
+    }
 
-        // 3. Start with all connectors and remove the friends
-        let discoverableConnectors = (window.polyglotConnectors || []).filter(c => !friendConnectorIds.has(c.id));
+    // --- Render the final result ---
+    cardRenderer.renderCards(filteredResult, activeFriendsView);
+    updateEmptyMessage(domElements.friendsEmptyPlaceholder, filteredResult.length, emptyMessage, filteredEmptyMessage, hasActiveFilters);
+}
+// =========================================================================
+// ===================================================================================
+// =======================================================================================
+// ============================================================================
+function resetToDefaultFriendsView(): void {
+    const defaultView = 'my-friends';
+    console.log(`[FC] Resetting to default friends view ('${defaultView}').`);
 
-        // 4. Apply the user's selected filters (language, role, name)
-        const languageFilter = domElements.filterLanguageSelect?.value || 'all';
-        if (languageFilter !== 'all') {
-            discoverableConnectors = discoverableConnectors.filter(c => c.language === languageFilter);
-        }
-
-        const roleFilter = domElements.filterRoleSelect?.value || 'all';
-        if (roleFilter !== 'all') {
-            discoverableConnectors = discoverableConnectors.filter(c =>
-                c.languageRoles?.[c.language]?.includes(roleFilter)
-            );
-        }
-
-        const nameSearchTerm = domElements.filterConnectorNameInput?.value.trim().toLowerCase() || "";
-        if (nameSearchTerm) {
-            discoverableConnectors = discoverableConnectors.filter(friend =>
-                (friend.name?.toLowerCase().includes(nameSearchTerm)) ||
-                (friend.profileName?.toLowerCase().includes(nameSearchTerm))
-            );
-        }
-
-        // 5. Render the final list of discoverable connectors
-        cardRenderer.renderCards(discoverableConnectors, 'discover');
+    // If we are not already on the default "My Friends" tab, switch to it.
+    // This will handle both the UI class toggling and calling the filter function.
+    if (activeFriendsView !== defaultView) {
+        console.log(`[FC] Currently on '${activeFriendsView}', switching to '${defaultView}'.`);
+        switchFriendsViewTab(defaultView);
+    } else {
+        // If we are already on the correct default tab, just re-apply the filters
+        // to ensure the list is fresh for the current state.
+        console.log(`[FC] Already on default tab '${defaultView}', just re-applying filters.`);
+        applyFindConnectorsFilters();
     }
 }
+
+
+
+
+
 function applyGroupSearchFilters(): void {
     const { domElements, groupManager } = getDeps();
     const langFilter = (domElements.filterGroupLanguageSelect as HTMLSelectElement)?.value || 'all';
@@ -553,9 +541,10 @@ function applyGroupSearchFilters(): void {
         console.log("filter_controller.ts: IIFE (module definition) FINISHED. Returning exported object.");
         return {
             initializeFilters,
-            populateFilterDropdowns, // Exposed if needed externally, otherwise can be internal
+            populateFilterDropdowns,
             applyFindConnectorsFilters,
-            applyGroupSearchFilters
+            applyGroupSearchFilters,
+            resetToDefaultFriendsView // <<< ADD THIS LINE
         };
     })(); // End of IIFE
 

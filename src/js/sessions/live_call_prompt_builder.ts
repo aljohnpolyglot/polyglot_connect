@@ -81,6 +81,14 @@ Your SPOKEN communication style is: "${voiceStyle}". This is how you talk out lo
 FOR THIS VOICE CALL: IGNORE all texting rules. NO emojis, NO shortcuts like 'lol' or 'bcp', NO parenthetical descriptions like (chuckles). Convey emotion through your word choice and tone.
     `);
 
+const primaryLanguage = connector.language || 'English'; // Get the connector's primary language
+systemPromptParts.push(`
+--- PRIMARY LANGUAGE MANDATE (CRITICAL FOR THIS CALL) ---
+- Your primary language for THIS ENTIRE VOICE CALL is **${primaryLanguage.toUpperCase()}**.
+- You MUST respond in ${primaryLanguage} unless the user explicitly asks you to switch to another language you know.
+- If you accidentally speak English (or any other language), you should catch yourself and apologize, then immediately switch back to ${primaryLanguage}.
+- This rule is NON-NEGOTIABLE.
+`);
     // --- 5. Inject Recent Conversation History (CRITICAL FOR CONTINUITY) ---
        // --- 5. Inject Recent Conversation History (CRITICAL FOR CONTINUITY) ---
    

@@ -195,63 +195,72 @@ function initializeActualGroupUiHandler(): void {
         }
 
       // =================== START: REPLACEMENT ===================
+// =================== START: REPLACEMENT for the initialize() function ===================
 function initialize(): void {
     console.log("GUH.initialize: GroupUiHandler.ts: Initializing event listeners...");
 
-    // Get dependencies needed for the listeners
     const { domElements, modalHandler, groupDataManager } = resolvedDeps!;
     
     // --- Listener 1: For the Group Discovery Page (the cards) ---
-    // This listener is on the main list container.
+    // This listener is on the main list container and is already correct.
     if (domElements.availableGroupsUl) {
         domElements.availableGroupsUl.addEventListener('click', (event) => {
             const target = event.target as HTMLElement;
             const infoButton = target.closest('.group-card-info-btn');
 
             if (infoButton) {
-                event.stopPropagation(); // Prevent other clicks
+                event.stopPropagation();
                 const groupId = infoButton.getAttribute('data-group-id');
                 if (groupId) {
                     console.log(`GUH: Group card 'Info' button clicked for group ID: ${groupId}`);
                     const groupData = groupDataManager.getGroupDefinitionById(groupId);
                     if (groupData) {
-                        // This correctly calls the function to show the info/join modal
+                        // This correctly calls the complete info modal function
                         openGroupInfoModal(groupData);
                     }
                 }
             }
-            // Note: The 'Join' and 'View Chat' button listeners are attached dynamically
-            // in list_renderer.ts, so we don't handle them here. This is correct.
         });
         console.log("GUH: Delegated listener for group card 'Info' buttons attached.");
     }
 
-    // --- Listener 2: For the Active Group Chat Header ---
+    // --- Listener 2: For the Active Group Chat Header (THE FIX IS HERE) ---
     // This listener is specifically on the header trigger element.
     if (domElements.groupHeaderInfoTrigger) {
         domElements.groupHeaderInfoTrigger.addEventListener('click', (event) => {
-            console.log("GUH: Group chat header area clicked.");
-            // This correctly calls the function to show the list of members
-            openGroupMembersModalInternal();
+            console.log("GUH: Group chat header area clicked. Getting current group data...");
+            
+            // Get the data for the CURRENTLY active group
+            const currentGroupData = groupDataManager.getCurrentGroupData();
+            
+            if (currentGroupData) {
+                // Call the SAME complete modal function that the discovery cards use.
+                // This ensures the modal state is always set correctly based on a live check.
+                openGroupInfoModal(currentGroupData);
+            } else {
+                console.error("GUH: Clicked header, but couldn't find current group data.");
+                alert("Could not retrieve information for the current group.");
+            }
         });
-        console.log("GUH: Listener for active group chat header attached.");
+        console.log("GUH: Listener for active group chat header attached and corrected.");
     }
 
-    // --- Listener 3: For the Close Button on the Members Modal ---
+    // --- Listener 3: For the Close Button on the Members/Info Modal ---
+    // This listener is correct as is.
     if (domElements.closeGroupMembersModalBtn && domElements.groupMembersModal) {
         domElements.closeGroupMembersModalBtn.addEventListener('click', () => {
             modalHandler.close(domElements.groupMembersModal);
         });
         
-        // Also close when clicking the overlay
         domElements.groupMembersModal.addEventListener('click', (event) => {
             if (event.target === domElements.groupMembersModal) {
                 modalHandler.close(domElements.groupMembersModal);
             }
         });
-        console.log("GUH: Listeners for closing the group members modal attached.");
+        console.log("GUH: Listeners for closing the group members/info modal attached.");
     }
 }
+// ===================  END: REPLACEMENT for the initialize() function ===================
 // ===================  END: REPLACEMENT  ===================
 
              // =================== START: REPLACE THE ENTIRE FUNCTION WITH THIS ===================

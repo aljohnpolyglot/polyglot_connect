@@ -134,43 +134,59 @@ function initializeActualGroupManager(): void {
             return [...currentGroupMembersArray]; 
         }
 
-        function loadAvailableGroups(
-            languageFilter: string | null = null,
-            categoryFilter: string | null = null,
-            nameSearch: string | null = null,
-            options: { viewType: 'my-groups' | 'discover' } = { viewType: 'my-groups' }
-        ): void {
-            console.log(`GM: loadAvailableGroups() - View: ${options.viewType}, Lang: ${languageFilter}, Cat: ${categoryFilter}, Name: ${nameSearch}`);
-            const { groupUiHandler, groupDataManager } = getDeps();
+     // =================== REPLACE THE loadAvailableGroups FUNCTION IN group_manager.ts ===================
+function loadAvailableGroups(
+    languageFilter: string | null = null,
+    categoryFilter: string | null = null,
+    nameSearch: string | null = null,
+    options: { viewType: 'my-groups' | 'discover' } = { viewType: 'my-groups' }
+): void {
+    console.log(`GM: loadAvailableGroups() - View: ${options.viewType}, Lang: ${languageFilter}, Cat: ${categoryFilter}, Name: ${nameSearch}`);
+    const { groupUiHandler, groupDataManager, domElements } = getDeps(); // Add domElements
 
-            if (!groupUiHandler || !groupDataManager) {
-                console.error("GM: Missing GUH or GDM in loadAvailableGroups");
-                return;
+    if (!groupUiHandler || !groupDataManager || !domElements) {
+        console.error("GM: Missing GUH, GDM, or domElements in loadAvailableGroups");
+        return;
+    }
+
+    let allGroups = groupDataManager.getAllGroupDefinitions(languageFilter, categoryFilter, nameSearch);
+    let groupsToDisplay: Group[];
+
+    if (options.viewType === 'my-groups') {
+        groupsToDisplay = allGroups.filter(g => g.isJoined);
+    } else { 
+        groupsToDisplay = allGroups.filter(g => !g.isJoined);
+    }
+
+    // Call the UI handler to render the list
+    groupUiHandler.displayAvailableGroups(groupsToDisplay, joinGroup);
+    
+    // --- THIS IS THE NEW LOGIC ---
+    // Now, update the empty placeholder message based on the results.
+    const placeholderEl = domElements.groupsEmptyPlaceholder;
+    if (placeholderEl) {
+        const hasActiveFilters = !!languageFilter || !!categoryFilter || !!nameSearch;
+        if (groupsToDisplay.length > 0) {
+            placeholderEl.style.display = 'none';
+        } else {
+            placeholderEl.style.display = 'block'; // Or 'flex'
+            if (hasActiveFilters) {
+                placeholderEl.textContent = 'No groups match your current filters.';
+            } else {
+                // Show a different message depending on the tab
+                if (options.viewType === 'my-groups') {
+                    placeholderEl.textContent = 'You have not joined any groups yet. Find some in the Discover tab!';
+                } else {
+                    placeholderEl.textContent = 'No new groups to discover right now.';
+                }
             }
-
-            // 1. Get all definitions from the data manager, which includes the isJoined flag
-            let allGroups = groupDataManager.getAllGroupDefinitions(languageFilter, categoryFilter, nameSearch);
-            let groupsToDisplay: Group[];
-
-            // 2. Filter based on the active tab
-            if (options.viewType === 'my-groups') {
-                groupsToDisplay = allGroups.filter(g => g.isJoined);
-            } else { // 'discover'
-                // ===== START: ADD THIS LOGIC =====
-                // Show only groups that the user has NOT joined
-                groupsToDisplay = allGroups.filter(g => !g.isJoined);
-                // ===== END: ADD THIS LOGIC =====
-            }
-
-            // 3. Send the final, filtered list to the UI handler for rendering
-            groupUiHandler.displayAvailableGroups(
-                groupsToDisplay, // Pass the pre-filtered array
-                joinGroup
-            );
-            
-            console.log(`GM: loadAvailableGroups() - Finished. Displaying ${groupsToDisplay.length} groups.`);
         }
-
+    }
+    // --- END OF NEW LOGIC ---
+    
+    console.log(`GM: loadAvailableGroups() - Finished. Displaying ${groupsToDisplay.length} groups.`);
+}
+// =================================================================================================
 
         function getMembersForGroup(groupDef: Group): Connector[] {
             const { polyglotConnectors } = getDeps();
@@ -263,100 +279,108 @@ function initializeActualGroupManager(): void {
 
 
 
-        async function joinGroup(groupOrGroupId: string | Group): Promise<void> {
-            console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
-            const { groupDataManager, groupUiHandler, groupInteractionLogic, tabManager, chatOrchestrator } = getDeps();
-        
-            if (!groupUiHandler || !groupDataManager || !groupInteractionLogic || !tabManager || !chatOrchestrator) {
-                console.error("GroupManager: joinGroup - One or more critical dependencies missing!");
-                alert("Cannot join group: core components missing.");
-                return;
-            }
-        
-            // <<< FIX: The logic is now in the correct order >>>
-            // 1. Get the groupId first.
-            const groupId = (typeof groupOrGroupId === 'object' && groupOrGroupId !== null) ? groupOrGroupId.id : groupOrGroupId;
-            
-            // 2. NOW declare groupDef using the groupId.
-            const groupDef = groupDataManager.getGroupDefinitionById(groupId);
-        
-            // 3. NOW it is safe to check groupDef.
-            if (!groupDef || !groupDef.name || !groupDef.language) {
-                // I've also corrected the error message here to be more accurate.
-                console.error(`GroupManager: Group definition (or its name/language) not found for ID: '${groupId}'`);
-                alert(`Error: Could not find details for group ID ${groupId}.`);
-                return;
-            }
+     // D:\polyglot_connect\src\js\core\group_manager.ts
 
-            const currentActiveGroupId = groupDataManager.getCurrentGroupId();
-            const currentDomElements = window.domElements;
-            const currentTab = tabManager.getCurrentActiveTab?.();
-            const groupChatUIDisplayStyle = currentDomElements?.groupChatInterfaceDiv?.style.display;
-
-            const isAlreadyActiveAndVisible = currentActiveGroupId === groupId &&
-                                            groupChatUIDisplayStyle !== 'none' &&
-                                            currentTab === 'groups';
-
-            if (isAlreadyActiveAndVisible) {
-                console.warn(`GroupManager: joinGroup called for ALREADY ACTIVE and VISIBLE group '${groupId}'. Ensuring UI consistency.`);
-                tabManager.switchToTab('groups');
-                (window.shellController as any)?.switchView?.('groups');
-                if (window.uiUpdater?.updateGroupChatHeader && groupDef.name && currentGroupMembersArray.length > 0) {
-                    window.uiUpdater.updateGroupChatHeader(groupDef.name, currentGroupMembersArray);
-                }
-                return;
-            }
-
-            if (currentActiveGroupId && currentActiveGroupId !== groupId) {
-                leaveCurrentGroup(false, false);
-            }
+     async function joinGroup(groupOrGroupId: string | Group): Promise<void> {
+        console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
+        const { groupDataManager, groupUiHandler, groupInteractionLogic, tabManager, chatOrchestrator } = getDeps();
+    
+        if (!groupUiHandler || !groupDataManager || !groupInteractionLogic || !tabManager || !chatOrchestrator) {
+            console.error("GroupManager: joinGroup - One or more critical dependencies missing!");
+            alert("Cannot join group: core components missing.");
+            return;
+        }
+    
+        // <<< FIX: The logic is now in the correct order >>>
+        // 1. Get the groupId first.
+        const groupId = (typeof groupOrGroupId === 'object' && groupOrGroupId !== null) ? groupOrGroupId.id : groupOrGroupId;
         
-            console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
-            
-            groupDataManager.setCurrentGroupContext(groupId, groupDef);
-            localStorage.setItem('polyglotLastActiveGroupId', groupId); // <<< ADD THIS LINE
-            currentGroupMembersArray = getMembersForGroup(groupDef);
-            if (currentGroupMembersArray.length === 0) {
-                console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
-                return;
-            }
-            currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
-        
-            const loadedHistory = groupDataManager.getLoadedChatHistory();
-            console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
-        
-            if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
-                groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
-                groupInteractionLogic.startConversationFlow(true); 
-            } else {
-                console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host missing.");
-                return;
-            }
-            
-            if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
-                groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
-            } else {
-                console.error("GroupManager: Cannot show group chat view.");
-                resetGroupState();
-                groupDataManager.setCurrentGroupContext(null, null);
-                return;
-            }
+        // 2. NOW declare groupDef using the groupId.
+        const groupDef = groupDataManager.getGroupDefinitionById(groupId);
+    
+        // 3. NOW it is safe to check groupDef.
+        if (!groupDef || !groupDef.name || !groupDef.language) {
+            // I've also corrected the error message here to be more accurate.
+            console.error(`GroupManager: Group definition (or its name/language) not found for ID: '${groupId}'`);
+            alert(`Error: Could not find details for group ID ${groupId}.`);
+            return;
+        }
 
+        const currentActiveGroupId = groupDataManager.getCurrentGroupId();
+        const currentDomElements = window.domElements;
+        const currentTab = tabManager.getCurrentActiveTab?.();
+        const groupChatUIDisplayStyle = currentDomElements?.groupChatInterfaceDiv?.style.display;
+
+        const isAlreadyActiveAndVisible = currentActiveGroupId === groupId &&
+                                        groupChatUIDisplayStyle !== 'none' &&
+                                        currentTab === 'groups';
+
+        if (isAlreadyActiveAndVisible) {
+            console.warn(`GroupManager: joinGroup called for ALREADY ACTIVE and VISIBLE group '${groupId}'. Ensuring UI consistency.`);
             tabManager.switchToTab('groups');
             (window.shellController as any)?.switchView?.('groups');
-            chatOrchestrator?.renderCombinedActiveChatsList?.();
-            const sidebarPanelManager = window.sidebarPanelManager;
-if (sidebarPanelManager) {
-    console.log("[GroupManager] Forcing right sidebar panel to 'messagesChatListPanel' after joining group.");
-    sidebarPanelManager.updatePanelForCurrentTab('messages'); // We trick it by telling it the context is now 'messages'
-}
-            // --- THIS IS THE CRITICAL FIX ---
-            // We now AWAIT the conversation flow to start and finish its first run.
+            if (window.uiUpdater?.updateGroupChatHeader && groupDef.name && currentGroupMembersArray.length > 0) {
+                window.uiUpdater.updateGroupChatHeader(groupDef.name, currentGroupMembersArray);
+            }
+            return;
+        }
 
-    // --- END OF NEW, CORRECT ORDER ---
+        if (currentActiveGroupId && currentActiveGroupId !== groupId) {
+            leaveCurrentGroup(false, false);
+        }
+    
+        console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
+        
+        groupDataManager.setCurrentGroupContext(groupId, groupDef);
+        localStorage.setItem('polyglotLastActiveGroupId', groupId); // <<< ADD THIS LINE
+        currentGroupMembersArray = getMembersForGroup(groupDef);
+        if (currentGroupMembersArray.length === 0) {
+            console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
+            return;
+        }
+        currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
+    
+        const loadedHistory = groupDataManager.getLoadedChatHistory();
+        console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
+    
+        if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
+            groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+            groupInteractionLogic.startConversationFlow(true); 
+        } else {
+            console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host missing.");
+            return;
+        }
+        
+        if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
+            groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
+        } else {
+            console.error("GroupManager: Cannot show group chat view.");
+            resetGroupState();
+            groupDataManager.setCurrentGroupContext(null, null);
+            return;
+        }
 
-    console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
-} // End of joinGroup
+        tabManager.switchToTab('groups');
+        
+        // --- THIS IS THE FIX ---
+        // Because we are now IN a group, we must EXPLICITLY tell the sidebar
+        // to re-evaluate its state for the 'groups' tab.
+        const sidebarPanelManager = window.sidebarPanelManager;
+        if (sidebarPanelManager) {
+            console.log("[GroupManager] Forcing sidebar panel update after joining group.");
+            sidebarPanelManager.updatePanelForCurrentTab('groups');
+        }
+        // --- END OF FIX ---
+        
+        // Update the list of active chats
+        chatOrchestrator?.renderCombinedActiveChatsList?.();
+        // --- THIS IS THE CRITICAL FIX ---
+        // We now AWAIT the conversation flow to start and finish its first run.
+
+// --- END OF NEW, CORRECT ORDER ---
+
+console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
+} 
 
         function sendWelcomeMessagesToGroup(groupDef: Group, tutor: Connector, members: Connector[]): void {
             console.log("GM: sendWelcomeMessagesToGroup() - START for group:", groupDef?.name);
@@ -435,29 +459,34 @@ function userIsTypingInGroupSignal(): void {
             const currentTab = tabManager.getCurrentActiveTab?.();
             const currentChatOrchestrator = window.chatOrchestrator as ChatOrchestrator | undefined; // Re-fetch for safety
 
-            if (updateSidebar) {
-                const shellCtrl = window.shellController as import('../types/global.d.ts').ShellController | undefined;
-                if (shellCtrl?.switchView) {
-                    const tabToRefresh = currentTab || 'home'; // Default to home if currentTab is undefined
-                    console.log(`GM: Left group. Calling shellController.switchView('${tabToRefresh}') to update sidebar.`);
-                    shellCtrl.switchView(tabToRefresh);
-                    // If switchView doesn't automatically refresh chat list for 'groups' or 'messages' tab when appropriate,
-                    // we might need an explicit call here, but ideally switchView handles it.
-                    if ((tabToRefresh === 'groups' || tabToRefresh === 'messages') && currentChatOrchestrator?.renderCombinedActiveChatsList) {
-                         console.log("GM: Forcing renderCombinedActiveChatsList after leaving group for data consistency.");
-                        currentChatOrchestrator.renderCombinedActiveChatsList();
-                    }
-                } else {
-                    console.warn("GM: updateSidebar is true, but shellController.switchView not available. Sidebar may not update correctly. Forcing chat list render.");
-                    currentChatOrchestrator?.renderCombinedActiveChatsList?.();
-                }
-            } else { 
-                // Even if not updating the sidebar panel itself, the underlying data for combined chats needs to be fresh.
-                if (currentChatOrchestrator?.renderCombinedActiveChatsList) {
-                    console.log("GM: Left group (updateSidebar=false). Calling renderCombinedActiveChatsList for data consistency.");
-                    currentChatOrchestrator.renderCombinedActiveChatsList();
-                }
+          // =================== REPLACE THE DELETED BLOCK WITH THIS ===================
+            // After leaving a group, we always want to be on the 'groups' tab.
+            // By calling the tabManager, we trigger the master coordinator in shell_controller,
+            // which will handle BOTH the view switch and the sidebar panel update correctly.
+        
+         
+            if (tabManager) {
+                tabManager.switchToTab('groups');
             }
+            
+            // --- THIS IS THE FIX ---
+            // Because we have just LEFT a group, we must EXPLICITLY tell the sidebar
+            // to re-evaluate its state for the 'groups' tab.
+            const sidebarPanelManager = window.sidebarPanelManager;
+            if (sidebarPanelManager) {
+                console.log("[GroupManager] Forcing sidebar panel update after leaving group.");
+                sidebarPanelManager.updatePanelForCurrentTab('groups');
+            }
+            // --- END OF FIX ---
+
+            // The list of groups to display might have changed (e.g., if it was the last joined group)
+            if (tabManager?.getCurrentActiveTab?.() === 'groups') {
+                loadAvailableGroups();
+            }
+
+            // Update the list of active chats
+            chatOrchestrator?.renderCombinedActiveChatsList?.();
+// ============================================================================
             
             if (triggerReload && currentTab === 'groups') {
                 console.log("GroupManager: Reloading available groups list as current tab was 'groups'.");
