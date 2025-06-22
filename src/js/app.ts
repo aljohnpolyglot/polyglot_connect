@@ -37,7 +37,7 @@ const CORE_MODULES_TO_WAIT_FOR: { eventName: string, windowObjectKey: keyof Wind
     // The UI panels will be initialized by dev_panel.ts itself.
     { eventName: 'domElementsReady', windowObjectKey: 'domElements', keyFunction: 'appShell' },
     { eventName: 'devPanelReady', windowObjectKey: 'devPanel', keyFunction: 'initialize' },
-    { eventName: 'apiKeyHealthTrackerReady', windowObjectKey: 'apiKeyHealthTracker', keyFunction: 'initialize' },
+    // { eventName: 'apiKeyHealthTrackerReady', windowObjectKey: 'apiKeyHealthTracker', keyFunction: 'initialize' },
     { eventName: 'shellSetupReady', windowObjectKey: 'shellSetup', keyFunction: 'initializeAppCore' },
     { eventName: 'jumpButtonManagerReady', windowObjectKey: 'jumpButtonManager', keyFunction: 'initialize' },
     { eventName: 'tabManagerReady', windowObjectKey: 'tabManager', keyFunction: 'initialize' },
@@ -73,14 +73,21 @@ console.log("APP_CORE_READY_CHECK: Setting up listeners and performing pre-check
 CORE_MODULES_TO_WAIT_FOR.forEach(moduleInfo => {
     const moduleObject = window[moduleInfo.windowObjectKey] as any;
     let isAlreadyReady = false;
-    if (moduleObject) {
-        if (moduleInfo.keyFunction) {
-            isAlreadyReady = typeof moduleObject[moduleInfo.keyFunction] === 'function';
-        } else {
-            // If no keyFunction, presence of the object is enough for this check
-            isAlreadyReady = true;
-        }
+   // D:\polyglot_connect\src\js\app.ts
+
+   if (moduleObject) {
+    if (moduleInfo.keyFunction) {
+        const key = moduleInfo.keyFunction;
+        const propertyType = typeof moduleObject[key];
+        
+        // A module is ready if its key is a function, 
+        // OR if its key is an object (like an HTMLElement) that is not null.
+        isAlreadyReady = (propertyType === 'function') || (propertyType === 'object' && moduleObject[key] !== null);
+    } else {
+        // If no keyFunction is specified, the mere existence of the object is enough.
+        isAlreadyReady = true;
     }
+}
 
     if (isAlreadyReady) {
         console.log(`APP_CORE_READY_CHECK: Pre-check - Module for '${moduleInfo.eventName}' (window.${String(moduleInfo.windowObjectKey)}) is ALREADY functionally ready.`);
@@ -106,20 +113,6 @@ import * as apiKeysConfig from './config';
 import './dev/dev_panel';
 
 console.log("app.ts: Imported apiKeysConfig:", apiKeysConfig);
-console.log("app.ts (LOCAL DEV TEST): Imported VITE_TEST_VAR_EXPORT:", apiKeysConfig.VITE_TEST_VAR_EXPORT);
-
-// Set API keys on the window object
-console.log("app.ts: Attempting to set API keys on window object...");
-window.GEMINI_API_KEY = apiKeysConfig.GEMINI_API_KEY || undefined;
-console.log("app.ts: window.GEMINI_API_KEY set to:", window.GEMINI_API_KEY);
-window.GEMINI_API_KEY_ALT = apiKeysConfig.GEMINI_API_KEY_ALT || undefined;
-console.log("app.ts: window.GEMINI_API_KEY_ALT set to:", window.GEMINI_API_KEY_ALT);
-window.GEMINI_API_KEY_ALT_2 = apiKeysConfig.GEMINI_API_KEY_ALT_2 || undefined;
-console.log("app.ts: window.GEMINI_API_KEY_ALT_2 set to:", window.GEMINI_API_KEY_ALT_2);
-
-console.log("app.ts: API keys set on window object.");
-
-if (window.GEMINI_API_KEY) console.log("app.ts: CONFIRMED - window.GEMINI_API_KEY has been set."); else console.warn("app.ts: CONFIRMED - window.GEMINI_API_KEY is UNDEFINED.");
 
 interface CriticalModuleDef { // Ensure this interface is defined if not already globally
     name: string;
@@ -143,7 +136,7 @@ function initializeAppLogic(): void {
 
     console.log('app.ts: Starting critical module checks (within initializeAppLogic)...');
     const criticalModules: CriticalModuleDef[] = [
-        { name: 'GEMINI_API_KEY', obj: window.GEMINI_API_KEY, isKey: true },
+     
    
 
         { name: 'polyglotHelpers', obj: window.polyglotHelpers as PolyglotHelpers | undefined, keyFn: 'sanitizeTextForDisplay'},
@@ -415,11 +408,8 @@ if (jumpButtonManager && tabManager) {
         console.log("app.ts (initializeAppLogic): Global modal button listeners setup process finished.");
     }
     setupGlobalModalButtonListeners();
+// D:\polyglot_connect\src\js\app.ts (The Correct Final Block)
 
-    console.log("app.ts (initializeAppLogic): Core modules have self-initialized via the event system.");
-    console.log("app.ts (initializeAppLogic): The main app logic can now proceed with final setup if needed.");
-    console.log("Polyglot Connect Application Initialized! (app.ts: initializeAppLogic end)");
-    console.log('APP_DEBUG: ========== initializeAppLogic - EXITED SUCCESSFULLY ==========');
 } // End of initializeAppLogic
 
 let _allCoreModulesReadyFired = false;
@@ -431,7 +421,8 @@ function tryInitializeApp() {
         _appLogicInitialized = true; // Set flag before calling to prevent re-entry
         initializeAppLogic();
     } else if (_appLogicInitialized) {
-        console.log("app.ts (tryInitializeApp): App logic already initialized.");
+        // This is normal, it means the app is already running.
+        // console.log("app.ts (tryInitializeApp): App logic already initialized.");
     } else if (!_allCoreModulesReadyFired) {
         console.log("app.ts (tryInitializeApp): Waiting for 'allCoreModulesReady' to fire.");
     }
@@ -447,56 +438,9 @@ document.addEventListener('allCoreModulesReady', () => {
 // DOMContentLoaded listener
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.ts: DOMContentLoaded event fired.');
-    tryInitializeApp();
+    // Don't call tryInitializeApp() here directly. Let the dependency system handle it.
+    // The 'allCoreModulesReady' event is the true signal that the app is ready to start.
 });
 
-console.log("app.ts: Script parsing finished. Event listeners for 'allCoreModulesReady' and 'DOMContentLoaded' are set.");
-
-// in app.ts, at the very bottom
-
-// =================== PASTE THIS ENTIRE TEST BLOCK AT THE END OF APP.TS ===================
-document.addEventListener('DOMContentLoaded', () => {
-    const testButton = document.getElementById('ai-test-button');
-    const firstConnector = window.polyglotConnectors ? window.polyglotConnectors[0] : null;
-
-    if (testButton && firstConnector) {
-        testButton.addEventListener('click', async () => {
-            console.log('%c[HEARTBEAT_TEST] Button clicked. Starting test...', 'background: red; color: white; font-size: 1.2em;');
-            
-            if (!window.aiService?.generateTextMessage) {
-                console.error('[HEARTBEAT_TEST_FAIL] window.aiService or its generateTextMessage method is NOT available.');
-                alert('HEARTBEAT FAIL: aiService is missing!');
-                return;
-            }
-
-            console.log('[HEARTBEAT_TEST] aiService appears to be available. Calling generateTextMessage...');
-            testButton.textContent = 'TEST RUNNING...';
-            testButton.style.background = 'orange';
-
-            try {
-                const result = await window.aiService.generateTextMessage(
-                    "This is a direct test. Respond with only the word: 'OK'",
-                    firstConnector,
-                    null,
-                    'groq' // Test with the fastest provider
-                );
-
-                console.log('%c[HEARTBEAT_TEST_SUCCESS] The AI service responded!', 'background: green; color: white; font-size: 1.2em;');
-                console.log('[HEARTBEAT_TEST] Result:', result);
-                alert(`HEARTBEAT SUCCESS! AI responded with: "${result}"`);
-                testButton.textContent = 'TEST SUCCEEDED';
-                testButton.style.background = 'green';
-
-            } catch (error) {
-                console.error('%c[HEARTBEAT_TEST_FAIL] The call to aiService FAILED with an error.', 'background: #b30000; color: white; font-size: 1.2em;');
-                console.error(error);
-                alert('HEARTBEAT FAIL: The AI call threw an error. Check console.');
-                testButton.textContent = 'TEST FAILED';
-                testButton.style.background = '#b30000';
-            }
-        });
-    } else {
-        console.error('[HEARTBEAT_TEST] Could not set up test button. Missing button or connector data.');
-    }
-});
+console.log("app.ts: Script parsing finished. Event listeners are set.");
 // =======================================================================================
