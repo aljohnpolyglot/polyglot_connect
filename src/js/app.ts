@@ -1,5 +1,19 @@
 // D:\polyglot_connect\src\js\app.ts
+import { getAuth, onAuthStateChanged, type User } from "firebase/auth"; // At the top of the file
+import { initializeApp } from "firebase/app";
 
+const firebaseConfig = {
+    apiKey: "AIzaSyC5k_WocF2E9fJ_rYiUVw-hUq5UYfF1QxI",
+    authDomain: "polyglot-connect-ffdcc.firebaseapp.com",
+    projectId: "polyglot-connect-ffdcc",
+    storageBucket: "polyglot-connect-ffdcc.appspot.com",
+    messagingSenderId: "724893488450",
+    appId: "1:724893488450:web:51b944b94a7c66e3fbe4db",
+    measurementId: "G-CQR8RBH78K"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 import type {
     Connector,
     PolyglotApp, // For window.polyglotApp
@@ -443,4 +457,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log("app.ts: Script parsing finished. Event listeners are set.");
+
+
+// --- START: AUTH GUARD LOGIC ---
+onAuthStateChanged(auth, (user: User | null) => { // At the bottom of the file
+    if (user) {
+      // User IS signed in. App can continue to load as normal.
+      console.log("Auth Guard: Access granted for user", user.uid);
+  
+    } else {
+      // User is NOT signed in. Redirect them to the login page.
+      console.log("Auth Guard: Access denied. Redirecting to login page.");
+      window.location.href = '/index.html';
+    }
+  });
+  // --- END: AUTH GUARD LOGIC ---
 // =======================================================================================
