@@ -12,15 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- START: THE FIX ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # Using a recent stable version of Node.js
+          node-version: '20' # <<< THIS IS THE ONLY CHANGE
 
       - name: Install Dependencies
         run: npm install
-      # --- END: THE FIX ---
       
       - name: Build Project
         run: npm run build
