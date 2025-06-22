@@ -434,11 +434,9 @@ generateTextMessage: async (
                 const openAiVisionService = currentDeps.aiTextGenerationService;
 
                 const imageProviderSequence = [
-                    'together',
-                    'together',
-                    'together',
-                    'gemini', // Fallback to Gemini Vision if all Together attempts fail
-                    'gemini'
+                 'gemini',
+    'gemini',
+    'gemini'
                 ];
                 console.log('%cImage Provider Plan:', 'color: #4caf50; font-weight: bold;', imageProviderSequence.join(' ➔ '));
             

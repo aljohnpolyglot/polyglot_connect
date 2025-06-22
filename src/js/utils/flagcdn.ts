@@ -64,15 +64,19 @@ const flagLoaderModuleInstance = {
 };
 
 // Assign the instance to the window object
-(window as any).flagLoader = flagLoaderModuleInstance;
 
-// Verify and dispatch ready event
-if (window.flagLoader && typeof window.flagLoader.getFlagUrl === 'function') {
-    console.log("utils/flagcdn.ts: SUCCESSFULLY assigned to window.flagLoader and key method verified.");
+if (flagLoaderModuleInstance) {
+    // 1. Assign the module to the global window object.
+    (window as any).flagLoader = flagLoaderModuleInstance;
+    console.log('utils/flagcdn.ts: SUCCESS - Assigned module to window.flagLoader.');
+
+    // 2. Dispatch the "ready" event that list_renderer.ts is waiting for.
     document.dispatchEvent(new CustomEvent('flagLoaderReady'));
-    console.log("utils/flagcdn.ts: 'flagLoaderReady' event dispatched.");
+    console.log('utils/flagcdn.ts: "flagLoaderReady" event dispatched.');
+
 } else {
-    console.error("utils/flagcdn.ts: CRITICAL ERROR - window.flagLoader IS UNDEFINED or not correctly formed.");
+    console.error('utils/flagcdn.ts: CRITICAL FAILURE - The flagLoaderModuleInstance was not created.');
 }
 
-console.log('utils/flagcdn.ts: Module script execution finished. window.flagLoader should be set.');
+
+export const flagLoader = flagLoaderModuleInstance;

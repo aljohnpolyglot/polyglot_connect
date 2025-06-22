@@ -527,25 +527,43 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     // imageUrlForDisplay will now be the base64 string for storage purposes.
                     // If skipUiAppend is true (which it is for images from chat_event_listeners),
                     // TMH doesn't need its own temporary blob for UI.
-                    imageUrlForDisplay = base64StringForStore; 
-                    const descriptionPromptText = captionText || text || "Describe this image concisely.";
+                    imageUrlForDisplay = base64StringForStore;
+                    // The user's actual text (caption or message text if image sent with text input field)
+                    const userProvidedTextForContext = captionText || text || "";
+
                     if (aiService.generateTextFromImageAndText && convo.connector) {
+                        // --- NEW, MORE FOCUSED PROMPT FOR INITIAL DESCRIPTION ---
+                        const specificDescriptionPrompt = `You are an image analysis AI. 
+                        Your ONLY task is to provide a concise, factual, and objective description of the visual content of the image itself. 
+                        Speak in ${convo.connector.language || 'English'}.
+                        Describe only what you visually see in THIS SPECIFIC IMAGE. 
+                        If there are recognizable people, landmarks, or specific types of places or famous persons, try to identify them if you are reasonably confident. 
+                        Do NOT add any conversational elements, greetings, or refer to the user.
+                        If the user provided any text with the image ("${userProvidedTextForContext || 'none'}"), use it as minor context if it helps identify an object, but your primary focus is the visual content.
+                        Keep the description to 1-2 sentences.`;
+                        // --- END NEW PROMPT ---
+
+                        console.log(`TMH.${functionName}: Calling AI for initial semantic description with focused prompt.`);
                         const desc = await aiService.generateTextFromImageAndText(
                             base64DataForApi,
                             imageFile.type,
-                            convo.connector,
-                            [],
-                            `Describe this image concisely in one sentence for context within a chat message, in ${convo.connector.language || 'English'}. Based on the image and the user's text: "${descriptionPromptText}"`,
-                            aiApiConstants.PROVIDERS.TOGETHER
+                            convo.connector, // Connector is still useful for language context
+                            [], // Empty history for a clean description
+                            specificDescriptionPrompt, // Use the new, focused prompt
+                            aiApiConstants.PROVIDERS.TOGETHER // Or your preferred provider for this task
                         );
-                        if (desc && typeof desc === 'string' && !desc.startsWith("[")) {
+
+                        if (desc && typeof desc === 'string' && !desc.startsWith("[") && !desc.toLowerCase().includes("hearing you") && !desc.toLowerCase().includes("trouble understanding")) {
                             imageSemanticDescriptionForStore = desc.trim();
-                            console.log(`TMH.${functionName}: AI generated image description: "${imageSemanticDescriptionForStore}"`);
-                        } else if (desc && typeof desc === 'string' && desc.startsWith("[")){
-                            console.warn(`TMH.${functionName}: AI description was a placeholder/error: "${desc}"`);
+                            console.log(`TMH.${functionName}: AI generated initial image description: "${imageSemanticDescriptionForStore}"`);
+                        } else if (desc && typeof desc === 'string') {
+                            console.warn(`TMH.${functionName}: AI description was a placeholder, error, or irrelevant: "${desc}"`);
+                            imageSemanticDescriptionForStore = undefined; // Explicitly set to undefined if bad
+                        } else {
+                            console.warn(`TMH.${functionName}: AI description was not a string or was null.`);
+                            imageSemanticDescriptionForStore = undefined;
                         }
                     }
-                    console.log(`TMH.${functionName}: Adding 2s delay before main image reply AI call (modal)...`);
                     await new Promise(resolve => setTimeout(resolve, 2000));
                 } catch (error) {
                     console.error(`TMH.${functionName}: Error processing image:`, error);
@@ -660,21 +678,25 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
 
                 if (imageFile) { // User sent an image (with or without caption)
                     const userProvidedTextWithImage = captionText || textFromInput?.trim() || "";
-                    const preamble = getMultimodalPreamble(currentConnector);
+                    const simplifiedPersonaContext = `You are ${currentConnector.profileName}.
+                    You are a native of the Philippines. Your primary language is Tagalog.
+                    Your interests include: ${currentConnector.interests?.join(', ') || 'NBA, online games, basketball'}.
+                    Your personality traits are: ${currentConnector.personalityTraits?.join(', ') || 'chill, sarcastic, direct'}.
+                    You are currently interacting with a user who sent an image.`;
                     
-                    // Construct promptForAI for the 2-part image reply
-                    promptForAI = `${preamble}
+                                        promptForAI = `${simplifiedPersonaContext}
                     
-                    The user has shared an image. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
+                    The user has shared an image with the caption: "${userProvidedTextWithImage || 'none'}".
+                    
+                    Your response MUST have two distinct parts, spoken ONLY in Tagalog.
                     
                     Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
-                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - React to this image based on YOUR specific personality and interests as defined above.
                     - AVOID generic phrases like "That's a cool picture."
                     - INSTEAD, try one of these persona-driven approaches:
-                      - Make a creative observation that reflects your personality (e.g., a 'passionate' person might say "The energy in this photo is incredible!").
-                      - Ask a question driven by your curiosity and interests.
-                      - Share a brief, relevant memory or thought from your own life experiences.
+                        - Make a creative observation that reflects your personality.
+                        - Ask a question driven by your curiosity and interests.
+                        - Share a brief, relevant memory or thought from your own life experiences.
                     - If the user wrote a caption ("${userProvidedTextWithImage || 'none'}"), weave it into your comment naturally.
                     
                     Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
@@ -682,8 +704,11 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
                     [IMAGE_DESCRIPTION_END]
                     
-                    Example: "This has such a great vibe, reminds me of a little cafe I love. [IMAGE_DESCRIPTION_START]A photo of a person sitting at an outdoor cafe with a cup of coffee.[IMAGE_DESCRIPTION_END]"
-                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
+                    Example of your full response structure:
+                    "Ayos to ah! Mukhang masarap yang laro niyo. [IMAGE_DESCRIPTION_START]Isang larawan ng mga taong naglalaro ng basketball sa isang outdoor court.[IMAGE_DESCRIPTION_END]"
+                    
+                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag. Do not add any text after the [IMAGE_DESCRIPTION_END] tag.
+                    `;
                     // =================================== END OF STRIKE 1 =================================== 
                     
                     if (imagePartsForGemini && imagePartsForGemini[0]?.inlineData?.data) {
@@ -752,83 +777,139 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 : (typeof aiResponseObject === 'object' && aiResponseObject !== null
                     ? JSON.stringify(aiResponseObject)
                     : null);
-                const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseText || "");
-                const isBlockedResponse = typeof aiResponseText === 'string' && aiResponseText.startsWith("(My response was blocked:");
 
-                if (aiResponseText === null) {
-                     if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.("Sorry, I couldn't generate a response right now.", 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                } else if (isHumanError || isBlockedResponse) {
-                    if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: isHumanError, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-              // ...
-// REPLACE WITH THIS EXACT BLOCK
-} else { // This is where the successful AI response is handled
-                    
-    // --- IMAGE RESPONSE PATH FOR MODAL ---
-  // REPLACE WITH THIS BLOCK
-// REPLACE WITH THIS BLOCK
 
-// --- IMAGE RESPONSE PATH FOR EMBEDDED CHAT ---
-if (imageFile && typeof aiResponseText === 'string') {
-    let conversationalReply = aiResponseText;
-    let extractedImageDescription: string | undefined = undefined;
-    const descStartTag = "[IMAGE_DESCRIPTION_START]";
-    const descEndTag = "[IMAGE_DESCRIPTION_END]";
-    const startIndex = aiResponseText.indexOf(descStartTag);
-    const endIndex = aiResponseText.indexOf(descEndTag);
+                    console.log(`TMH (Embedded): Received main AI response. Raw aiResponseObject type: ${typeof aiResponseObject}`);
+                    if (aiResponseText !== null) {
+                        console.log(`TMH (Embedded): Main AI response (stringified): "${aiResponseText.substring(0, 200)}..."`);
+                    } else {
+                        console.log(`TMH (Embedded): Main AI response was NULL.`);
+                    }
+
+
+
+
+
+                    let isConsideredErrorForThisContext = false;
+                    const isBlockedResponse = typeof aiResponseText === 'string' && aiResponseText.startsWith("(My response was blocked:");
     
-    if (startIndex !== -1 && endIndex > startIndex) {
-        extractedImageDescription = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
-        conversationalReply = aiResponseText.substring(0, startIndex).trim();
-    }
+                    if (aiResponseText === null) {
+                        isConsideredErrorForThisContext = true;
+                        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.("Sorry, I couldn't generate a response right now.", 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
+                        console.warn("TMH (Embedded): AI response was null.");
+                    } else if (isBlockedResponse) {
+                        isConsideredErrorForThisContext = true;
+                        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
+                        console.warn(`TMH (Embedded): AI response was a blocked response: "${aiResponseText}"`);
+                    } else if (imageFile) {
+                        // For image replies, we are more tolerant of "human-like errors" initially,
+                        // because we want to attempt parsing for [IMAGE_DESCRIPTION_START] anyway.
+                        // The parsing logic itself will handle if the content is bad.
+                        // We only consider it a "human-like error" here if it's one of the *very generic* confused replies
+                        // AND our parsing fails to find the description tags.
+                        console.log(`TMH (Embedded): Image file present. Will proceed to parsing. Raw AI response: "${aiResponseText.substring(0,100)}..."`);
+                    } else {
+                        // For TEXT-ONLY replies, the original isHumanError check is fine.
+                        const isTextReplyHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseText || "");
+                        if (isTextReplyHumanError) {
+                            isConsideredErrorForThisContext = true;
+                            if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
+                            console.warn(`TMH (Embedded): AI TEXT response was a human-like error: "${aiResponseText}"`);
+                        }
+                    }
+    
+                    if (isConsideredErrorForThisContext) {
+                        // Nothing more to do if we've decided it's an error we can't recover from here.
+                    } else {
+                        // This is where the successful AI response is handled (or attempted parsing for images)
+                        if (imageFile && typeof aiResponseText === 'string') {
+        console.log(`TMH (Embedded): Processing successful AI response for IMAGE.`);
+        // --- IMAGE RESPONSE PATH FOR EMBEDDED CHAT ---
+        let conversationalReply = aiResponseText; // Initial assignment
+        let extractedImageDescription: string | undefined = undefined;
+        const descStartTag = "[IMAGE_DESCRIPTION_START]";
+        const descEndTag = "[IMAGE_DESCRIPTION_END]";
+        const startIndex = aiResponseText.indexOf(descStartTag);
+        const endIndex = aiResponseText.indexOf(descEndTag);
 
-    // Manually find and update the message in the store
-    if (extractedImageDescription && userMessageId) {
-        const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId);
-        if (convoRecordForUpdate?.messages) {
-            const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
-            if (msgIndex !== -1) {
-                // Update the property on the message object
-                convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription;
-                // Save the entire updated messages array back to the store
-                window.convoStore?.updateConversationProperty(currentEmbeddedChatTargetId, 'messages', [...convoRecordForUpdate.messages]);
-                window.convoStore?.saveAllConversationsToStorage();
+        if (startIndex !== -1 && endIndex > startIndex) {
+            extractedImageDescription = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
+            conversationalReply = aiResponseText.substring(0, startIndex).trim();
+            console.log(`TMH (Embedded): Parsed image response. Conversational: "${conversationalReply.substring(0,30)}...", Description: "${(extractedImageDescription || "").substring(0,50)}..."`);
+        } else {
+            conversationalReply = aiResponseText.trim(); // Treat whole response as conversational if no tags
+            console.warn(`TMH (Embedded): Image description tags not found in AI response. Full response treated as conversational: "${aiResponseText.substring(0,50)}..."`);
+        }
+
+        // --- NEW FALLBACK LOGIC ---
+        let textToDisplayForScene = conversationalReply; 
+
+        if (!textToDisplayForScene && extractedImageDescription) {
+            console.warn(`TMH (Embedded): AI provided an image description but no conversational comment. Using description as the reply text.`);
+            textToDisplayForScene = extractedImageDescription; 
+        }
+        // --- END NEW FALLBACK LOGIC ---
+
+        // Update the original user message in the store with the extracted description (if any)
+        if (extractedImageDescription && userMessageId) {
+            const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId);
+            if (convoRecordForUpdate?.messages) {
+                const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
+                if (msgIndex !== -1) {
+                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription;
+                    window.convoStore?.updateConversationProperty(currentEmbeddedChatTargetId, 'messages', [...convoRecordForUpdate.messages]);
+                    window.convoStore?.saveAllConversationsToStorage(); // Ensure it's saved
+                    console.log(`TMH (Embedded): Updated user image message ${userMessageId} with semantic description in store.`);
+                } else {
+                    console.warn(`TMH (Embedded): Could not find original user image message ${userMessageId} to update description.`);
+                }
             }
         }
-    }
-    
-    // THIS IS THE ANSWER TO YOUR QUESTION:
-    // The AI's chat comment ('conversationalReply') is now treated just like a regular text message.
-    // 1. It gets processed for multiple bubbles.
-    const processedText = intelligentlySeparateText(conversationalReply, currentConnector, { probability: 1.0 });
-    const responseLines = processedText.split('\n').filter(line => line.trim());
-    
-    // 2. It's sent to the scene player, which handles typing indicators and delays.
-    await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
+        
+        // Use textToDisplayForScene (which might be the conversational part or the description)
+        const processedText = intelligentlySeparateText(textToDisplayForScene, currentConnector, { probability: 1.0 });
+        const responseLines = processedText.split('\n').filter(line => line.trim());
+        
+        if (responseLines.length > 0) {
+            await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
+        } else {
+            // If after all fallbacks, there are still no lines to display, show a generic message.
+            console.warn("TMH (Embedded): No valid lines to display after processing AI response for image, even after fallback. Displaying generic AI ack.");
+            const genericAckId = polyglotHelpers.generateUUID();
+            const genericAckTimestamp = Date.now();
+            uiUpdater.appendToEmbeddedChatLog?.("I've received your image.", 'connector', {
+                avatarUrl: currentConnector.avatarModern,
+                senderName: currentConnector.profileName,
+                timestamp: genericAckTimestamp,
+                connectorId: currentConnector.id,
+                messageId: genericAckId
+            });
+            // Also save this generic acknowledgment to conversation history
+            await conversationManager.addModelResponseMessage(currentEmbeddedChatTargetId, "I've received your image.", genericAckId, genericAckTimestamp);
+        }
+        aiRespondedSuccessfully = true; // Mark success after handling the image reply
 
-// --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED CHAT ---
-} else if (aiResponseText) {
-  // =================== TWIN TAG: EMBEDDED-AI ===================
-    if (window.memoryService && window.memoryService.processNewUserMessage) {
-        console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis...`);
-        window.memoryService.processNewUserMessage(
-            aiResponseText,
-            currentEmbeddedChatTargetId,
-            'ai_invention'
-        );
-   }
-  
-  
-  
-  
-    console.log(`[Auto-Separator] Raw AI Text (Embedded): "${aiResponseText}"`);
-    const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
-    console.log(`[Auto-Separator] Processed Text (Embedded): "${processedText.replace(/\n/g, '\\n')}"`);
-    
-    const responseLines = processedText.split('\n').filter(line => line.trim());
-    await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
+    } else if (aiResponseText) { // This is for TEXT-ONLY responses
+        // --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED CHAT ---
+        // =================== TWIN TAG: EMBEDDED-AI ===================
+        if (window.memoryService && window.memoryService.processNewUserMessage) {
+            console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis...`);
+            window.memoryService.processNewUserMessage(
+                aiResponseText,
+                currentEmbeddedChatTargetId,
+                'ai_invention'
+            );
+       }
+        console.log(`[Auto-Separator] Raw AI Text (Embedded): "${aiResponseText}"`);
+        const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
+        console.log(`[Auto-Separator] Processed Text (Embedded): "${processedText.replace(/\n/g, '\\n')}"`);
+        
+        const responseLines = processedText.split('\n').filter(line => line.trim());
+        await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
+        aiRespondedSuccessfully = true; // Mark success after handling the text reply
+    }
 }
-aiRespondedSuccessfully = true;
-}
+// --- END OF REPLACEMENT BLOCK ---
 // ...
 
 } catch (e: any) {

@@ -399,13 +399,20 @@ const formatReadableList = (items?: string[], conjunction: string = "and", defau
     };
 })();
 
-(window as any).polyglotHelpers = helpersModuleInstance;
+if (helpersModuleInstance) {
+    // 1. Assign the created module to the global window object so other scripts can access it.
+    (window as any).polyglotHelpers = helpersModuleInstance;
+    console.log('js/utils/helpers.ts: SUCCESS - Assigned module to window.polyglotHelpers.');
 
-if (window.polyglotHelpers && typeof window.polyglotHelpers.sanitizeTextForDisplay === 'function') { // More robust check
-    console.log("js/utils/helpers.ts: SUCCESSFULLY assigned to window.polyglotHelpers and key method verified.");
+    // 2. Dispatch the "ready" event that many other modules are waiting for.
     document.dispatchEvent(new CustomEvent('polyglotHelpersReady'));
-    console.log("js/utils/helpers.ts: 'polyglotHelpersReady' event dispatched.");
+    console.log('js/utils/helpers.ts: "polyglotHelpersReady" event dispatched.');
+
 } else {
-    console.error("js/utils/helpers.ts: CRITICAL ERROR - window.polyglotHelpers IS UNDEFINED or not correctly formed.");
+    console.error('js/utils/helpers.ts: CRITICAL FAILURE - The helpersModuleInstance was not created. The application cannot start.');
 }
-console.log("js/utils/helpers.ts: Script execution FINISHED.");
+
+
+
+
+export const polyglotHelpers = helpersModuleInstance;

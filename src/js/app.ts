@@ -1,5 +1,6 @@
 // D:\polyglot_connect\src\js\app.ts
-import { getAuth, onAuthStateChanged, type User } from "firebase/auth"; // At the top of the file
+// --- START: FIREBASE AND AUTH GUARD SETUP ---
+import { getAuth, onAuthStateChanged, type User } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 
 const firebaseConfig = {
@@ -14,6 +15,18 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+(window as any).enterScreenshotMode = (secretCode: string) => {
+    if (secretCode === "polyglotDev2024") {
+        sessionStorage.setItem("dev_override", "true");
+        console.log("%cScreenshot mode activated. Reloading app.html...", "color: lime; font-weight: bold; font-size: 16px;");
+        window.location.reload();
+    } else {
+        console.error("Incorrect secret code.");
+    }
+};
+console.log("%cDev Tip: To bypass login for screenshots, type enterScreenshotMode('your_secret_code') in the console on this page.", "color: orange;");
+// --- END: FIREBASE AND AUTH GUARD SETUP ---
 import type {
     Connector,
     PolyglotApp, // For window.polyglotApp
@@ -459,17 +472,32 @@ document.addEventListener('DOMContentLoaded', () => {
 console.log("app.ts: Script parsing finished. Event listeners are set.");
 
 
-// --- START: AUTH GUARD LOGIC ---
-onAuthStateChanged(auth, (user: User | null) => { // At the bottom of the file
-    if (user) {
-      // User IS signed in. App can continue to load as normal.
-      console.log("Auth Guard: Access granted for user", user.uid);
-  
-    } else {
-      // User is NOT signed in. Redirect them to the login page.
-      console.log("Auth Guard: Access denied. Redirecting to login page.");
-      window.location.href = '/index.html';
-    }
-  });
+// The main authentication check
+onAuthStateChanged(auth, (user: User | null) => {
+    // Check for our secret sessionStorage key
+    const devOverride = sessionStorage.getItem("dev_override");
+
+    onAuthStateChanged(auth, (user: User | null) => {
+        // Check for our secret sessionStorage key
+        const devOverride = sessionStorage.getItem("dev_override");
+    
+        if (user || devOverride === "true") {
+            // Access is granted if user is logged in OR dev override is active
+            if (devOverride === "true") {
+                console.warn("Auth Guard: Bypassed by developer override. Welcome, master.");
+            } else {
+                console.log("Auth Guard: Access granted for user", user?.uid);
+            }
+            
+            // --- THIS IS THE ONLY CHANGE ---
+            tryInitializeApp(); // <<< CALL THE CORRECT, EXISTING FUNCTION
+    
+        } else {
+            // User is not signed in and no dev override is present
+            console.log("Auth Guard: Access denied. Redirecting to login page.");
+            window.location.href = '/index.html';
+        }
+    });
+});
   // --- END: AUTH GUARD LOGIC ---
 // =======================================================================================

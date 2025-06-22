@@ -13,21 +13,8 @@ import type {
     // For now, the base types should suffice.
 } from '../js/types/global.d.ts'; // Path from public/data/personas.ts to js/types/global.d.ts
 
-function runPersonasInitialization(): void {
-    console.log('data/personas.ts: runPersonasInitialization() called.');
 
-    if (!window.polyglotHelpers || typeof window.polyglotHelpers.calculateAge !== 'function') {
-        console.error("data/personas.ts: CRITICAL - polyglotHelpers or polyglotHelpers.calculateAge is NOT available. Processing cannot complete.");
-        // Initialize to empty arrays on window to prevent further errors if other scripts expect these
-        window.polyglotPersonasDataSource = window.polyglotPersonasDataSource || [];
-        window.polyglotConnectors = window.polyglotConnectors || [];
-        window.polyglotFilterLanguages = window.polyglotFilterLanguages || [];
-        window.polyglotFilterRoles = window.polyglotFilterRoles || [];
-        return;
-    }
-    console.log('data/personas.ts: polyglotHelpers IS available. Proceeding with initialization.');
-
-    const personasData: PersonaDataSourceItem[] = [
+    export const personasData: PersonaDataSourceItem[] = [ // <<< ADD 'export' HERE
         {
             id: "emile_fra_tutor",
             name: "Émile Dubois",
@@ -6078,6 +6065,21 @@ keyLifeEvents: [
 // ... (the const personasData = [ ... ALL YOUR PERSONA OBJECTS ... ]; is above this)
 
 ]; // End of personasData array
+
+
+function runPersonasInitialization(): void {
+    console.log('data/personas.ts: runPersonasInitialization() called.');
+
+    if (!window.polyglotHelpers || typeof window.polyglotHelpers.calculateAge !== 'function') {
+        console.error("data/personas.ts: CRITICAL - polyglotHelpers or polyglotHelpers.calculateAge is NOT available. Processing cannot complete.");
+        // Initialize to empty arrays on window to prevent further errors if other scripts expect these
+        window.polyglotPersonasDataSource = window.polyglotPersonasDataSource || [];
+        window.polyglotConnectors = window.polyglotConnectors || [];
+        window.polyglotFilterLanguages = window.polyglotFilterLanguages || [];
+        window.polyglotFilterRoles = window.polyglotFilterRoles || [];
+        return;
+    }
+    console.log('data/personas.ts: polyglotHelpers IS available. Proceeding with initialization.');
 console.log('PERSONAS_TS_LIFECYCLE: personasData array DEFINED.');
 console.log(`PERSONAS_TS_LIFECYCLE: Type of personasData: ${typeof personasData}, Is Array: ${Array.isArray(personasData)}, Length: ${Array.isArray(personasData) ? personasData.length : 'N/A'}`);
 
@@ -6244,13 +6246,32 @@ console.log("PERSONAS_TS_LIFECYCLE: 'polyglotDataReady' event dispatched from en
 } // End of runPersonasInitialization function
 
 // Logic to run initialization (ensure this is at the very end of the file)
+// --- START: NEW, MORE ROBUST INITIALIZATION LOGIC ---
+
+// Define the function that checks and runs the main logic
+const tryInitPersonas = () => {
+    // Check if the dependency is truly ready
+    if (window.polyglotHelpers && typeof window.polyglotHelpers.calculateAge === 'function') {
+        console.log('%cPERSONAS_TS: Dependency [polyglotHelpers] confirmed. Running main initialization.', 'color: green; font-weight: bold;');
+        runPersonasInitialization();
+        // Clean up the event listener if it was added
+        document.removeEventListener('polyglotHelpersReady', tryInitPersonas);
+    } else {
+        console.warn('PERSONAS_TS: tryInitPersonas was called, but polyglotHelpers is still not ready. This might indicate a load order issue.');
+    }
+};
+
+// Add an event listener immediately as a reliable fallback
+document.addEventListener('polyglotHelpersReady', tryInitPersonas, { once: true });
+console.log('PERSONAS_TS: Event listener for "polyglotHelpersReady" has been set up.');
+
+// Now, perform an immediate check. If helpers.ts has already run, this will fire immediately.
+// If not, the event listener above will catch it when it's ready.
 if (window.polyglotHelpers && typeof window.polyglotHelpers.calculateAge === 'function') {
-console.log('PERSONAS_TS_LIFECYCLE: polyglotHelpers already available. Initializing personas directly.');
-runPersonasInitialization();
+    console.log('PERSONAS_TS: Dependency [polyglotHelpers] was already available on initial check.');
+    tryInitPersonas(); // Run it right away
 } else {
-console.log('PERSONAS_TS_LIFECYCLE: polyglotHelpers not yet available. Adding event listener for polyglotHelpersReady.');
-document.addEventListener('polyglotHelpersReady', function handlePolyglotHelpersReady() { // Named the event handler
-    console.log('PERSONAS_TS_LIFECYCLE: "polyglotHelpersReady" event received.');
-    runPersonasInitialization();
-}, { once: true });
+    console.log('PERSONAS_TS: Dependency [polyglotHelpers] not yet available. Waiting for event.');
 }
+
+// --- END: NEW, MORE ROBUST INITIALIZATION LOGIC ---

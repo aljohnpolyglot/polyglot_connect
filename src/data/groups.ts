@@ -5,7 +5,7 @@ import type { Group } from '../js/types/global';
 
 console.log('data/groups.ts: loading...');
 
-const groupsDataArray: Group[] = [
+export const groupsDataArray: Group[] = [
     {
         id: "spanish_beginners_cafe_es",
         name: "Café Español",

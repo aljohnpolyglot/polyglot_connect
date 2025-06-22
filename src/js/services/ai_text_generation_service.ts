@@ -366,14 +366,64 @@ const estimatedTokenCount = JSON.stringify(openAIMessages).length / 4;
                 
                 // --- Payload preparation (as before) ---
                 let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
+                
+                // Initialize openAIMessages with system prompt and any existing history
+                // For image replies, existingConversationHistory should be empty, so this will just be the system prompt.
                 const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
-                const userContent: OpenAIMessageContentPart[] = [{ type: "text", text: userTextQuery }];
-                userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64ImageString}` } });
-                openAIMessages.push({ role: "user", content: userContent });
+                
+                // Determine the final user text query for the API
+                let finalUserTextQueryForApi = userTextQuery; // Default to the detailed prompt passed in
+
+                if (provider === PROVIDERS.TOGETHER) {
+                    // If the provider is "Together", use a much simpler prompt for vision,
+                    // as it seems to struggle with complex instructional prompts for images.
+                    console.warn(`[AI_TEXT_GEN_SVC.OpenAI_Vision] PROVIDER IS TOGETHER. Using OVERRIDE SIMPLIFIED prompt for vision. Original detailed prompt (first 100 chars): "${userTextQuery.substring(0,100)}..."`);
+                    finalUserTextQueryForApi = `User sent an image. What do you see or think about it? Respond naturally in ${connector.language || 'English'}. Keep it brief.`;
+                    // Alternative simpler prompt if the above is still too much for Together:
+                    // finalUserTextQueryForApi = `Describe this image in ${connector.language || 'English'} in one or two sentences.`;
+                } else {
+                    // For other providers (like if Gemini was called through this OpenAI-compatible path),
+                    // use the original detailed userTextQuery from text_message_handler.
+                    console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] Provider is NOT Together (or unknown). Using the detailed prompt: "${userTextQuery.substring(0,100)}..."`);
+                }
+                
+                // Construct the user content part of the message
+                const userMessageContentParts: OpenAIMessageContentPart[] = [
+                    { type: "text", text: finalUserTextQueryForApi } // Use the (potentially simplified) prompt
+                ];
+
+                if (base64ImageString) {
+                    userMessageContentParts.push({ 
+                        type: "image_url", 
+                        image_url: { url: `data:${mimeType};base64,${base64ImageString}` } 
+                    });
+                }
+                
+                // Add the user's turn (text + image) to the messages array
+                openAIMessages.push({ role: "user", content: userMessageContentParts });
         
                 // Optional: Log the full payload if debugging is difficult
                 // console.log(`${functionName}: Payload being sent:`, JSON.stringify(openAIMessages, null, 2));
-        
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] PROVIDER: ${provider}`);
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] MODEL_FOR_VISION: ${modelForVision}`);
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] API_KEY_USED (first 5 chars): ${apiKeyToUse?.substring(0,5)}...`);
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] User Query Text (for image): "${userTextQuery}"`);
+                // Log the structure of openAIMessages carefully
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] PAYLOAD (openAIMessages) being sent to _openaiCompatibleApiCaller:`);
+                try {
+                    // Attempt to stringify. If it's huge, this might be slow, but necessary for debug.
+                    console.log(JSON.stringify(openAIMessages, (key, value) => {
+                        if (key === 'image_url' && typeof value === 'object' && value !== null && typeof value.url === 'string' && value.url.startsWith('data:image')) {
+                            return { ...value, url: value.url.substring(0, 50) + '...[TRUNCATED_BASE64]' };
+                        }
+                        return value;
+                    }, 2));
+                } catch (e) {
+                    console.error("[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] Error stringifying openAIMessages:", e);
+                    console.log("[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] openAIMessages (raw object):", openAIMessages);
+                }
+                const callOptions = { temperature: 0.5, max_tokens: 512 }; // Options you are passing
+                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] OPTIONS passed to _openaiCompatibleApiCaller:`, JSON.stringify(callOptions, null, 2));
                 // --- API Call with Clear Logging ---
                 console.log(`${Function}: --> ATTEMPTING call to [${provider}] vision service.`);
                 const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 }, abortSignal); // <<< PASS IT HERE

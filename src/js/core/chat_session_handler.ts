@@ -131,6 +131,8 @@ const newMessageInStoreListener = (event: Event) => {
  * to prevent race conditions with modal dialogs opening simultaneously.
  * @param {CustomEvent} event The event containing the new message details.
  */
+// in chat_session_handler.ts
+
 function handleNewMessageInStore(event: CustomEvent): void {
     setTimeout(() => {
         const { connectorId, message } = event.detail as { connectorId: string, message: MessageInStore };
@@ -144,13 +146,20 @@ function handleNewMessageInStore(event: CustomEvent): void {
         const currentModalConnector = chatActiveTargetManager.getModalMessageTargetConnector();
         let messageAppended = false;
     
-        // Check if the message belongs to the active embedded chat
+        // FIX FOR EMBEDDED CHAT
         if (currentEmbeddedId && currentEmbeddedId === connectorId) {
             console.log(`CSH: New message for active embedded chat (${connectorId}). Appending to UI.`);
             const convoRecord = conversationManager.getConversationById(connectorId);
             const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
             
+            // =================== START OF FIX ===================
             const msgOptions: ChatMessageOptions = { ...message };
+            
+            // This is the crucial mapping that was missing.
+            if (message.type === 'image' && message.content_url) {
+                msgOptions.imageUrl = message.content_url;
+            }
+            // ==================== END OF FIX ====================
     
             if (senderClass === 'connector' && convoRecord?.connector) {
                 msgOptions.avatarUrl = convoRecord.connector.avatarModern;
@@ -162,22 +171,25 @@ function handleNewMessageInStore(event: CustomEvent): void {
             messageAppended = true;
         }
     
-        // Check if the message belongs to the active modal chat
+        // FIX FOR MODAL CHAT (The same fix applies here)
         if (currentModalConnector && currentModalConnector.id === connectorId) {
             console.log(`CSH: New message for active modal chat (${connectorId}). Appending to UI.`);
             const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
     
-        // =================== REPLACE WITH THIS (in chat_session_handler.ts) ===================
-    const msgOptions: ChatMessageOptions = {
-        ...message, // Spread all properties from the stored message first
-        avatarUrl: currentModalConnector.avatarModern,
-        senderName: currentModalConnector.profileName,
-        connectorId: currentModalConnector.id,
-        // The `reactions` property from `msg` is now automatically included.
-    };
-    uiUpdater.appendToMessageLogModal?.(message.text || "", senderClass, msgOptions);
-// ====================================================================================
-    
+            // =================== START OF FIX ===================
+            const msgOptions: ChatMessageOptions = {
+                ...message,
+                avatarUrl: currentModalConnector.avatarModern,
+                senderName: currentModalConnector.profileName,
+                connectorId: currentModalConnector.id,
+            };
+
+            // This is the crucial mapping that was missing.
+            if (message.type === 'image' && message.content_url) {
+                msgOptions.imageUrl = message.content_url;
+            }
+            // ==================== END OF FIX ====================
+
             uiUpdater.appendToMessageLogModal?.(message.text || "", senderClass, msgOptions);
             messageAppended = true;
         }
@@ -186,7 +198,7 @@ function handleNewMessageInStore(event: CustomEvent): void {
             console.log("CSH: Message was appended to a live view, re-rendering active chat list.");
             chatOrchestrator.renderCombinedActiveChatsList();
         }
-    }, 0); // Execute on the next tick of the event loop
+    }, 0);
 }
 
 

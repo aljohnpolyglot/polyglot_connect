@@ -221,21 +221,65 @@ function displayImagePreviews(
 
     updateChatInputUIState(previewContainer, captionInputElement, mainTextInputElement, currentFilesForInputContext.length > 0);
 }
-
+// --- REPLACEMENT FUNCTION for handleFileSelection with Size Check ---
 function handleFileSelection(
     event: Event,
     previewContainer: HTMLElement | null,
     captionInputElement: HTMLInputElement | null,
     mainTextInputElement: HTMLInputElement | null
 ) {
-    if (!previewContainer || !captionInputElement || !mainTextInputElement) return;
-    const fileInput = event.target as HTMLInputElement;
-    if (fileInput.files && fileInput.files.length > 0) {
-        displayImagePreviews(Array.from(fileInput.files), previewContainer, captionInputElement, mainTextInputElement);
-        fileInput.value = ''; // Reset file input
+    if (!previewContainer || !captionInputElement || !mainTextInputElement) {
+        console.error("CEL: handleFileSelection - Missing critical UI elements for preview.");
+        return;
     }
-}
 
+    const fileInput = event.target as HTMLInputElement;
+    if (!fileInput.files || fileInput.files.length === 0) {
+        return; // No files selected
+    }
+
+    const filesFromInput = Array.from(fileInput.files);
+    const validImageFiles: File[] = [];
+    const MAX_FILE_SIZE_MB = 2;
+    const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+    let anImageWasTooLarge = false;
+
+    for (const file of filesFromInput) {
+        if (file.type.startsWith('image/')) {
+            if (file.size > MAX_FILE_SIZE_BYTES) {
+                alert(`Image "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Please select an image smaller than ${MAX_FILE_SIZE_MB} MB.`);
+                anImageWasTooLarge = true;
+                // Optionally, you could choose to process other valid files if multiple were selected,
+                // or just stop processing altogether if one is too large.
+                // For simplicity, if one is too large, we'll just alert and not process any from this selection.
+                break; 
+            } else {
+                validImageFiles.push(file);
+            }
+        } else {
+            // Optional: Alert if a non-image file was selected, or just ignore it
+            console.warn(`CEL: handleFileSelection - Non-image file selected and ignored: "${file.name}"`);
+        }
+    }
+
+    if (anImageWasTooLarge) {
+        fileInput.value = ''; // Reset file input to allow re-selection
+        // If you were allowing multiple files and one was too large, you might still want to display valid ones.
+        // But since MAX_PREVIEW_IMAGES is likely 1, clearing is fine.
+        // If validImageFiles still has items and you want to display them despite one being too large,
+        // you would call displayImagePreviews(validImageFiles, ...) here.
+        // For now, we stop if any image is too large.
+        return;
+    }
+
+    if (validImageFiles.length > 0) {
+        displayImagePreviews(validImageFiles, previewContainer, captionInputElement, mainTextInputElement);
+    }
+
+    fileInput.value = ''; // Reset file input after processing
+}
+// --- END OF REPLACEMENT FUNCTION ---
 function handlePasteEvent(
     event: ClipboardEvent,
     previewContainer: HTMLElement | null,
