@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot Connect - Choose Your Connection</title>
+    <link rel="icon" href="/images/polyglot_connect_logo.png" type="image/png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Merriweather+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --primary-bg: #121212; 
+            --secondary-bg: #1e1e1e; 
+            --tertiary-bg: #2a2a2a;
+            --primary-text: #e0e0e0; 
+            --secondary-text: #b0b0b0; 
+            --accent-color-1: #5865F2; /* Discord Purple/Blue like for premium */
+            --accent-color-1-darker: #4752C4;
+            --accent-color-2: #f0b132; /* Gold/Yellow for BEST VALUE highlight */
+            --accent-color-2-darker: #cfa02a;
+            --success-color: #28a745; 
+            --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); 
+            --border-color: #3a3a3a;
+            --premium-glow: 0 0 20px rgba(88, 101, 242, 0.6);
+            --best-value-glow: 0 0 25px rgba(240, 177, 50, 0.7);
+            --primary-font: 'Roboto', sans-serif;
+            --heading-font: 'Merriweather Sans', sans-serif;
+        }
+        body {
+            background-color: var(--primary-bg); 
+            color: var(--primary-text);
+            font-family: var(--primary-font); 
+            margin: 0;
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 50px 20px;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .header { 
+            text-align: center; 
+            margin-bottom: 50px; 
+        }
+        .header img { 
+            width: 90px; 
+            height: 90px; 
+            margin-bottom: 20px; 
+        }
+        .header h1 { 
+            font-family: var(--heading-font); 
+            font-size: 2.8em; 
+            font-weight: 800;
+            margin: 0 0 10px 0; 
+            color: #fff;
+        }
+        .header p { 
+            font-size: 1.3em; 
+            color: var(--secondary-text); 
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        .pricing-container { 
+            display: flex; 
+            justify-content: center; 
+            align-items: flex-start; 
+            gap: 30px; 
+            flex-wrap: wrap; 
+            max-width: 1600px; /* Max width for 3 cards */
+        }
+        .card {
+            background-color: var(--secondary-bg); 
+            border: 1px solid var(--border-color);
+            border-radius: 16px; 
+            box-shadow: var(--card-shadow); 
+            padding: 30px; /* Reduced padding slightly for 3 cards */
+            width: 300px; /* Adjusted width for 3 cards */
+            min-height: 520px; /* Ensure cards have a consistent minimum height */
+            display: flex; 
+            flex-direction: column;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative; /* For the best value badge */
+        }
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+        .card.premium { 
+            border: 2px solid var(--accent-color-1); 
+            box-shadow: var(--premium-glow);
+        }
+        .card.best-value {
+            border: 2px solid var(--accent-color-2);
+            box-shadow: var(--best-value-glow);
+            transform: scale(1.03); /* Make it pop a bit */
+        }
+        .best-value-badge {
+            background-color: var(--accent-color-2);
+            color: var(--primary-bg);
+            font-size: 0.75em;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 20px 20px 0 0; /* Shaped like a tab */
+            position: absolute;
+            top: -25px; /* Adjusted for visual appeal */
+            left: 50%;
+            transform: translateX(-50%);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            z-index: 1;
+        }
+        .card .card-header { 
+            text-align: center; 
+            padding-bottom: 20px; 
+            margin-bottom: 20px; 
+        }
+        .card h3 { 
+            font-family: var(--heading-font); 
+            font-size: 1.9em; /* Slightly adjusted for new names */
+            font-weight: 700; 
+            margin: 0 0 8px 0; 
+        }
+        .card .tagline {
+            font-size: 0.95em;
+            color: var(--secondary-text);
+            min-height: 3em; /* Approx 2 lines of text */
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+        .card .price-tag { 
+            margin: 0 0 10px 0; 
+            font-size: 1.2em; 
+            color: var(--secondary-text); 
+        }
+        .card .price-tag span { 
+            font-size: 2.8em; 
+            font-weight: 800; 
+            color: var(--primary-text); 
+            font-family: var(--heading-font);
+        }
+        .card .price-tag .currency {
+            font-size: 0.6em;
+            vertical-align: super;
+            margin-right: 2px;
+        }
+        .feature-list { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0 0 30px 0; 
+            flex-grow: 1; 
+        }
+        .feature-list li { 
+            display: flex; 
+            align-items: flex-start; 
+            gap: 12px; 
+            margin-bottom: 16px; 
+            font-size: 1em; 
+            line-height: 1.4;
+        }
+        .feature-list i { 
+            color: var(--accent-color-1);
+            width: 20px;
+            text-align: center;
+            font-size: 1em;
+            margin-top: 2px; 
+        }
+        .feature-list .fa-star, .feature-list .fa-infinity, .feature-list .fa-eye, .feature-list .fa-heart,
+        .feature-list .fa-calendar-check, .feature-list .fa-lock, .feature-list .fa-certificate, .feature-list .fa-bolt {
+            color: var(--accent-color-2); /* Premium/Best Value feature highlight */
+        }
+        .action-btn {
+            background-color: var(--tertiary-bg); 
+            color: var(--primary-text); 
+            border: 1px solid var(--border-color);
+            padding: 14px 22px; 
+            font-size: 1.1em; 
+            font-weight: 700; 
+            font-family: var(--heading-font);
+            border-radius: 10px; 
+            cursor: pointer; 
+            transition: all 0.2s ease-in-out;
+            width: 100%;
+            margin-top: auto; 
+        }
+        .action-btn:disabled { 
+            background-color: var(--tertiary-bg);
+            color: var(--secondary-text);
+            border-color: var(--border-color);
+            cursor: not-allowed; 
+            opacity: 0.7; 
+        }
+        .action-btn.premium-btn { /* For the monthly premium */
+            background: linear-gradient(to right, var(--accent-color-1), var(--accent-color-1-darker)); 
+            color: #fff; 
+            border: none;
+        }
+        .action-btn.yearly-btn { /* For the yearly premium */
+            background: linear-gradient(to right, var(--accent-color-2), var(--accent-color-2-darker)); 
+            color: var(--primary-bg); /* Dark text on gold button */
+            font-weight: 800;
+            border: none;
+        }
+        .action-btn:hover:not(:disabled) { 
+            transform: translateY(-3px) scale(1.02); 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.7); 
+        }
+        .footer { 
+            margin-top: 60px; 
+            color: var(--secondary-text); 
+            font-size: 1em; 
+        }
+        .footer a { 
+            color: var(--accent-color-1); 
+            text-decoration: none; 
+            font-weight: 500;
+        }
+        .save-badge {
+            font-size: 0.85em;
+            color: var(--success-color);
+            font-weight: 700;
+            display: block;
+            text-align: center;
+            margin-top: -10px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="/images/polyglot_connect_logo.png" alt="Polyglot Connect Logo">
+        <h1>Choose Your Connection</h1>
+        <p>Unlock deeper understanding and boundless conversations. Find the path that resonates with you.</p>
+    </div>
+
+    <div class="pricing-container">
+        <!-- Explorer Plan Card (Free) -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Explorer</h3>
+                <p class="tagline">Your complimentary pass to the club. Meet people, spark conversations.</p>
+                <p class="price-tag"><span class="currency">$</span><span>0</span><small>/month</small></p>
+            </div>
+            <ul class="feature-list">
+                <li><i class="fas fa-comments"></i> 50 Text Message Exchanges / month</li>
+                <li><i class="fas fa-microphone-alt"></i> 5 Live Voice Chats / month</li>
+                <li><i class="fas fa-users"></i> Full Roster Access</li>
+                <li><i class="fas fa-door-open"></i> Clubhouse Access</li>
+            </ul>
+            <button class="action-btn" disabled>Your Current Adventure</button>
+        </div>
+
+        <!-- Insider Plan Card (Premium Monthly) -->
+        <div class="card premium">
+            <div class="card-header">
+                <h3>Insider</h3>
+                <p class="tagline">Connect without limits. The full experience, flexible and monthly.</p>
+                <p class="price-tag"><span class="currency">$</span><span>5</span><small>/month</small></p>
+            </div>
+            <ul class="feature-list">
+                <li><i class="fas fa-infinity"></i> <strong>Unlimited</strong> Text Message Exchanges</li>
+                <li><i class="fas fa-infinity"></i> <strong>Unlimited</strong> Live Voice Chats</li>
+                <li><i class="fas fa-star"></i> Priority Access in Clubhouses</li>
+                <li><i class="fas fa-eye"></i> Unlock Deeper Persona Profiles</li>
+                <li><i class="fas fa-heart"></i> Support the Club & Future Growth</li>
+            </ul>
+            <button id="subscribe-monthly-btn" class="action-btn premium-btn">Become an Insider</button>
+        </div>
+        
+        <!-- Trailblazer Plan Card (Premium Yearly - BEST VALUE) -->
+        <div class="card premium best-value">
+            <div class="best-value-badge">Best Value</div>
+            <div class="card-header">
+                <h3>Trailblazer</h3>
+                <p class="tagline">A year of boundless conversation & exclusive perks, with big savings.</p>
+                <p class="price-tag"><span class="currency">$</span><span>50</span><small>/year</small></p>
+            </div>
+            <p class="save-badge"><i class="fas fa-piggy-bank"></i> Save $10 - Like 2 Months Free!</p>
+            <ul class="feature-list">
+                <li><i class="fas fa-infinity"></i> <strong>All "Insider" Benefits, PLUS:</strong></li>
+                <li><i class="fas fa-lock"></i> Price Lock Guarantee for Your Term</li>
+                <li><i class="fas fa-certificate"></i> "Club Trailblazer" Recognition <small>(Soon)</small></li>
+                <li><i class="fas fa-bolt"></i> First Look Access</li>
+            </ul>
+            <button id="subscribe-yearly-btn" class="action-btn yearly-btn">Go Trailblazer</button>
+        </div>
+    </div>
+
+    <div class="footer">
+        <a href="/app.html"><i class="fas fa-arrow-left"></i> Back to the App</a>
+    </div>
+
+    <script>
+        document.getElementById('subscribe-monthly-btn').addEventListener('click', () => {
+            alert('Monthly Subscription: Stripe integration coming soon!');
+            // Later: This will redirect to a Stripe Checkout session for the monthly plan
+        });
+        document.getElementById('subscribe-yearly-btn').addEventListener('click', () => {
+            alert('Yearly Subscription: Stripe integration coming soon!');
+            // Later: This will redirect to a Stripe Checkout session for the yearly plan
+        });
+    </script>
+</body>
+</html>

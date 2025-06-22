@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot Connect - Persona Dossier</title>
+    <link rel="icon" href="/images/polyglot_connect_logo.png" type="image/png">
+    
+    <!-- Fonts from your app -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Merriweather+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root { /* Your app's color variables */
+            --primary-bg: #121212; 
+            --secondary-bg: #1e1e1e; 
+            --tertiary-bg: #2a2a2a;
+            --primary-text: #e0e0e0; 
+            --secondary-text: #b0b0b0; 
+            --accent-color-1: #5865F2;
+            --accent-color-2: #f0b132; 
+            --border-color: #3a3a3a;
+            --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            --primary-font: 'Roboto', sans-serif;
+            --heading-font: 'Merriweather Sans', sans-serif;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --border-radius-lg: 12px;
+        }
+        body {
+            background-color: var(--primary-bg); 
+            color: var(--primary-text);
+            font-family: var(--primary-font); 
+            margin: 0;
+            padding: 30px 20px;
+            line-height: 1.6;
+        }
+        .dossier-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: var(--secondary-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--card-shadow);
+            padding: var(--spacing-lg);
+            border: 1px solid var(--border-color);
+        }
+        .dossier-header {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-lg);
+            padding-bottom: var(--spacing-lg);
+            margin-bottom: var(--spacing-lg);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .dossier-avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--accent-color-1);
+        }
+        .dossier-header-text h1 {
+            font-family: var(--heading-font);
+            font-size: 2em;
+            margin: 0 0 5px 0;
+            color: #fff;
+        }
+        .dossier-header-text p {
+            font-size: 1.1em;
+            color: var(--secondary-text);
+            margin: 0;
+        }
+        .dossier-section {
+            margin-bottom: var(--spacing-lg);
+            padding: var(--spacing-md);
+            background-color: var(--tertiary-bg);
+            border-radius: 8px;
+        }
+        .dossier-section h3 {
+            font-family: var(--heading-font);
+            font-size: 1.3em;
+            margin: 0 0 var(--spacing-md) 0;
+            color: var(--accent-color-1);
+            display: flex;
+            align-items: center;
+        }
+        .dossier-section h3 i {
+            margin-right: 10px;
+            font-size: 0.9em;
+        }
+        .dossier-section p, .dossier-section ul {
+            margin: 0 0 var(--spacing-md) 0;
+        }
+        .dossier-section ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .dossier-section li {
+            padding-left: 1.5em;
+            position: relative;
+            margin-bottom: 0.5em;
+        }
+        .dossier-section li::before {
+            content: '\\f00c'; /* Font Awesome check icon */
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            left: 0;
+            color: var(--accent-color-2);
+        }
+        .pill-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+        .pill {
+            background-color: #444;
+            color: var(--primary-text);
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+        }
+        .event-item {
+            margin-bottom: 10px;
+            padding-left: 20px;
+            border-left: 2px solid var(--accent-color-1);
+            position: relative;
+        }
+        .event-item::before {
+            content: '';
+            position: absolute;
+            left: -7px; top: 5px;
+            width: 12px; height: 12px;
+            background-color: var(--accent-color-1);
+            border-radius: 50%;
+            border: 2px solid var(--secondary-bg);
+        }
+        .event-date {
+            font-size: 0.85em;
+            color: var(--secondary-text);
+            display: block;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: var(--spacing-lg);
+            color: var(--accent-color-1);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+  <script type="module" crossorigin src="/assets/dossier-Dtvynzsl.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
+</head>
+<body>
+    <div class="dossier-container">
+        <div class="dossier-header">
+            <img id="dossier-avatar" src="/images/placeholder_avatar.png" alt="Persona Avatar">
+            <div class="dossier-header-text">
+                <h1 id="dossier-profile-name">Loading Persona...</h1>
+                <p><span id="dossier-full-name"></span></p>
+                <p><i class="fas fa-briefcase"></i> <span id="dossier-profession"></span></p>
+                <p><i class="fas fa-map-marker-alt"></i> <span id="dossier-location"></span></p>
+            </div>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-scroll"></i> Bio & Background</h3>
+            <p id="dossier-bio"></p>
+            <p><strong><i class="fas fa-graduation-cap"></i> Education:</strong> <span id="dossier-education"></span></p>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-brain"></i> Personality & Style</h3>
+            <p><strong>Core Traits:</strong></p>
+            <div id="dossier-personality-traits" class="pill-container"></div>
+            <p><strong>Communication (Voice):</strong> <span id="dossier-communication-style"></span></p>
+            <p><strong>Texting Style:</strong> <span id="dossier-chat-style"></span></p>
+            <p><strong>Quirks:</strong> <span id="dossier-quirks"></span></p>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-star"></i> Interests & Passions</h3>
+            <div id="dossier-interests-structured">
+                <!-- Structured interests will be built here by JS -->
+            </div>
+            <p style="margin-top: 15px;"><strong>General Interests:</strong></p>
+            <div id="dossier-interests-general" class="pill-container"></div>
+        </div>
+        
+        <div class="dossier-section">
+            <h3><i class="fas fa-thumbs-down"></i> Would Rather Avoid...</h3>
+            <div id="dossier-dislikes" class="pill-container"></div>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-calendar-alt"></i> Defining Moments</h3>
+            <div id="dossier-key-life-events">
+                <!-- Timeline items will be built here by JS -->
+            </div>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-language"></i> Language Profile</h3>
+            <div id="dossier-language-profile">
+                <!-- Language pills will be built here by JS -->
+            </div>
+        </div>
+        
+        <div class="dossier-section">
+            <h3><i class="fas fa-heart"></i> Personal Connections</h3>
+            <p><strong>Status:</strong> <span id="dossier-relationship-status"></span></p>
+            <div id="dossier-relationship-details">
+                <!-- Detailed relationship info will be built here by JS -->
+            </div>
+        </div>
+
+        <div class="dossier-section">
+            <h3><i class="fas fa-clock"></i> A Glimpse into Their World</h3>
+            <p><strong>Active Timezone:</strong> <span id="dossier-active-timezone"></span></p>
+            <p><strong>Typical Day:</strong> <span id="dossier-daily-routine"></span></p>
+            <p><strong>Current Status:</strong> <span id="dossier-current-activity-status"></span> (e.g., Likely awake, Possibly sleeping)</p>
+        </div>
+
+        <a href="/app.html" class="back-link"><i class="fas fa-arrow-left"></i> Back to Polyglot Connect</a>
+    </div>
+ 
+</body>
+</html>

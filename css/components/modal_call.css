@@ -117,9 +117,7 @@
     height: clamp(450px, 80vh, 700px); /* Responsive height */
     padding: 0; /* Header/footer/body will have padding */
 }
-.call-interface-header .modal-title-inline { /* For #voice-chat-active-name */
-    /* Uses .modal-title-inline from above */
-}
+
 .call-chat-log { /* For #voice-chat-log */
     /* Uses .chat-log-area from global.css or shell.css if defined, or define here */
     /* This one might be specific to the modal if its bg is different */
