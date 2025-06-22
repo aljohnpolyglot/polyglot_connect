@@ -11,11 +11,13 @@ import type {
     ConversationRecordInStore,
     MessageInStore,
     GeminiChatItem,
-    ActivityManager // <<< ADD THIS LINE
+    ActivityManager,
+    ModalHandler // <<< THIS IS THE FIX. WE ARE NOW IMPORTING THE TYPE.
 } from '../types/global.d.ts';
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
+import { checkAndIncrementUsage } from './usageManager'; 
 // =================== START: NEW CANCELLATION LOGIC ===================
 // in text_message_handler.ts at the very top
 
@@ -105,9 +107,9 @@ interface TextMessageHandlerDeps {
     polyglotHelpers: PolyglotHelpers;
     chatOrchestrator?: ChatOrchestrator;
     aiApiConstants: AIApiConstants;
-    activityManager: ActivityManager; // <<< ADD THIS LINE
+    activityManager: ActivityManager;
+    modalHandler: ModalHandler; // <<< THIS IS THE FIX
 }
-
 function initializeActualTextMessageHandler(): void {
     console.log('text_message_handler.ts: initializeActualTextMessageHandler() for FULL method population called.');
 
@@ -120,9 +122,12 @@ function initializeActualTextMessageHandler(): void {
             polyglotHelpers: window.polyglotHelpers,
             chatOrchestrator: window.chatOrchestrator,
             aiApiConstants: window.aiApiConstants,
-            activityManager: window.activityManager // <<< ADD THIS LINE
+            activityManager: window.activityManager,
+            modalHandler: window.modalHandler // <<< ADD THIS
         };
-        const criticalKeys: (keyof Omit<TextMessageHandlerDeps, 'chatOrchestrator'>)[] = ['uiUpdater', 'aiService', 'conversationManager', 'domElements', 'polyglotHelpers', 'aiApiConstants', 'activityManager']; // <<< ADD
+        // This line assumes you added `modalHandler` to the TextMessageHandlerDeps interface in global.d.ts
+        const criticalKeys: (keyof Omit<TextMessageHandlerDeps, 'chatOrchestrator'>)[] = ['uiUpdater', 'aiService', 'conversationManager', 'domElements', 'polyglotHelpers', 'aiApiConstants', 'activityManager', 'modalHandler']; // <<< AND ADD IT HERE
+     
         for (const key of criticalKeys) {
             if (!deps[key]) {
                 console.error(`TMH (${functionName}): CRITICAL MISSING window.${key}.`);
@@ -437,7 +442,8 @@ if (index < lines.length - 1) {
             conversationManager,
             aiApiConstants,
             domElements,
-            activityManager // <<< ADD THIS LINE
+            activityManager,// <<< ADD THIS LINE
+            modalHandler // Destructure it here
         } = resolvedFunctionalDeps;
 
 
@@ -477,6 +483,25 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 captionText?: string | null;
             } = {}
         ): Promise<void> {
+
+
+            const usageResult = await checkAndIncrementUsage('textMessages');
+            if (!usageResult.allowed) {
+                console.log("TMH: User has reached text message limit. Showing upgrade modal.");
+                const { modalHandler, domElements } = getSafeDeps("Upgrade Modal Trigger")!;
+                if (modalHandler && domElements?.upgradeLimitModal) {
+                    modalHandler.open(domElements.upgradeLimitModal);
+                } else {
+                    alert(`You've reached your monthly message limit for the ${usageResult.plan} plan. Please upgrade for unlimited messages!`);
+                }
+                // IMPORTANT: Re-enable the send button and stop execution
+                if (uiUpdater && !options.skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
+                return; 
+            }
+
+
+
+
             const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend, messageId: optionsMessageId, timestamp: optionsTimestamp } = options;
             if (currentEmbeddedChatTargetId) clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
             const functionName = "sendEmbeddedTextMessage";
@@ -1140,6 +1165,25 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 captionText?: string | null;
             } = {}
         ): Promise<void> {
+             // ==========================================================
+    // === FREEMIUM USAGE GATE - START ===
+    // ==========================================================
+    const usageResult = await checkAndIncrementUsage('textMessages');
+    if (!usageResult.allowed) {
+        console.log("TMH (Modal): User has reached text message limit. Showing upgrade modal.");
+        const { modalHandler, domElements } = getSafeDeps("Upgrade Modal Trigger")!;
+        if (modalHandler && domElements?.upgradeLimitModal) {
+            modalHandler.open(domElements.upgradeLimitModal);
+        } else {
+            alert(`You've reached your monthly message limit for the ${usageResult.plan} plan. Please upgrade for unlimited messages!`);
+        }
+        // IMPORTANT: Re-enable the send button and stop execution
+        if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
+        return;
+    }
+    // ==========================================================
+    // === FREEMIUM USAGE GATE - END ===
+    // ==========================================================
             const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend } = options;
             if (currentModalMessageTargetConnector?.id) clearTypingIndicatorFor(currentModalMessageTargetConnector.id); // <<< ADD THIS LINE
         
@@ -1695,7 +1739,6 @@ Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_STA
 } // <<< ***** THIS IS THE CRUCIAL FIX: Added closing brace for initializeActualTextMessageHandler *****
 
 // Dependency checking logic remains outside the initializeActualTextMessageHandler function
-
 const dependenciesForTMH_Functional = [
     'uiUpdaterReady',
     'aiServiceReady',
@@ -1703,7 +1746,8 @@ const dependenciesForTMH_Functional = [
     'domElementsReady',
     'polyglotHelpersReady',
     'aiApiConstantsReady',
-    'activityManagerReady' // <<< ADD THIS LINE
+    'activityManagerReady',
+    'modalHandlerReady' // <<< Now this is a valid dependency to wait for
 ];
 const tmhMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForTMH_Functional.forEach((dep: string) => tmhMetDependenciesLog[dep] = false);

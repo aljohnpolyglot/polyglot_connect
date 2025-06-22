@@ -535,7 +535,12 @@ export interface YourDomElements { // Ensure EXPORT
  
    imagePreviewContainerGroup: HTMLElement | null;
    groupImageCaptionInput: HTMLInputElement | null;
-  
+ // === ADD THIS NEW BLOCK FOR THE FREEMIUM MODAL ===
+upgradeLimitModal: HTMLElement | null;
+closeUpgradeModalBtn: HTMLButtonElement | null;
+upgradeModalCtaBtn: HTMLButtonElement | null;
+upgradeModalMaybeLaterBtn: HTMLButtonElement | null;
+// === END OF NEW BLOCK ===
   
   // App Shell
     appShell: HTMLElement | null;
@@ -1166,6 +1171,7 @@ interface TextMessageSendOptions {
 }
 
 export interface TextMessageHandler {
+  
   sendEmbeddedTextMessage: (
     textFromInput: string,
     currentEmbeddedChatTargetId: string | null,
@@ -1195,7 +1201,22 @@ export interface TextMessageHandler {
   ) => Promise<void>; // <<< END OF MODIFIED PART
   handleModalImageUpload: (event: Event, currentModalMessageTargetConnector: Connector | null) => Promise<void>;
 
+
 }
+// === ADD THIS NEW INTERFACE DEFINITION ===
+export interface TextMessageHandlerDeps {
+  uiUpdater: UiUpdater;
+  aiService: AIService;
+  conversationManager: ConversationManager;
+  domElements: YourDomElements;
+  polyglotHelpers: PolyglotHelpersOnWindow;
+  chatOrchestrator?: ChatOrchestrator;
+  aiApiConstants: AIApiConstants;
+  activityManager: ActivityManager;
+  modalHandler: ModalHandler; // <<< THE CRITICAL FIX
+}
+
+
 export interface VoiceMemoHandler {
   handleNewVoiceMemoInteraction: (
       targetType: string, 

@@ -1,20 +1,7 @@
 // D:\polyglot_connect\src\js\app.ts
 // --- START: FIREBASE AND AUTH GUARD SETUP ---
-import { getAuth, onAuthStateChanged, type User } from "firebase/auth";
-import { initializeApp } from "firebase/app";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyC5k_WocF2E9fJ_rYiUVw-hUq5UYfF1QxI",
-    authDomain: "polyglot-connect-ffdcc.firebaseapp.com",
-    projectId: "polyglot-connect-ffdcc",
-    storageBucket: "polyglot-connect-ffdcc.appspot.com",
-    messagingSenderId: "724893488450",
-    appId: "1:724893488450:web:51b944b94a7c66e3fbe4db",
-    measurementId: "G-CQR8RBH78K"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+import { auth } from "./firebase-config"; // <<< ADD THIS
+import { onAuthStateChanged, type User } from "firebase/auth"; // <<< KEEP THIS
 
 (window as any).enterScreenshotMode = (secretCode: string) => {
     if (secretCode === "polyglotDev2024") {

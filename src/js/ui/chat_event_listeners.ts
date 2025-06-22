@@ -920,6 +920,12 @@ function createSendHandler(
         function initializeEventListeners(domElements: YourDomElements, conversationManager: ConversationManager): void {
             console.log("CEL_TS_DEBUG_FLOW: ENTERING initializeEventListeners() - ATTACHING LISTENERS NOW.");
             console.log("CEL_TS: initializeEventListeners() called.");
+          
+          
+          
+          
+          
+          
             if (listenersInitialized) {
                 console.warn("CEL_TS: Event listeners already initialized.");
                 return;
@@ -980,6 +986,28 @@ addSafeListener(domElements.closeRecapBtn, 'click', async () => {
     // 2. Explicitly switch the main view to 'messages'.
     window.shellController?.switchView('messages');
 });
+
+// ==========================================================
+// === ADD THIS ENTIRE NEW BLOCK OF CODE ===
+// ==========================================================
+// Listeners for the "Upgrade Limit" modal that pops up
+addSafeListener(domElements.upgradeLimitModal, 'click', (e: Event) => {
+    // Close modal if user clicks on the dark background overlay
+    if ((e.target as HTMLElement).id === 'upgrade-limit-modal') {
+        modalHandler.close(domElements.upgradeLimitModal);
+    }
+});
+addSafeListener(domElements.closeUpgradeModalBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
+addSafeListener(domElements.upgradeModalMaybeLaterBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
+
+// This button now takes the user to the new standalone pricing page
+addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
+    window.location.href = '/pricing.html'; 
+});
+
+
+
+
 
 const handleChatLogClick = (event: Event) => {
     const target = event.target as HTMLElement;

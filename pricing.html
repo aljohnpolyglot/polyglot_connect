@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot Connect - Pricing</title>
+    <link rel="icon" href="/images/polyglot_connect_logo.png" type="image/png">
+    
+    <!-- Fonts from your landing page for consistency -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        /* Using the same color variables and fonts from your landing.css */
+        :root {
+            --primary-bg: #121212; 
+            --secondary-bg: #1e1e1e; 
+            --tertiary-bg: #2a2a2a;
+            --primary-text: #e0e0e0; 
+            --secondary-text: #b0b0b0; 
+            --accent-color-1: #4a90e2;
+            --accent-color-2: #e94b3c; 
+            --success-color: #28a745; 
+            --error-color: #dc3545;
+            --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); 
+            --border-color: #3a3a3a;
+            --premium-glow: 0 0 15px rgba(74, 144, 226, 0.5);
+            --primary-font: 'Roboto', sans-serif;
+            --heading-font: 'Merriweather Sans', sans-serif;
+        }
+        body {
+            background-color: var(--primary-bg); 
+            color: var(--primary-text);
+            font-family: var(--primary-font); 
+            margin: 0;
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 40px 20px;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .header { 
+            text-align: center; 
+            margin-bottom: 40px; 
+        }
+        .header img { 
+            width: 80px; 
+            height: 80px; 
+            margin-bottom: 15px; 
+        }
+        .header h1 { 
+            font-family: var(--heading-font); 
+            font-size: 2.5em; 
+            margin: 0; 
+        }
+        .header p { 
+            font-size: 1.2em; 
+            color: var(--secondary-text); 
+            margin-top: 10px; 
+        }
+        .pricing-container { 
+            display: flex; 
+            justify-content: center; 
+            gap: 30px; 
+            flex-wrap: wrap; 
+        }
+        .card {
+            background-color: var(--secondary-bg); 
+            border: 1px solid var(--border-color);
+            border-radius: 12px; 
+            box-shadow: var(--card-shadow); 
+            padding: 30px;
+            width: 320px; 
+            display: flex; 
+            flex-direction: column;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card.premium { 
+            border-color: var(--accent-color-1); 
+            box-shadow: var(--premium-glow);
+        }
+        .card .card-header { 
+            text-align: center; 
+            border-bottom: 1px solid var(--border-color); 
+            padding-bottom: 20px; 
+            margin-bottom: 20px; 
+        }
+        .card h3 { 
+            font-family: var(--heading-font); 
+            font-size: 1.8em; 
+            margin: 0; 
+        }
+        .card .price-tag { 
+            margin: 10px 0 0; 
+            font-size: 1.2em; 
+            color: var(--secondary-text); 
+        }
+        .card .price-tag span { 
+            font-size: 2.5em; 
+            font-weight: 700; 
+            color: var(--primary-text); 
+        }
+        .feature-list { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0 0 30px 0; 
+            flex-grow: 1; 
+        }
+        .feature-list li { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            margin-bottom: 15px; 
+            font-size: 1.1em; 
+        }
+        .feature-list i { 
+            color: var(--accent-color-1);
+            width: 20px;
+            text-align: center;
+        }
+        .action-btn {
+            background-color: var(--tertiary-bg); 
+            color: var(--primary-text); 
+            border: 1px solid var(--border-color);
+            padding: 12px 20px; 
+            font-size: 1.1em; 
+            font-weight: 500; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: all 0.2s;
+            width: 100%;
+        }
+        .action-btn:disabled { 
+            cursor: not-allowed; 
+            opacity: 0.6; 
+        }
+        .action-btn.primary-btn {
+            background-color: var(--accent-color-1); 
+            color: #fff; 
+            border-color: var(--accent-color-1);
+        }
+        .action-btn:hover:not(:disabled) { 
+            transform: translateY(-2px); 
+            box-shadow: 0 6px 15px rgba(0,0,0,0.5); 
+        }
+        .footer { 
+            margin-top: 50px; 
+            color: var(--secondary-text); 
+            font-size: 1em; 
+        }
+        .footer a { 
+            color: var(--accent-color-1); 
+            text-decoration: none; 
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="/images/polyglot_connect_logo.png" alt="Polyglot Connect Logo">
+        <h1>Go Unlimited</h1>
+        <p>Unlock the full potential of Polyglot Connect.</p>
+    </div>
+
+    <div class="pricing-container">
+        <!-- Free Plan Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Free</h3>
+                <p class="price-tag"><span>$0</span>/month</p>
+            </div>
+            <ul class="feature-list">
+                <li><i class="fas fa-check-circle"></i> 50 Text Messages / month</li>
+                <li><i class="fas fa-check-circle"></i> 5 Voice Calls / month</li>
+                <li><i class="fas fa-check-circle"></i> Access to all Personas</li>
+                <li><i class="fas fa-check-circle"></i> Standard Group Access</li>
+            </ul>
+            <button class="action-btn" disabled>Your Current Plan</button>
+        </div>
+
+        <!-- Premium Plan Card -->
+        <div class="card premium">
+            <div class="card-header">
+                <h3>Premium</h3>
+                <p class="price-tag"><span>$5</span>/month</p>
+            </div>
+            <ul class="feature-list">
+                <li><i class="fas fa-gem"></i> <strong>Unlimited</strong> Text Messages</li>
+                <li><i class="fas fa-gem"></i> <strong>Unlimited</strong> Voice Calls</li>
+                <li><i class="fas fa-check-circle"></i> Access to all Personas</li>
+                <li><i class="fas fa-star"></i> <strong>Priority</strong> Group Access</li>
+                <li><i class="fas fa-bolt"></i> Advanced AI Features (Soon)</li>
+                <li><i class="fas fa-sync-alt"></i> Cross-Device History Sync (Soon)</li>
+            </ul>
+            <button id="subscribe-now-btn" class="action-btn primary-btn">Subscribe Now</button>
+        </div>
+    </div>
+
+    <div class="footer">
+        <a href="/app.html">← Back to the app</a>
+    </div>
+
+    <script>
+        // This button will eventually trigger the Stripe checkout in Phase 3.
+        document.getElementById('subscribe-now-btn').addEventListener('click', () => {
+            alert('Stripe integration is coming in the next phase! This is where the checkout process will start.');
+        });
+    </script>
+</body>
+</html>

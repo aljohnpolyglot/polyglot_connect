@@ -185,7 +185,16 @@ window.domElements = {
 
     // Additional Selectors
     groupsViewHeader: document.querySelector('#groups-view > .view-header') as HTMLElement | null,
-};
+// Freemium Upgrade Modal
+upgradeLimitModal: document.getElementById('upgrade-limit-modal') as HTMLElement | null,
+closeUpgradeModalBtn: document.getElementById('close-upgrade-modal-btn') as HTMLButtonElement | null,
+upgradeModalCtaBtn: document.getElementById('upgrade-modal-cta-btn') as HTMLButtonElement | null,
+upgradeModalMaybeLaterBtn: document.getElementById('upgrade-modal-maybe-later-btn') as HTMLButtonElement | null,
+// === END: ADD THIS BLOCK ===
+
+
+
+  };
 
 console.log('ui/dom_elements.ts loaded and assigned to window.domElements.');
 
