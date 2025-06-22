@@ -21,7 +21,7 @@ export default defineConfig({
       }
     }
   },
-  base: '/polyglot_connect/',
+  base: '/', // <<< CHANGE THIS TO '/' FOR FIREBASE HOSTING
   server: {
     open: true,
     https: true

@@ -37,8 +37,13 @@ window.reactionHandler = {} as ReactionHandlerModule;
         
       // REPLACE WITH 
         // REPLACE WITH 
-   const initialize = (domElements: YourDomElements, conversationManager: ConversationManager, aiTranslationService: AiTranslationServiceModule, groupDataManager: GroupDataManager): void => { console.log('ReactionHandler: Initializing listeners...');
-    
+        const initialize = (
+            domElements: YourDomElements,
+            conversationManager: ConversationManager,
+            aiTranslationService: AiTranslationServiceModule,
+            groupDataManager: GroupDataManager // <<< ADD THIS
+        ): void => {
+            console.log('ReactionHandler: Initializing listeners...');
         const chatLogs = [
         domElements.embeddedChatLog,
         domElements.messageChatLog,
@@ -53,82 +58,94 @@ window.reactionHandler = {} as ReactionHandlerModule;
       // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
          // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
        // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
-       const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
-        const messageId = messageWrapper.dataset.messageId;
-        const chatLog = messageWrapper.closest('.chat-log-area');
-        
-        // --- START OF FIX: CONTEXT-AWARE LOGIC ---
+    // PASTE THIS ENTIRE FUNCTION INSIDE THE `initialize` FUNCTION
 
-        console.log(`[RH_SAVE_DEBUG] Entered updateReactionInData. messageId: ${messageId}`);
+// in src/js/handlers/reaction_handler.ts, inside initialize()
 
-        const isGroup = chatLog?.id === 'group-chat-log-div';
-        console.log(`[RH_SAVE_DEBUG] Is this a group chat? ${isGroup}`);
+const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
+    const messageId = messageWrapper.dataset.messageId;
+    const userId = 'user_player'; // Assuming a static user ID
 
-        let conversationId: string | undefined | null;
-        if (isGroup) {
-            conversationId = groupDataManager.getCurrentGroupId();
-            console.log(`[RH_SAVE_DEBUG] Group context detected. Conversation ID from groupDataManager: '${conversationId}'`);
-        } else {
-            const chatContainer = chatLog?.closest<HTMLElement>('[data-current-connector-id]');
-            conversationId = chatContainer?.dataset.currentConnectorId;
-            console.log(`[RH_SAVE_DEBUG] 1-on-1 context detected. Conversation ID from chat container: '${conversationId}'`);
-        }
+    const isGroupChat = !!messageWrapper.closest('#group-chat-log');
+    console.log(`[RH_SAVE_DEBUG] updateReactionInData called for messageId: ${messageId}. Is Group: ${isGroupChat}`);
 
-        if (!messageId || !conversationId) {
-            console.error("ReactionHandler: Cannot save reaction, missing messageId or a valid conversationId.", { messageId, conversationId });
+    if (isGroupChat) {
+        // --- GROUP CHAT SAVE LOGIC ---
+        const groupId = groupDataManager.getCurrentGroupId();
+        if (!groupId) {
+            console.error("ReactionHandler (Group): Cannot save, current groupId is null.");
             return;
         }
 
-        // Use 'any' type to handle both MessageInStore and GroupChatHistoryItem, as their structures differ slightly.
-        let messageToUpdate: any; 
-        if (isGroup) {
-            // Group history uses 'messageId' as the unique key in its objects.
-            messageToUpdate = groupDataManager.getLoadedChatHistory().find(msg => msg.messageId === messageId);
-            console.log(`[RH_SAVE_DEBUG] Searched group history for messageId '${messageId}'. Found: ${!!messageToUpdate}`);
-        } else {
-            const convo = conversationManager.getConversationById(conversationId);
-            // 1-on-1 history uses 'id' as the unique key in its objects.
-            messageToUpdate = convo?.messages.find(msg => msg.id === messageId);
-            console.log(`[RH_SAVE_DEBUG] Searched 1-on-1 history for id '${messageId}'. Found: ${!!messageToUpdate}`);
-        }
+        const groupHistory = groupDataManager.getLoadedChatHistory();
+        const messageToUpdate = groupHistory.find(msg => msg.messageId === messageId);
 
         if (!messageToUpdate) {
-            console.error(`ReactionHandler: Could not find message with ID ${messageId} in conversation ${conversationId}.`);
+            console.error(`ReactionHandler (Group): Could not find message with ID ${messageId} in history for group ${groupId}.`);
+            return;
+        }
+        
+        // This line ensures the reactions object exists.
+        messageToUpdate.reactions = messageToUpdate.reactions || {};
+        
+        // Remove old reaction
+        // TypeScript now knows .reactions is not undefined past the line above.
+        // We use the non-null assertion operator (!) to tell it.
+        Object.keys(messageToUpdate.reactions).forEach(key => {
+            messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter((id: string) => id !== userId);
+            if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
+        });
+
+        // Add new reaction
+        if (newEmoji) {
+            messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
+            if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
+                messageToUpdate.reactions[newEmoji].push(userId);
+            }
+        }
+        
+        groupDataManager.saveCurrentGroupChatHistory(false);
+        console.log(`%c[RH_SAVE_SUCCESS] Saved GROUP reaction.`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
+
+    } else {
+        // --- 1-on-1 CHAT SAVE LOGIC ---
+        const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
+        const conversationId = chatContainer?.dataset.currentConnectorId;
+        
+        if (!messageId || !conversationId) {
+            console.error("ReactionHandler (1-on-1): Cannot save, missing messageId or conversationId.", { messageId, conversationId });
             return;
         }
 
-        if (!messageToUpdate.reactions) {
-            messageToUpdate.reactions = {};
-        }
+        const convoRecord = conversationManager.getConversationById(conversationId);
+        if (!convoRecord?.messages) return;
 
-        // Remove any old reaction from the player
+        const messageToUpdate = convoRecord.messages.find(msg => msg.id === messageId);
+        if (!messageToUpdate) return;
+        
+        // This line ensures the reactions object exists.
+        messageToUpdate.reactions = messageToUpdate.reactions || {};
+        
+        // Remove old reaction
+        // Again, we use the non-null assertion (!) here.
         Object.keys(messageToUpdate.reactions).forEach(key => {
-            const filtered = messageToUpdate.reactions![key].filter((uid: string) => uid !== 'user_player');
-            if (filtered.length > 0) {
-                messageToUpdate.reactions![key] = filtered;
-            } else {
-                delete messageToUpdate.reactions![key];
-            }
+            messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter((id: string) => id !== userId);
+            if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
         });
-
-        // Add the new reaction if provided
+        
+        // Add new reaction
         if (newEmoji) {
-            if (!messageToUpdate.reactions[newEmoji]) {
-                messageToUpdate.reactions[newEmoji] = [];
+            messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
+            if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
+                messageToUpdate.reactions[newEmoji].push(userId);
             }
-            messageToUpdate.reactions[newEmoji].push('user_player');
         }
-
-        // Trigger the save operation on the correct data store
-        if (isGroup) {
-            groupDataManager.saveCurrentGroupChatHistory(true);
-            console.log(`%c[RH_SAVE_SUCCESS] Saved GROUP reaction for msg ${messageId}:`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
-        } else {
-            conversationManager.saveAllConversationsToStorage?.();
-            console.log(`%c[RH_SAVE_SUCCESS] Saved 1-ON-1 reaction for msg ${messageId}:`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
-        }
-        // --- END OF FIX ---
-    };
+        
+        window.convoStore?.updateConversationProperty(conversationId, 'messages', [...convoRecord.messages]);
+        window.convoStore?.saveAllConversationsToStorage();
+        console.log(`%c[RH_SAVE_SUCCESS] Saved 1-ON-1 reaction.`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
+    }
+};
     // ^^^^^^ END OF MOVED FUNCTION ^^^^^^
 let activePicker: HTMLElement | null = null;
 

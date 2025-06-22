@@ -19,7 +19,7 @@ interface GroupUiHandlerModule {
     displayAvailableGroups: (groupsToDisplay: Group[], joinGroupCallback: (groupOrId: string | Group) => void) => void;
     showGroupChatView: (groupData: Group, groupMembers: Connector[], groupHistory: GroupChatHistoryItem[]) => void;
     hideGroupChatViewAndShowList: () => void;
-    updateGroupTypingIndicator: (text: string) => HTMLElement | null;
+    updateGroupTypingIndicator: (text: string, options?: ChatMessageOptions) => HTMLElement | null;
     clearGroupInput: () => void;
     appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => void;
     clearGroupChatLog: () => void;
@@ -431,6 +431,7 @@ function showGroupChatView(
             if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
                 let textForDisplay = msg.text || "";
                 const messageOptions: ChatMessageOptions = {
+                    ...msg, // <<< THIS IS THE FIX. It copies all properties from history, including reactions.
                     timestamp: msg.timestamp,
                     messageId: msg.messageId,
                 };

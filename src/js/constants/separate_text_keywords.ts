@@ -110,3 +110,10 @@ interface SeparationKeywords {
       conjunctionProbability: 0.6
     }
   };
+  export const DOTTED_EXCEPTIONS: string[] = [
+    // Common Latin Abbreviations
+    'vs', 'etc', 'eg', 'ie', 'ie', 'dr', 'mr', 'mrs', 'ms', 'prof', 'sr', 'jr', 'st',
+
+    // Common Top-Level Domains (to prevent splitting URLs)
+    'com', 'org', 'net', 'gov', 'edu', 'io', 'co', 'uk', 'de', 'ca', 'au'
+];

@@ -14,6 +14,7 @@ import type {
     ActivityManager // <<< ADD THIS LINE
 } from '../types/global.d.ts';
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
+import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
 // =================== START: NEW CANCELLATION LOGIC ===================
 // in text_message_handler.ts at the very top
@@ -209,7 +210,14 @@ function intelligentlySeparateText(
     const language = connector.language?.toLowerCase() || 'default';
     const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
     let processedText = text;
-    
+    const DOT_PLACEHOLDER = '___DOT___'; // A unique placeholder
+
+// --- RULE A: Protect dotted exceptions BEFORE splitting ---
+// This rule finds words from our exception list followed by a dot and temporarily
+// replaces the dot with a placeholder so it won't be split by later rules.
+const exceptionPattern = `\\b(${DOTTED_EXCEPTIONS.join('|')})\\.`;
+const exceptionRegex = new RegExp(exceptionPattern, 'gi');
+processedText = processedText.replace(exceptionRegex, `$1${DOT_PLACEHOLDER}`);
     // --- Phase 2: Apply Splitting Rules (Unicode-Aware) ---
 
     // RULE B: Split after strong sentence terminators.
@@ -290,8 +298,8 @@ function intelligentlySeparateText(
             finalLines.push(line);
         }
     }
-    
-    return finalLines.join('\n');
+    const finalString = finalLines.join('\n');
+    return finalString.replace(new RegExp(DOT_PLACEHOLDER, 'g'), '.');
 }
 // ===================  END: REPLACE THE ENTIRE TMH PARSER FUNCTION  ===================
 

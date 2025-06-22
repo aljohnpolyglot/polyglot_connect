@@ -16,6 +16,7 @@ import type {
     AIApiConstants
 } from '../types/global.d.ts';
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
+import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 // In src/js/core/group_interaction_logic.ts
 
 // REPLACE THIS:
@@ -473,6 +474,8 @@ ${timeContextRule}
  * @returns An object containing the new array of lines and a boolean indicating if splits occurred.
  */
 function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enhancedLines: string[]; wasSplit: boolean } {
+  
+    const DOT_PLACEHOLDER = '___DOT___'; // A unique placeholder
     let initialEnhancedLines: string[] = [];
     let wasSplit = false;
 
@@ -506,7 +509,11 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         const language = speaker.language?.toLowerCase() || 'default';
         const keywords = SEPARATION_KEYWORDS[language] || SEPARATION_KEYWORDS['default'];
         let processedText = originalText;
-        
+        // =================== START: NEW DOTTED EXCEPTION RULE ===================
+        const exceptionPattern = `\\b(${DOTTED_EXCEPTIONS.join('|')})\\.`;
+        const exceptionRegex = new RegExp(exceptionPattern, 'gi');
+        processedText = processedText.replace(exceptionRegex, `$1${DOT_PLACEHOLDER}`);
+// ===================  END: NEW DOTTED EXCEPTION RULE  ===================
         processedText = processedText.replace(/([?!…])(?=\s+\p{Lu})/gu, '$1\n');
         processedText = processedText.replace(/(?<!\p{N})\.(?!\p{N})(?=\s+[^\p{N}])/gu, '.\n');
 
@@ -582,7 +589,11 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
         }
     }
 
-    return { enhancedLines: finalLines, wasSplit };
+    const restoredFinalLines = finalLines.map(line =>
+        line.replace(new RegExp(DOT_PLACEHOLDER, 'g'), '.')
+    );
+    
+    return { enhancedLines: restoredFinalLines, wasSplit };
 }
 
 // =================== START: REPLACE THE ENTIRE playScene FUNCTION ===================

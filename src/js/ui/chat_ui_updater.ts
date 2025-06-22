@@ -353,11 +353,12 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
      // =================== REPLACE THE REACTION CONTAINER BLOCK WITH THIS (CORRECTED) ===================
 // =================== REPLACE THE REACTION CONTAINER BLOCK WITH THIS (CORRECTED) ===================
 
+// in src/js/ui/chat_ui_updater.ts, inside appendChatMessage()
+// =================== START: REPLACE THE REACTION CONTAINER BLOCK ===================
+
 if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
     
-    // The `messageDiv` variable IS the message bubble. We will add the menu directly to it.
-
-    // 1. Create the Reaction Picker (for hover/long-press)
+    // 1. Create the Reaction Picker (for user interaction later)
     const reactionPicker = document.createElement('div');
     reactionPicker.className = 'reaction-picker';
     ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
@@ -370,38 +371,48 @@ if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrappe
     });
     messageDiv.appendChild(reactionPicker);
 
-    // 2. Create YOUR Action Menu (for right-click)
+    // 2. Create the Action Menu (for right-click)
     const actionMenu = document.createElement('div');
     actionMenu.className = 'action-menu';
     actionMenu.innerHTML = `
         <button class="action-btn-item" data-action="copy" title="Copy message text"><i class="fas fa-copy"></i><span>Copy</span></button>
         <button class="action-btn-item" data-action="translate" title="Translate message"><i class="fas fa-language"></i><span>Translate</span></button>
     `;
-    // Append the menu directly to the bubble. This now works correctly.
     messageDiv.appendChild(actionMenu);
 
-    // 3. Create the container for displaying selected reactions
+    // 3. Create the container for displaying saved reactions from history
     const reactionsContainer = document.createElement('div');
     reactionsContainer.className = 'message-reactions';
 
-    if (options.reactions) {
+    // --- THIS IS THE CRITICAL NEW LOGIC ---
+    // Check if the message data from history (passed in `options`) has reactions.
+    if (options.reactions && Object.keys(options.reactions).length > 0) {
+        // Find the reaction made by the current user
         const userReactionEmoji = Object.keys(options.reactions).find(emoji => 
             options.reactions![emoji].includes('user_player')
         );
 
+        // If the user has reacted, store it on the wrapper for the UI state
         if (userReactionEmoji) {
             messageWrapper.dataset.userReaction = userReactionEmoji;
+            
+            // Create and append the reaction badge to the UI
             const reactionEl = document.createElement('button');
             reactionEl.className = 'reaction-item';
             reactionEl.type = 'button';
+            
+            // Calculate total reactions for this emoji
             const reactionCount = options.reactions[userReactionEmoji].length;
             reactionEl.innerHTML = `${userReactionEmoji} <span class="reaction-count">${reactionCount}</span>`;
             reactionsContainer.appendChild(reactionEl);
         }
     }
+    // --- END OF CRITICAL NEW LOGIC ---
     
+    // Append the container (it will be empty if there are no saved reactions)
     messageWrapper.appendChild(reactionsContainer);
 }
+// ===================  END: REPLACE THE REACTION CONTAINER BLOCK  ===================
 // ======================================================================================
 // ======================================================================================
     }

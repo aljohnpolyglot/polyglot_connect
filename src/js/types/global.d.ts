@@ -285,6 +285,10 @@ export interface GroupChatHistoryItem {
   messageId?: string; // Optional: if you want to link it to the UI element
   // --- END ADDITIONS ---
   imageSemanticDescription?: string; // <<< ADD THIS LINE (AI-generated description of image content)
+  reactions?: {
+    [emoji: string]: string[]; // e.g., { "👍": ["user_player", "some_other_id"] }
+  };
+
 }
 export interface GroupDataManager {
   initialize: () => void;
@@ -1464,6 +1468,8 @@ export interface ChatEventListenersModule {
 // ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
 // ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
 // ADD THIS AT THE BOTTOM of global.d.ts, BEFORE export {};
+
+// in global.d.ts
 
 export interface ReactionHandlerModule {
   initialize: (
