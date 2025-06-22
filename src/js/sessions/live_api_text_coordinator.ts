@@ -40,11 +40,11 @@ function initializeActualLiveApiTextCoordinator(): void {
         let uiUpdaterRef: UiUpdater | null = null;
 
         let userTranscriptionBuffer: string = "";
-     let userTranscriptionTimeoutId: number | null = null;// Use NodeJS.Timeout for setTimeout/clearTimeout
+        let userTranscriptionTimeoutId: any = null;// Use NodeJS.Timeout for setTimeout/clearTimeout
         const USER_TRANSCRIPTION_FLUSH_DELAY: number = 1500;
 
         let aiSpokenTextBuffer: string = "";
-    let aiSpokenTextTimeoutId: number | null = null;
+        let aiSpokenTextTimeoutId: any = null;
         const AI_SPOKEN_TEXT_FLUSH_DELAY: number = 800;
 
         let currentSessionTypeRef: string | null = null;

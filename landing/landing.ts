@@ -5,6 +5,7 @@ import { GoogleAuthProvider, EmailAuthProvider } from 'firebase/auth';
 import * as firebaseui from 'firebaseui';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../src/js/firebase-config'; // Use our single source of truth!
+import whitelistedEmails from '../src/data/whitelistEmails'; // <<< No .ts extension needed
 
 // --- START: Screenshot mode backdoor (This part is fine) ---
 (window as any).enterScreenshotMode = (secretCode: string) => {
@@ -24,66 +25,84 @@ console.log("%cDev Tip: To bypass login for screenshots, type enterScreenshotMod
  * This is the core of our freemium user tracking.
  * @param user The Firebase Auth user object from a successful login.
  */
-async function createUserProfileIfNotExists(user) {
+
+/**
+ * Creates a new user document in Firestore, checking the client-side
+ * whitelist to determine their plan.
+ * @param user The Firebase Auth user object from a successful login.
+ */
+async function createUserProfileWithWhitelistCheck(user) {
   const userRef = doc(db, "users", user.uid);
   const docSnap = await getDoc(userRef);
 
   if (!docSnap.exists()) {
     console.log(`Creating NEW user profile in Firestore for ${user.uid}`);
+    
+    // ==========================================================
+    // === START: WHITELIST CHECK LOGIC                       ===
+    // ==========================================================
+    let userPlan = "free"; // Default to free
+    if (user.email && whitelistedEmails.includes(user.email.toLowerCase())) {
+        userPlan = "premium";
+        console.log(`Email ${user.email} FOUND in client-side whitelist. Assigning 'premium' plan.`);
+    } else {
+        console.log(`Email ${user.email} not in client-side whitelist. Assigning 'free' plan.`);
+    }
+    // ==========================================================
+
     try {
       await setDoc(userRef, {
         email: user.email || null,
         displayName: user.displayName || 'New User',
         photoURL: user.photoURL || null,
         createdAt: serverTimestamp(),
-        plan: "free",
+        plan: userPlan, // The plan is now set based on the whitelist
         monthlyTextCount: 0,
         monthlyCallCount: 0,
-        usageResetTimestamp: serverTimestamp()
+        usageResetTimestamp: serverTimestamp() 
       });
-      console.log("Successfully created user profile.");
+      console.log(`Successfully created profile with plan: ${userPlan}`);
     } catch (error) {
       console.error("Error creating user profile:", error);
     }
   } else {
     console.log(`User profile for ${user.uid} already exists.`);
+    // Optional: If they exist, check if their plan should be upgraded
+    // if they were added to the whitelist AFTER signing up.
+    const existingData = docSnap.data();
+    if (user.email && whitelistedEmails.includes(user.email.toLowerCase()) && existingData.plan !== 'premium') {
+        console.log(`User ${user.email} found in whitelist and current plan is not premium. Upgrading.`);
+        try {
+            await setDoc(userRef, { plan: 'premium' }, { merge: true });
+            console.log(`User ${user.email} plan upgraded to premium.`);
+        } catch (error) {
+            console.error(`Error upgrading user ${user.email} to premium:`, error);
+        }
+    }
   }
 }
 
-// ==========================================================
-// === THIS IS THE FIX: The FirebaseUI Configuration ===
-// ==========================================================
+// FirebaseUI Configuration
 const uiConfig: firebaseui.auth.Config = {
-  // We use a callback to take full control after login.
   callbacks: {
     signInSuccessWithAuthResult: function(authResult, redirectUrl) {
-      console.log("FirebaseUI signInSuccessWithAuthResult triggered!");
+      console.log('%c LOGIN SUCCESS (Client-Side)!', 'color: lime; font-weight: bold; font-size: 16px;');
       const user = authResult.user;
       
-      // Call our function to create their database profile.
-      // The .then() ensures we wait for the database write to complete.
-      createUserProfileIfNotExists(user).then(() => {
-        // NOW that their profile is created, we manually redirect them to the app.
-        console.log("Profile creation/check complete. Redirecting to /app.html...");
+      // Call our new function that includes the whitelist check
+      createUserProfileWithWhitelistCheck(user).then(() => {
+        console.log('Profile creation/check complete. Redirecting to /app.html...');
         window.location.assign('/app.html');
       }).catch(error => {
-        console.error("Failed to create profile or redirect:", error);
-        // Fallback redirect in case of an error
-        window.location.assign('/app.html');
+        console.error('CRITICAL ERROR: Failed to create/check profile or redirect:', error);
       });
 
-      // **CRITICAL**: We MUST return false to tell FirebaseUI that we have handled
-      // the redirect ourselves and it should NOT do anything else.
-      return false;
+      return false; // We handle the redirect
     },
     uiShown: function() {
-      // You can hide a loading spinner here if you have one.
+      console.log("FirebaseUI widget is now visible.");
     }
   },
-  // We REMOVE signInSuccessUrl. The callback above now handles everything.
-  // signInSuccessUrl: '/app.html', // <<< THIS LINE MUST BE DELETED
-
-  // The rest of the config is fine
   signInOptions: [
     GoogleAuthProvider.PROVIDER_ID,
     EmailAuthProvider.PROVIDER_ID

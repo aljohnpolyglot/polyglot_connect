@@ -12,8 +12,6 @@ interface ChatUiManagerModulePlaceholder { // A minimal interface for the placeh
 }
 
 // Assign placeholder and dispatch structural ready event
-// Assign placeholder and dispatch structural ready event
-// Assign placeholder and dispatch structural ready event
 window.chatUiManager = {} as ChatUiManagerModulePlaceholder; // Assign an empty object
 console.log('chat_ui_manager.ts: Placeholder window.chatUiManager assigned.');
 document.dispatchEvent(new CustomEvent('chatUiManagerPlaceholderReady')); // STRUCTURAL READY
@@ -263,9 +261,9 @@ console.log('chat_ui_manager.ts: Core functional dependencies (methods) appear r
                     });
                 }
             };
-            setupHeaderAction(domElements.embeddedChatCallBtn, domElements.embeddedChatContainer, 'call', 'Embedded');
+            // setupHeaderAction(domElements.embeddedChatCallBtn, domElements.embeddedChatContainer, 'call', 'Embedded');
             setupHeaderAction(domElements.embeddedChatInfoBtn, domElements.embeddedChatContainer, 'info', 'Embedded');
-            setupHeaderAction(domElements.messageModalCallBtn, domElements.messagingInterface, 'call', 'Message Modal');
+            // setupHeaderAction(domElements.messageModalCallBtn, domElements.messagingInterface, 'call', 'Message Modal');
             setupHeaderAction(domElements.messageModalInfoBtn, domElements.messagingInterface, 'info', 'Message Modal');
 
             console.log("chat_ui_manager.ts: initializeChatUiControlsInternal() - FINISHED.");

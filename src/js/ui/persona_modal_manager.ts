@@ -177,82 +177,90 @@ function initializeActualPersonaModalManager(): void {
         }
 
         // This is the single function that will eventually call initiateSession
-        function tryInitiateSessionFromPMM(connector: Connector, actionType: string, buttonContext?: HTMLButtonElement | null) {
-            const currentPolyglotApp = window.polyglotApp as PolyglotApp | undefined;
+      // In persona_modal_manager.ts
 
-            if (currentPolyglotApp && typeof currentPolyglotApp.initiateSession === 'function') {
-                console.error(`PMM_TRY_INITIATE: polyglotApp IS READY. Calling initiateSession for ${connector.id}, action: ${actionType}`);
-                currentPolyglotApp.initiateSession(connector, actionType);
-                
-                pmmActionPendingPolyglotApp = null; 
-                document.removeEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler); 
-                
-                // Release the main processing lock AFTER the session initiation has been CALLED.
-                setTimeout(() => {
-                    isProcessingPMMAction = false;
-                    console.error(`PMM_ACTION_END: Released isProcessingPMMAction lock for ${actionType} with ${connector.id} (Path: Direct/Retry Success).`);
-                    if (buttonContext) { /* Optional: Re-enable button / reset text */ }
-                }, 50); 
-            } else {
-                console.warn(`PMM_TRY_INITIATE: polyglotApp NOT YET READY for ${connector.id}. Storing action and ensuring 'polyglotAppReady' listener is active.`);
-                if (!pmmActionPendingPolyglotApp) { // Only store and add listener if not already pending
-                    pmmActionPendingPolyglotApp = { connector, actionType, button: buttonContext };
-                    document.removeEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler); // Remove any old one first
-                    document.addEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler, { once: true });
-                    console.log("PMM_TRY_INITIATE: Added 'polyglotAppReady' listener.");
-                } else {
-                    console.log("PMM_TRY_INITIATE: Action already pending for polyglotAppReady, listener should be set.");
-                }
-                // isProcessingPMMAction remains true
-                if (buttonContext) { /* Optional: Set button to "Initializing..." */ }
-            }
+function tryInitiateSessionFromPMM(connector: Connector, actionType: string, buttonContext?: HTMLButtonElement | null) {
+    const currentPolyglotApp = window.polyglotApp as PolyglotApp | undefined;
+    console.error(`PMM_TRY_INITIATE_SESSION: For ${connector.id}, action: ${actionType}. polyglotApp ready? ${!!(currentPolyglotApp && typeof currentPolyglotApp.initiateSession === 'function')}`); // NEW LOG
+
+    if (currentPolyglotApp && typeof currentPolyglotApp.initiateSession === 'function') {
+        console.error(`PMM_TRY_INITIATE: polyglotApp IS READY. Calling currentPolyglotApp.initiateSession for ${connector.id}, action: ${actionType}`); // MODIFIED LOG
+        
+        // ---- CRITICAL CHANGE: Call initiateSession BEFORE releasing the lock ---
+        // ---- and make the lock release NOT dependent on a timeout if possible ---
+        // ---- For now, just log before and after the call to see timing ---
+
+        console.log(`PMM_BEFORE_APP_INITIATE_SESSION: Lock is ${isProcessingPMMAction}`);
+        currentPolyglotApp.initiateSession(connector, actionType);
+        console.log(`PMM_AFTER_APP_INITIATE_SESSION: Lock is ${isProcessingPMMAction}`);
+        
+        pmmActionPendingPolyglotApp = null; 
+        document.removeEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler); 
+        
+        // Consider releasing the lock immediately or with a minimal, non-blocking delay.
+        // The 50ms timeout might be just enough for another event to sneak in IF `initiateSession` is synchronous enough.
+        // Let's try releasing it more directly for testing.
+        isProcessingPMMAction = false;
+        console.error(`PMM_ACTION_END: Released isProcessingPMMAction lock for ${actionType} with ${connector.id} (Path: Direct/Retry Success - IMMEDIATE RELEASE).`);
+        if (buttonContext) { /* Optional: Re-enable button / reset text */ }
+
+    } else {
+        // ... (rest of the else block is fine, it defers if polyglotApp isn't ready)
+        console.warn(`PMM_TRY_INITIATE: polyglotApp NOT YET READY for ${connector.id}. Storing action and ensuring 'polyglotAppReady' listener is active.`);
+        if (!pmmActionPendingPolyglotApp) { 
+            pmmActionPendingPolyglotApp = { connector, actionType, button: buttonContext };
+            document.removeEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler); 
+            document.addEventListener('polyglotAppReady', pmmPolyglotAppReadyHandler, { once: true });
+            console.log("PMM_TRY_INITIATE: Added 'polyglotAppReady' listener.");
+        } else {
+            console.log("PMM_TRY_INITIATE: Action already pending for polyglotAppReady, listener should be set.");
         }
+    }
+}
 
-        function handlePersonaModalAction(actionType: string, event?: MouseEvent): void {
-            if (isProcessingPMMAction) {
-                console.warn(`PMM: handlePersonaModalAction - Global lock 'isProcessingPMMAction' is active. Ignoring. ActionType: ${actionType}`);
-                return;
-            }
-            isProcessingPMMAction = true; 
-            console.error("PMM_ACTION_START: handlePersonaModalAction - Action type:", actionType, "- Global PMM lock engaged.");
+      // In persona_modal_manager.ts
 
-            const modalEl = domElements.detailedPersonaModal as HTMLElement;
-            const connectorId = modalEl.dataset.connectorId;
-            if (!connectorId) {
-                console.error("PMM: No connector ID found on modal.");
-                isProcessingPMMAction = false; 
-                return;
-            }
+function handlePersonaModalAction(actionType: string, event?: MouseEvent): void {
+    console.error(`PMM_ACTION_ATTEMPT: Attempting action: ${actionType}. Current lock (isProcessingPMMAction): ${isProcessingPMMAction}`); // NEW LOG
 
-            const connector = polyglotConnectors.find((c: Connector) => c.id === connectorId);
-            if (!connector) {
-                console.error(`PMM: Connector ID '${connectorId}' not found.`);
-                cleanupModalData();
-                modalHandler.close(modalEl);
-                isProcessingPMMAction = false; 
-                return;
-            }
+    if (isProcessingPMMAction) {
+        console.warn(`PMM: handlePersonaModalAction - Global lock 'isProcessingPMMAction' is active. IGNORING DUPLICATE ATTEMPT. ActionType: ${actionType}`); // MODIFIED LOG
+        return;
+    }
+    isProcessingPMMAction = true;
+    console.error(`PMM_ACTION_START: handlePersonaModalAction - Action type: ${actionType}. Connector ID from modal: ${domElements.detailedPersonaModal?.dataset.connectorId}. Global PMM lock ENGAGED.`); // MODIFIED LOG
 
-            let clickedButton: HTMLButtonElement | null = null;
-            if (event && event.currentTarget instanceof HTMLButtonElement) clickedButton = event.currentTarget;
-            else if (actionType === 'message_modal') clickedButton = domElements.personaModalMessageBtn;
-            else if (actionType === 'direct_modal') clickedButton = domElements.personaModalDirectCallBtn;
-            
-            // Example: Button state handling (optional, can be expanded)
-            // if (clickedButton) { 
-            //     clickedButton.disabled = true; 
-            //     if (!clickedButton.dataset.originalText) clickedButton.dataset.originalText = clickedButton.innerHTML;
-            //     clickedButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
-            // }
+    const modalEl = domElements.detailedPersonaModal as HTMLElement;
+    const connectorId = modalEl.dataset.connectorId;
+    if (!connectorId) {
+        console.error("PMM: No connector ID found on modal.");
+        isProcessingPMMAction = false;
+        console.error("PMM_ACTION_END: Released isProcessingPMMAction lock (no connectorId)."); // NEW LOG
+        return;
+    }
 
-            modalHandler.close(modalEl);
-            cleanupModalData();
+    const connector = polyglotConnectors.find((c: Connector) => c.id === connectorId);
+    if (!connector) {
+        console.error(`PMM: Connector ID '${connectorId}' not found.`);
+        cleanupModalData();
+        modalHandler.close(modalEl);
+        isProcessingPMMAction = false;
+        console.error(`PMM_ACTION_END: Released isProcessingPMMAction lock (connector not found).`); // NEW LOG
+        return;
+    }
 
-            console.log(`PMM: Scheduling session initiation for ${connector.id}, action: ${actionType}`);
-            setTimeout(() => {
-                tryInitiateSessionFromPMM(connector, actionType, clickedButton);
-            }, 10); 
-        }
+    let clickedButton: HTMLButtonElement | null = null;
+    if (event && event.currentTarget instanceof HTMLButtonElement) clickedButton = event.currentTarget;
+    else if (actionType === 'message_modal') clickedButton = domElements.personaModalMessageBtn;
+    else if (actionType === 'direct_modal') clickedButton = domElements.personaModalDirectCallBtn;
+
+    modalHandler.close(modalEl);
+    cleanupModalData();
+
+    console.log(`PMM: About to call tryInitiateSessionFromPMM for ${connector.id}, action: ${actionType}. Lock is still: ${isProcessingPMMAction}`); // NEW LOG
+    tryInitiateSessionFromPMM(connector, actionType, clickedButton);
+    // The lock (isProcessingPMMAction) is now released within tryInitiateSessionFromPMM's setTimeout
+}
         
         function initializePersonaModalControlsInternal(): void {
             console.log("personaModalManager.ts: initializePersonaModalControlsInternal - Setting up listeners.");

@@ -1,77 +1,140 @@
-/* css/views/view_home.css */
-/* Styles specific to the Home View content */
+/*
+   ===================================================================
+   ||   css/views/view_home.css                                     ||
+   ||   Styles for the new Home Dashboard                           ||
+   ||   (Crafted to match your existing app shell styles)           ||
+   ===================================================================
+*/
 
-#home-view .view-content {
-    /* If you want the tips panel to be centered or have specific layout */
+/* Remove default padding from view-content on the home page,
+   as our new panels will manage their own padding. */
+   #home-view .view-content {
+    padding: 0;
+}
+
+/* Main Grid Layout for Home View */
+.home-view-grid {
+    padding: var(--spacing-lg); /* Use global spacing */
+    max-width: 1200px; /* Give it a max width for large screens */
+    margin: 0 auto;    /* Center the content */
     display: flex;
-    justify-content: center; /* Example: center the tips panel */
-    padding-top: var(--spacing-xl);
-    align-items: center;
+    flex-direction: column;
+    gap: var(--spacing-xl); /* Space between panels */
 }
 
-.tips-panel {
+/* Shared Panel Styling */
+.quick-start-panel, 
+.community-stats-panel {
     background-color: var(--bg-white);
-    padding: var(--spacing-xl);
+    padding: var(--spacing-lg);
     border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-lg);
-    max-width: 700px; /* Max width for the tips panel */
-    width: 100%;
-    align-items: center;
+    border: 1px solid var(--border-color-light);
+    box-shadow: var(--shadow-md);
 }
 
-.tips-panel h3 {
+body.dark-mode .quick-start-panel,
+body.dark-mode .community-stats-panel {
+    background-color: var(--bg-dark-secondary);
+    border-color: var(--border-color-dark);
+}
+
+/* Panel Headers */
+.quick-start-panel h3, 
+.community-stats-panel h3 {
     font-family: var(--font-secondary);
     margin-top: 0;
-    color: var(--primary-color);
+    margin-bottom: var(--spacing-lg);
+    font-size: 1.4em;
+    font-weight: 600;
+    color: var(--text-color-dark);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--border-color-light);
+}
+
+body.dark-mode .quick-start-panel h3,
+body.dark-mode .community-stats-panel h3 {
+    color: var(--text-color-light);
+    border-bottom-color: var(--border-color-dark);
+}
+
+/* Quick Start Buttons */
+.quick-start-buttons {
+    display: grid;
+    /* Create responsive columns, aiming for 250px per button */
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.quick-start-btn {
+    background-color: var(--secondary-color-lighter);
+    border: 1px solid transparent;
+    color: var(--text-color-dark);
+    padding: var(--spacing-md) var(--spacing-lg);
+    font-size: 1em;
+    font-weight: 500;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
     display: flex;
     align-items: center;
-    font-size: 1.5em; /* Larger heading for tips */
-    margin-bottom: var(--spacing-lg);
-}
-.tips-panel h3 i.fa-lightbulb {
-    margin-right: var(--spacing-sm);
-    font-size: 1.2em; /* Slightly larger icon */
-    color: #f1c40f; /* Yellow for lightbulb */
+    gap: var(--spacing-md);
+    text-align: left;
 }
 
-#homepage-tips-list {
-    list-style: none;
-    padding-left: 0;
+.quick-start-btn:hover {
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+    border-color: var(--primary-color-darker);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
 }
 
-#homepage-tips-list li {
-    padding: var(--spacing-sm) 0;
-    border-bottom: 1px dashed var(--border-color-light);
-    font-size: 1em; /* Slightly larger tip text */
-    color: var(--text-color-muted);
+body.dark-mode .quick-start-btn {
+    background-color: var(--bg-dark-tertiary);
+    color: var(--text-color-light);
+}
+
+body.dark-mode .quick-start-btn:hover {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.quick-start-btn i {
+    font-size: 1.6em;
+    width: 35px;
+    text-align: center;
+    color: var(--primary-color);
+    transition: color var(--transition-fast);
+}
+
+.quick-start-btn:hover i {
+    color: var(--text-color-light);
+}
+
+/* Community Pulse Panel */
+.stats-container {
     display: flex;
-    align-items: flex-start; /* Align icon with start of text */
-}
-#homepage-tips-list li:last-child {
-    border-bottom: none;
-}
-#homepage-tips-list li .tip-icon { /* For custom icons before tips */
-    margin-right: var(--spacing-sm);
-    color: var(--accent-color-1); /* Green check or similar */
-    margin-top: 4px; /* Align with text */
-    font-size: 0.9em;
+    justify-content: space-around;
+    text-align: center;
+    padding: var(--spacing-sm) 0;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+    gap: var(--spacing-lg);
 }
 
-/* Dark Mode for Home View */
-body.dark-mode .tips-panel {
-  background-color: var(--bg-dark-secondary);
-  box-shadow: 0 5px 20px rgba(0,0,0,0.25);
+.stat-item {
+    flex: 1;
+    min-width: 150px; /* Ensure items don't get too squished */
 }
-body.dark-mode .tips-panel h3 {
-  color: var(--primary-color-lighter);
+
+.stat-item .stat-value {
+    display: block;
+    font-size: 2.2em;
+    font-weight: 700;
+    color: var(--accent-color-1);
+    font-family: var(--font-secondary);
 }
-body.dark-mode .tips-panel h3 i.fa-lightbulb {
-  color: #f5d76e; /* Lighter yellow */
-}
-body.dark-mode #homepage-tips-list li {
-  border-bottom-color: var(--border-color-dark);
-  color: #b0b3b8;
-}
-body.dark-mode #homepage-tips-list li .tip-icon {
-  color: var(--accent-color-1); /* Green still looks good */
+
+.stat-item .stat-label {
+    font-size: 0.9em;
+    color: var(--text-color-muted);
 }

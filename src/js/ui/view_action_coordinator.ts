@@ -114,20 +114,7 @@ function initializeActualViewActionCoordinator(): void {
 
 
         // --- Copied and adapted from old view_manager.ts ---
-        function populateHomepageTips(): void {
-            console.log("VAC: populateHomepageTips() called.");
-            if (!domElements.homepageTipsList || !polyglotSharedContent?.homepageTips || !polyglotHelpers) {
-                if (domElements.homepageTipsList) domElements.homepageTipsList.innerHTML = "<li>Tips unavailable.</li>";
-                return;
-            }
-            const tips = polyglotSharedContent.homepageTips;
-            if (!Array.isArray(tips) || tips.length === 0) {
-                domElements.homepageTipsList.innerHTML = "<li>No tips available.</li>"; return;
-            }
-            domElements.homepageTipsList.innerHTML = tips.map(tip =>
-                `<li><i class="fas fa-check-circle tip-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(tip)}</li>`
-            ).join('');
-        }
+      
 
         function updateEmptyListMessages(): void {
             // console.log("VAC: updateEmptyListMessages() called.");

@@ -1,0 +1,182 @@
+/*
+   ===================================================================
+   ||   ADDITIONAL STYLES for Account Panel in Right Sidebar        ||
+   ===================================================================
+*/
+
+/* Container for the user profile info at the top of the panel */
+.account-profile-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--spacing-md) 0;
+    border-bottom: 1px solid var(--border-light, #dde1e5);
+}
+
+body.dark-mode .account-profile-section {
+    border-bottom-color: var(--border-light-dark, #393a3b);
+}
+
+.account-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: var(--spacing-sm);
+    /* A subtle border to make it pop */
+    border: 3px solid var(--primary-color);
+    box-shadow: var(--shadow-sm);
+}
+
+#account-panel-display-name {
+    font-size: 1.1em;
+    font-weight: 500;
+    margin: 0;
+    color: var(--text-body-light);
+}
+
+#account-panel-email {
+    font-size: 0.85em;
+    color: var(--text-color-muted);
+    margin: 4px 0 0 0;
+    word-break: break-all; /* Prevents long emails from overflowing */
+}
+
+body.dark-mode #account-panel-display-name {
+    color: var(--text-body-dark);
+}
+body.dark-mode #account-panel-email {
+    color: var(--sidebar-footer-text-dark); /* Using a similar muted color from your shell */
+}
+
+/* Container for the plan and usage cards */
+.account-plan-section {
+    padding: var(--spacing-lg) 0; /* Add padding top/bottom, no side padding */
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
+.plan-card, .usage-card {
+    background-color: var(--bg-main-light, #f0f2f5);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-md);
+}
+
+body.dark-mode .plan-card, 
+body.dark-mode .usage-card {
+    background-color: var(--bg-main-dark, #18191a);
+}
+
+.plan-card h5, .usage-card h5 {
+    margin: 0 0 var(--spacing-md) 0;
+    font-size: 0.9em;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-color-muted);
+}
+
+.plan-name {
+    font-size: 1.2em;
+    font-weight: 700;
+}
+
+.plan-name.premium {
+    color: var(--primary-color);
+}
+
+.plan-name.premium i {
+    margin-right: var(--spacing-xs);
+    color: var(--warning-color); /* Yellow for the gem */
+}
+
+.plan-expiry {
+    font-size: 0.8em;
+    color: var(--text-color-muted);
+    margin-top: 4px;
+}
+
+/* Usage Progress Bar Styles */
+.usage-item {
+    margin-bottom: var(--spacing-md);
+}
+.usage-item:last-child {
+    margin-bottom: 0;
+}
+
+.usage-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+}
+.progress-bar-container {
+    width: 100%;
+    height: 8px; /* Slightly taller to look better */
+    border-radius: 4px;
+    overflow: hidden;
+    
+    /* === THIS IS THE FIX === */
+    /* A subtle track color that is slightly darker than the main background */
+    background-color: #e9ecef; 
+    /* A very light border to give it definition */
+    border: 1px solid #dee2e6; 
+    
+    /* We'll keep the padding on the parent, so this works */
+    box-sizing: border-box; 
+}
+
+body.dark-mode .progress-bar-container {
+    /* A dark mode version of the track */
+    background-color: var(--bg-dark-primary, #18191a);
+    border: 1px solid var(--border-color-dark, #495057);
+}
+.progress-bar-fill {
+    height: 100%;
+    width: 0%; /* This is still set by JavaScript */
+    border-radius: 4px;
+    transition: width 0.5s ease-in-out;
+
+    /* 
+      THIS IS THE MAGIC: A horizontal gradient.
+      It starts with your green accent color.
+      At 60% of the way across the gradient, it starts fading to yellow.
+      At 85%, it's fully yellow and starts fading to your red danger color.
+      It ends at 100% as pure red.
+    */
+    background: linear-gradient(
+        to right, 
+        var(--accent-color-1), /* Green */
+        var(--accent-color-1) 60%, 
+        var(--warning-color) 85%, /* Yellow */
+        var(--danger-color) 100%  /* Red */
+    );
+}
+
+/* Buttons inside the Account Panel */
+.account-upgrade-btn {
+    width: 100%;
+    margin-top: var(--spacing-md);
+}
+
+.account-footer-actions {
+    margin-top: auto; /* Pushes this block to the bottom of the sidebar */
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border-light, #dde1e5);
+}
+
+body.dark-mode .account-footer-actions {
+    border-top-color: var(--border-light-dark, #393a3b);
+}
+
+#account-panel-sign-out-btn {
+    width: 100%;
+    background-color: transparent;
+    color: var(--secondary-color);
+    font-weight: 500;
+}
+#account-panel-sign-out-btn:hover {
+    background-color: var(--danger-color);
+    color: white;
+}

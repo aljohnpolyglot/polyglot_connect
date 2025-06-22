@@ -18,9 +18,26 @@ window.domElements = {
     universalJumpButtons: document.getElementById('universal-jump-buttons') as HTMLElement | null,
    
     devPanelToggleButton: document.getElementById('dev-panel-toggle-btn') as HTMLButtonElement | null, // <<< ADD THIS
-   
+    personaModalViewDossierBtn: document.getElementById('persona-modal-view-dossier-btn') as HTMLButtonElement | null,
     // Home View
-    homepageTipsList: document.getElementById('homepage-tips-list') as HTMLUListElement | null,
+  // in dom_elements.ts
+// Home View (Now a Dashboard)
+homeViewGreeting: document.getElementById('home-view-greeting') as HTMLElement | null,
+homeFindPartnerBtn: document.getElementById('home-find-partner-btn') as HTMLButtonElement | null, // FIX: Use getElementById to get a single element
+homeJoinGroupBtn: document.getElementById('home-join-group-btn') as HTMLButtonElement | null,
+homeContinueChatBtn: document.getElementById('home-continue-chat-btn') as HTMLButtonElement | null,
+homeLastChatName: document.getElementById('home-last-chat-name') as HTMLElement | null,
+communityCallsStat: document.getElementById('community-calls-stat') as HTMLElement | null,
+communityMessagesStat: document.getElementById('community-messages-stat') as HTMLElement | null,
+communityUsersOnlineStat: document.getElementById('community-users-online-stat') as HTMLElement | null,
+
+// Account Panel (in Right Sidebar)
+accountPanel: document.getElementById('accountPanel') as HTMLElement | null,
+accountPanelAvatar: document.getElementById('account-panel-avatar') as HTMLImageElement | null,
+accountPanelDisplayName: document.getElementById('account-panel-display-name') as HTMLElement | null,
+accountPanelEmail: document.getElementById('account-panel-email') as HTMLElement | null,
+accountPanelPlanDetails: document.getElementById('account-panel-plan-details') as HTMLElement | null,
+accountPanelSignOutBtn: document.getElementById('account-panel-sign-out-btn') as HTMLButtonElement | null,
 
      // Find Someone View (Now "Friends View")
      friendsView: document.getElementById('friends-view') as HTMLElement | null,
@@ -185,15 +202,13 @@ window.domElements = {
 
     // Additional Selectors
     groupsViewHeader: document.querySelector('#groups-view > .view-header') as HTMLElement | null,
-// Freemium Upgrade Modal
-upgradeLimitModal: document.getElementById('upgrade-limit-modal') as HTMLElement | null,
-closeUpgradeModalBtn: document.getElementById('close-upgrade-modal-btn') as HTMLButtonElement | null,
-upgradeModalCtaBtn: document.getElementById('upgrade-modal-cta-btn') as HTMLButtonElement | null,
-upgradeModalMaybeLaterBtn: document.getElementById('upgrade-modal-maybe-later-btn') as HTMLButtonElement | null,
-// === END: ADD THIS BLOCK ===
-
-
-
+    upgradeLimitModal: document.getElementById('upgrade-limit-modal') as HTMLElement | null,
+    closeUpgradeModalBtn: document.getElementById('close-upgrade-modal-btn') as HTMLButtonElement | null,
+    upgradeModalCtaBtn: document.getElementById('upgrade-modal-cta-btn') as HTMLButtonElement | null,
+    upgradeModalMaybeLaterBtn: document.getElementById('upgrade-modal-maybe-later-btn') as HTMLButtonElement | null,
+    upgradeCallLimitModal: document.getElementById('upgrade-call-limit-modal') as HTMLElement | null,
+    closeUpgradeCallModalBtn: document.getElementById('close-upgrade-call-modal-btn') as HTMLButtonElement | null,
+    upgradeCallModalMaybeLaterBtn: document.getElementById('upgrade-call-modal-maybe-later-btn') as HTMLButtonElement | null,
   };
 
 console.log('ui/dom_elements.ts loaded and assigned to window.domElements.');

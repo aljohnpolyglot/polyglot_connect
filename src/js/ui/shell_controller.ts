@@ -82,7 +82,7 @@ function initializeActualShellController(): void {
             setupMasterViewCoordinator(currentActiveTab);
 
             console.log("ShellController: initializeAppShell - About to call other setup functions.");
-            populateHomepageTips();
+          
             populateFilterDropdowns();
             setupShellEventListeners();
             initializeTheme();
@@ -199,6 +199,24 @@ if (domElements.connectorHubGrid) {
             if(domElements.personaModalMessageBtn) domElements.personaModalMessageBtn.addEventListener('click', () => handlePersonaModalAction('message_modal'));
             if(personaModalVoiceChatBtn) personaModalVoiceChatBtn.addEventListener('click', () => handlePersonaModalAction('voiceChat_modal'));
             if(domElements.personaModalDirectCallBtn) domElements.personaModalDirectCallBtn.addEventListener('click', () => handlePersonaModalAction('direct_modal'));
+
+// ==========================================================
+// === PASTE THE "View Full Dossier" LISTENER HERE        ===
+// ==========================================================
+if (domElements.personaModalViewDossierBtn) {
+    domElements.personaModalViewDossierBtn.addEventListener('click', () => {
+        const connectorId = domElements.detailedPersonaModal?.dataset.connectorId;
+        if (connectorId) {
+            // Close the current small modal
+            if (modalHandler) { // Ensure modalHandler is available
+                modalHandler.close(domElements.detailedPersonaModal);
+            }
+            // Open the new page, passing the persona ID
+            window.open(`/dossier.html?id=${connectorId}`, '_blank'); 
+        }
+    });
+}
+
 
             if (domElements.applyFiltersBtn) domElements.applyFiltersBtn.addEventListener('click', applyFindFilters);
             if (domElements.applyGroupFiltersBtn) domElements.applyGroupFiltersBtn.addEventListener('click', applyGroupFilters);
@@ -318,9 +336,7 @@ function setupMasterViewCoordinator(initialTab: string) {
         sidebarPanelManager?.updatePanelForCurrentTab(tabName);
 
         // Step 3: Call the specific content-loading function for the new tab
-        if (tabName === 'home') {
-            populateHomepageTips();
-        } else if (tabName === 'friends') {
+        if (tabName === 'friends') {
             // This tells the filter controller to reset its state to the default "Discover" view.
             // This will, in turn, trigger applyFindConnectorsFilters with the correct state.
             console.log("[Shell Coordinator] Friends tab activated. Resetting filters to default view.");
@@ -351,65 +367,6 @@ function setupMasterViewCoordinator(initialTab: string) {
 
 
 
-       // --- START OF MODIFICATION for populateHomepageTips (SC.DEBUG.3) ---
-function populateHomepageTips(): void {
-    console.log("ShellController: populateHomepageTips - STARTING.");
-    const { domElements, polyglotHelpers, polyglotSharedContent } = getDeps();
-
-    if (!domElements) {
-        console.error("ShellController: populateHomepageTips - domElements is nullish!");
-        return;
-    }
-    if (!polyglotHelpers) {
-        console.error("ShellController: populateHomepageTips - polyglotHelpers is nullish!");
-        return;
-    }
-     if (!polyglotSharedContent) {
-        console.warn("ShellController: populateHomepageTips - polyglotSharedContent is nullish. No tips to show.");
-        if (domElements.homepageTipsList) {
-            (domElements.homepageTipsList as HTMLUListElement).innerHTML = "<li>Shared content for tips not available.</li>";
-        }
-        return;
-    }
-
-    const tipsListElement = domElements.homepageTipsList as HTMLUListElement | null;
-    if (!tipsListElement) {
-        console.error("ShellController: populateHomepageTips - domElements.homepageTipsList not found!");
-        return;
-    }
-
-    const tips = polyglotSharedContent.homepageTips;
-    if (!tips || !Array.isArray(tips) || tips.length === 0) {
-        console.warn("ShellController: populateHomepageTips - No tips found in polyglotSharedContent.homepageTips or it's not an array.");
-        tipsListElement.innerHTML = "<li>No tips available at the moment.</li>";
-        return;
-    }
-
-    console.log(`ShellController: populateHomepageTips - Found ${tips.length} tip(s). Preparing to render.`);
-    try {
-        const tipsHTML = tips.map(tip =>
-            `<li><i class="fas fa-check-circle tip-icon"></i> ${polyglotHelpers.sanitizeTextForDisplay(String(tip))}</li>`
-        ).join('');
-        tipsListElement.innerHTML = tipsHTML;
-        console.log("ShellController: populateHomepageTips - Successfully set innerHTML for tips list.", tipsListElement);
-        if (tipsListElement.children.length > 0) {
-            console.log("ShellController: populateHomepageTips - Tips list now has children:", tipsListElement.children.length);
-        } else {
-            console.warn("ShellController: populateHomepageTips - Tips list has NO children after setting innerHTML. HTML was:", tipsHTML);
-        }
-    } catch (error) {
-        console.error("ShellController: populateHomepageTips - Error during tips HTML generation or assignment:", error);
-        tipsListElement.innerHTML = "<li>Error loading tips.</li>";
-    }
-    console.log("ShellController: populateHomepageTips - FINISHED.");
-    if (tipsListElement && tipsListElement.children.length > 0) {
-    const styles = window.getComputedStyle(tipsListElement);
-    const parentViewStyles = tipsListElement.closest('.view') ? window.getComputedStyle(tipsListElement.closest('.view')!) : null;
-    console.log(`ShellController: populateHomepageTips - VERIFY TIPS LIST: Populated. Display: ${styles.display}, Visibility: ${styles.visibility}. Parent View Display: ${parentViewStyles?.display}, Parent View Visibility: ${parentViewStyles?.visibility}`);
-} else if (tipsListElement) {
-    console.warn(`ShellController: populateHomepageTips - VERIFY TIPS LIST: Populated but has NO children.`);
-}
-}
 // --- END OF MODIFICATION for populateHomepageTips (SC.DEBUG.3) ---
         function initializeTheme(): void { /* ... Your original logic, using getDeps ... */
             const { domElements, polyglotHelpers } = getDeps();
@@ -452,6 +409,10 @@ function populateHomepageTips(): void {
         }
         function handlePersonaModalAction(actionType: string): void { /* ... Your original logic, using getDeps ... */
              const { domElements, modalHandler } = getDeps();
+
+
+
+             
             if (!domElements?.detailedPersonaModal || !modalHandler) return;
             const connectorId = (domElements.detailedPersonaModal as HTMLElement).dataset.connectorId;
             // ... rest of function

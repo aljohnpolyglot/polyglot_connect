@@ -18,8 +18,11 @@ import type {
 console.log('session_state_manager.ts: Script loaded (TS Version), waiting for PolyglotHelpers.');
 
 // Define the interface for the module that will be on the window
+
+
+
 interface SessionStateManagerModule {
-    initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string) => boolean;
+    initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string, skipModalManagement?: boolean) => boolean;
     markSessionAsStarted: () => boolean;
     addTurnToTranscript: (turn: TranscriptTurn) => void;
     getRawTranscript: () => TranscriptTurn[]; // <<< ADD THIS LINE
@@ -145,27 +148,33 @@ const dummyMethods: SessionStateManagerModule = {
             transcript: []
         };
 
-        function playRingtone(): void {
-            const { domElements } = getDynamicDeps();
-            const ringtoneElement = domElements?.ringtoneAudio;
-            if (ringtoneElement && typeof ringtoneElement.play === 'function') {
-                ringtoneElement.currentTime = 0;
-                ringtoneElement.play().catch(error => console.warn("SSM (TS): Ringtone play() failed:", error));
-                console.log("SSM (TS): Playing ringtone.");
-            } else {
-                console.warn("SSM (TS): Ringtone audio element not found or not playable.");
-            }
+     // PASTE STARTS HERE
+     function playRingtone(): void {
+        const { domElements } = getDynamicDeps();
+        const ringtoneElement = domElements?.ringtoneAudio;
+        if (ringtoneElement && typeof ringtoneElement.play === 'function') {
+            // ringtoneElement.loop = true; // REMOVED - No longer looping
+            ringtoneElement.currentTime = 0;
+            ringtoneElement.play().catch(error => console.warn("SSM (TS): Ringtone play() failed:", error));
+            console.log("SSM (TS): Playing ringtone.");
+        } else {
+            console.warn("SSM (TS): Ringtone audio element not found or not playable.");
         }
+    }
+// PASTE ENDS HERE
 
-        function stopRingtone(): void {
-            const { domElements } = getDynamicDeps();
-            const ringtoneElement = domElements?.ringtoneAudio;
-            if (ringtoneElement && typeof ringtoneElement.pause === 'function') {
-                ringtoneElement.pause();
-                ringtoneElement.currentTime = 0;
-                console.log("SSM (TS): Stopped ringtone.");
-            }
-        }
+// PASTE STARTS HERE
+function stopRingtone(): void {
+    const { domElements } = getDynamicDeps();
+    const ringtoneElement = domElements?.ringtoneAudio;
+    if (ringtoneElement && typeof ringtoneElement.pause === 'function') {
+        ringtoneElement.pause();
+        ringtoneElement.currentTime = 0;
+        // ringtoneElement.loop = false; // REMOVED
+        console.log("SSM (TS): Stopped ringtone.");
+    }
+}
+// PASTE ENDS HERE
 
       // src/js/sessions/session_state_manager.ts
 // ... (existing imports) ...
@@ -217,36 +226,70 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
         }
 
 // ... (rest of session_state_manager.ts) ...
+// Inside the IIFE of session_state_manager.ts
+// Replace the existing initializeBaseSession function with this:
+function initializeBaseSession(connector: Connector, sessionType: string, callSessionId?: string, skipModalManagement: boolean = false): boolean {
+    const functionName = "initializeBaseSession (TS)";
+    console.log(`${functionName}: Connector '${connector?.id}', Type: '${sessionType}', CallID: '${callSessionId}', SkipModal: ${skipModalManagement}`);
+    const { uiUpdater, domElements, modalHandler } = getDynamicDeps(); // getDynamicDeps() is defined in your SSM
 
-        function initializeBaseSession(connector: Connector, sessionType: string, callSessionId?: string): boolean {
-            console.log(`SSM (TS): initializeBaseSession for connector '${connector?.id}', Type: '${sessionType}', ProvidedCallSessionId: '${callSessionId}'`);
-            const { uiUpdater, domElements, modalHandler } = getDynamicDeps();
+    if (!connector?.id || !connector.profileName || !sessionType) {
+        console.error(`SSM (${functionName}): Invalid/incomplete connector or sessionType.`, { connector, sessionType });
+        return false;
+    }
 
-            if (!connector?.id || !connector.profileName || !sessionType) {
-                console.error("SSM (TS): Invalid/incomplete connector or sessionType for init.", {connector, sessionType});
-                return false;
-            }
-            if (currentSession.sessionId) {
-                console.warn(`SSM (TS): Session '${currentSession.sessionId}' is active. Finalize or reset first.`);
-                return false;
-            }
+    if (currentSession.sessionId) {
+        console.warn(`SSM (${functionName}): Session '${currentSession.sessionId}' is already active. Finalize or reset first. Returning false.`);
+        if (!skipModalManagement && domElements?.virtualCallingScreen && modalHandler?.close) {
+            console.warn(`SSM (${functionName}): Attempt to UI-managed init while session active. Closing virtualCallingScreen if open.`);
+            try { modalHandler.close(domElements.virtualCallingScreen); } catch(e) { console.warn("SSM: Error closing vCS in active session conflict", e); }
+            stopRingtone();
+        }
+        return false;
+    }
 
-            currentSession.connector = { ...connector };
-            currentSession.sessionType = sessionType;
-            currentSession.sessionId = callSessionId || `${connector.id}_${sessionType}_${polyglotHelpers.generateUUID().substring(0,8)}_${Date.now()}`; // Make it more unique
-            currentSession.transcript = [];
-            currentSession.startTime = null; // Set by markSessionAsStarted
+    currentSession.connector = { ...connector };
+    currentSession.sessionType = sessionType;
+    currentSession.sessionId = callSessionId || `${connector.id}_${sessionType}_${polyglotHelpers.generateUUID().substring(0, 8)}_${Date.now()}`;
+    currentSession.transcript = [];
+    currentSession.startTime = null; // Set by markSessionAsStarted
 
-            if (uiUpdater?.updateVirtualCallingScreen && domElements?.virtualCallingScreen && modalHandler?.open) {
-                uiUpdater.updateVirtualCallingScreen(currentSession.connector, currentSession.sessionType);
+    let ringtonePlayed = false;
+
+    if (!skipModalManagement) {
+        console.log(`SSM (${functionName}): Managing virtualCallingScreen UI (skipModalManagement is false).`);
+        if (uiUpdater?.updateVirtualCallingScreen && domElements?.virtualCallingScreen && modalHandler?.open) {
+            uiUpdater.updateVirtualCallingScreen(currentSession.connector, currentSession.sessionType);
+            try {
                 modalHandler.open(domElements.virtualCallingScreen);
                 playRingtone();
-            } else {
-                console.error("SSM (TS): Missing UI deps for virtual calling screen.");
+                ringtonePlayed = true;
+                console.log(`SSM (${functionName}): virtualCallingScreen opened and ringtone played.`);
+            } catch (modalError) {
+                console.error(`SSM (${functionName}): Error opening virtualCallingScreen: `, modalError);
+                currentSession.sessionId = null; // Rollback
+                return false;
             }
-            console.log(`SSM (TS): Base session '${currentSession.sessionId}' initialized and currentSession populated:`, JSON.parse(JSON.stringify(currentSession)));
-            return true;
+        } else {
+            console.error(`SSM (${functionName}): Missing UI deps (updater, elements, or handler) for virtual calling screen. Cannot show modal or play ringtone via this path.`);
+            currentSession.sessionId = null; // Rollback session ID
+            return false;
         }
+    } else {
+        console.log(`SSM (${functionName}): Skipping modal management as requested by caller (skipModalManagement is true).`);
+        // Caller (e.g., LCH) is responsible for UI. SSM just plays ringtone and sets state.
+        playRingtone();
+        ringtonePlayed = true;
+        console.log(`SSM (${functionName}): Ringtone played (modal management skipped).`);
+    }
+    
+    if (!ringtonePlayed) {
+         console.warn(`SSM (${functionName}): Ringtone was NOT played. This might be an issue.`);
+    }
+
+    console.log(`SSM (${functionName}): Base session '${currentSession.sessionId}' initialized. Current state:`, JSON.parse(JSON.stringify(currentSession)));
+    return true;
+}
 
         function markSessionAsStarted(): boolean {
             if (!currentSession.sessionId || !currentSession.connector?.id) { // Added check for connector.id

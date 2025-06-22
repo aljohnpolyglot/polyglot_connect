@@ -39,7 +39,7 @@
   <link rel="stylesheet" href="/css/views/view_home.css">
   <link rel="stylesheet" href="/css/views/view_messages.css">
   <link rel="stylesheet" href="/css/views/view_summary.css">
-
+<link rel="stylesheet" href="/css/components/account_panel.css">
   <!-- Theme CSS (Dark Mode) -->
   <link rel="stylesheet" href="/css/theme/dark_mode.css">
 
@@ -77,6 +77,10 @@
                 <li class="nav-item" data-tab="groups"><a href="#"><i class="fas fa-users"></i><span>Groups</span></a></li>
                 <li class="nav-item" data-tab="messages"><a href="#"><i class="fas fa-comments"></i><span>Messages</span></a></li>
                 <li class="nav-item" data-tab="summary"><a href="#"><i class="fas fa-chart-line"></i><span>Summary</span></a></li>
+           
+           
+           
+           
             </ul>
         </nav>
         <div class="sidebar-footer">
@@ -88,10 +92,61 @@
     <!-- ===== MAIN CONTAINER (Dynamic Content) ===== -->
     <main id="main-container">
         <!-- Home View -->
-        <div id="home-view" class="view active-view">
-            <header class="view-header"><h1>Welcome to Polyglot Connect!</h1><p>Your immersive language practice world.</p></header>
-            <div class="view-content"><div class="tips-panel"><h3><i class="fas fa-lightbulb"></i> Did you know you can...?</h3><ul id="homepage-tips-list"><!-- Tips populated by JS --></ul></div></div>
+       <!-- ============================================= -->
+<!-- === START OF REPLACEMENT FOR HOME VIEW    === -->
+<!-- ============================================= -->
+<!-- Home View -->
+<div id="home-view" class="view active-view">
+    <header class="view-header">
+        <h1 id="home-view-greeting">Welcome!</h1>
+        <p>Your immersive language practice world.</p>
+    </header>
+    <div class="view-content home-view-grid">
+
+        <!-- Main Content Area -->
+        <div class="home-main-content">
+            <div class="quick-start-panel">
+                <h3>Quick Start</h3>
+                <div class="quick-start-buttons">
+                    <button id="home-find-partner-btn" class="quick-start-btn">
+                        <i class="fas fa-search"></i>
+                        <span>Find a Conversation Partner</span>
+                    </button>
+                    <button id="home-join-group-btn" class="quick-start-btn">
+                        <i class="fas fa-users"></i>
+                        <span>Join a Group Chat</span>
+                    </button>
+                    <button id="home-continue-chat-btn" class="quick-start-btn" style="display: none;">
+                        <i class="fas fa-comments"></i>
+                        <span>Continue with <span id="home-last-chat-name"></span></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="community-stats-panel">
+                <h3>Community Pulse</h3>
+                <div class="stats-container">
+                    <div class="stat-item">
+                        <span id="community-calls-stat" class="stat-value">--</span>
+                        <span class="stat-label">Calls Made Today</span>
+                    </div>
+                    <div class="stat-item">
+                        <span id="community-messages-stat" class="stat-value">--</span>
+                        <span class="stat-label">Messages Exchanged</span>
+                    </div>
+                    <div class="stat-item">
+                        <span id="community-users-online-stat" class="stat-value">--</span>
+                        <span class="stat-label">Users Online Now</span>
+                    </div>
+                </div>
+            </div>
         </div>
+
+    </div>
+</div>
+<!-- ============================================= -->
+<!-- === END OF REPLACEMENT FOR HOME VIEW      === -->
+<!-- ============================================= -->
 
         <!-- Find Someone View -->
      <!-- AFTER -->
@@ -237,6 +292,27 @@
 
     <!-- ===== RIGHT SIDEBAR (Contextual Filters/Lists) ===== -->
     <aside id="right-sidebar" class="styled-scrollbar">
+       
+       
+        <div id="accountPanel" class="sidebar-panel">
+            <div id="account-panel-user-profile" class="account-profile-section">
+                <img src="/images/placeholder_avatar.png" alt="Your avatar" id="account-panel-avatar" class="account-avatar">
+                <h4 id="account-panel-display-name">Loading...</h4>
+                <p id="account-panel-email">...</p>
+            </div>
+            <div id="account-panel-plan-details" class="account-plan-section">
+                <!-- Content will be populated by accountHandler.ts -->
+            </div>
+            <div class="account-footer-actions">
+                <button id="account-panel-sign-out-btn" class="sidebar-action-btn subtle-btn"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+            </div>
+        </div>
+       
+       
+       
+       
+       
+       
         <!-- Find Filters -->
         <div id="friendsFiltersPanel" class="sidebar-panel"><!-- Matches 'findFiltersPanel' -->
         <h4><i class="fas fa-filter"></i> Filters</h4>
@@ -289,8 +365,12 @@
         </div>
     </aside>
 
-    <!-- MODALS -->
-
+    <!-- 
+    
+    <button id="persona-modal-view-dossier-btn" class="action-btn accent-btn-2">
+        <i class="fas fa-book-reader"></i> View Full Profile
+    </button> -->
+    
 <!-- in app.html, near your other modals -->
 
 <!-- ============================================= -->
@@ -310,11 +390,34 @@
         <div class="modal-footer" style="flex-direction: column; gap: 10px;">
             <button id="upgrade-modal-cta-btn" class="action-btn primary-btn large-btn">Upgrade Now ($5/month)</button>
             <button id="upgrade-modal-maybe-later-btn" class="modal-btn subtle-btn">Maybe Later</button>
+            <p class="plan-expiry" style="margin-top: 10px;"></p>
         </div>
     </div>
 </div>
 
+<!-- in app.html, after the first upgrade modal -->
 
+<!-- ============================================= -->
+<!-- === CALL LIMIT UPGRADE MODAL              === -->
+<!-- ============================================= -->
+<div id="upgrade-call-limit-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 450px; text-align: center;">
+        <button id="close-upgrade-call-modal-btn" class="close-modal-button simple-close-btn">×</button>
+        <div class="modal-header">
+            <h2 class="modal-title">Voice Call Limit Reached</h2>
+        </div>
+        <div class="modal-body" style="padding: 20px 30px;">
+            <i class="fas fa-phone-volume" style="font-size: 48px; color: var(--accent-color-2); margin-bottom: 20px;"></i>
+            <p style="margin-bottom: 15px;">You've used all your free voice calls for this month.</p>
+            <p style="font-size: 1.1em; font-weight: 500; margin-bottom: 25px;">Upgrade to Premium for unlimited, immersive conversations!</p>
+        </div>
+        <div class="modal-footer" style="flex-direction: column; gap: 10px;">
+            <button onclick="window.location.href='/pricing.html'" class="action-btn primary-btn large-btn">Upgrade for Unlimited Calls</button>
+            <button id="upgrade-call-modal-maybe-later-btn" class="modal-btn subtle-btn">Maybe Later</button>
+            <p class="plan-expiry" style="margin-top: 10px;"></p>
+        </div>
+    </div>
+</div>
 
 
     <div id="processing-call-modal" class="modal-overlay" style="display: none;">
@@ -655,7 +758,9 @@
     <script type="module" src="/src/js/ui/sidebar_panel_manager.ts"></script>
     <script type="module" src="/src/js/ui/tab_manager.ts"></script> <!-- Tab manager used by shell & VAC -->
     <script type="module" src="/src/js/ui/view_action_coordinator.ts"></script> 
-    
+    <script type="module" src="/src/js/ui/accountPanelHandler.ts"></script>
+    <script type="module" src="/src/js/ui/homeDashboardHandler.ts"></script>
+    <script type="module" src="/src/js/ui/modalUtils.ts"></script>
     <!-- Shell Setup & Controller (often among the last UI pieces as they orchestrate views) -->
     <script type="module" src="/src/js/ui/shell_setup.ts"></script>
     <script type="module" src="/src/js/ui/shell_controller.ts"></script>

@@ -17,7 +17,7 @@ import type {
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
-import { checkAndIncrementUsage } from './usageManager'; 
+
 // =================== START: NEW CANCELLATION LOGIC ===================
 // in text_message_handler.ts at the very top
 
@@ -28,6 +28,8 @@ import { getGroupPersonaSummary, getTimeAwarenessAndReasonPrompt } from './perso
 // Key: targetId (string), Value: AbortController
 const activeAiOperations = new Map<string, AbortController>();
 const activeTypingIndicators = new Map<string, HTMLElement>();
+
+
 /**
  * Interrupts any ongoing AI operation for a specific conversation and prepares a new AbortController.
  * This is the core of the responsive cancellation feature.
@@ -97,6 +99,10 @@ window.textMessageHandler = {
     handleModalImageUpload: async () => { console.warn("TMH structural: handleModalImageUpload called before full init."); }
 } as TextMessageHandlerModule;
 console.log('text_message_handler.ts: Placeholder window.textMessageHandler assigned.');
+
+
+
+
 document.dispatchEvent(new CustomEvent('textMessageHandlerStructuralReady'));
 console.log('text_message_handler.ts: "textMessageHandlerStructuralReady" (Placeholder) event dispatched.');
 interface TextMessageHandlerDeps {
@@ -484,7 +490,8 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
             } = {}
         ): Promise<void> {
 
-
+            const { checkAndIncrementUsage } = await import('./usageManager');
+            const { openUpgradeModal } = await import('../ui/modalUtils');
             const usageResult = await checkAndIncrementUsage('textMessages');
             if (!usageResult.allowed) {
                 console.log("TMH: User has reached text message limit. Showing upgrade modal.");
@@ -496,6 +503,7 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 }
                 // IMPORTANT: Re-enable the send button and stop execution
                 if (uiUpdater && !options.skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
+                openUpgradeModal('text', usageResult.daysUntilReset); // We will create this function next
                 return; 
             }
 
@@ -1165,22 +1173,18 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 captionText?: string | null;
             } = {}
         ): Promise<void> {
-             // ==========================================================
-    // === FREEMIUM USAGE GATE - START ===
-    // ==========================================================
-    const usageResult = await checkAndIncrementUsage('textMessages');
-    if (!usageResult.allowed) {
-        console.log("TMH (Modal): User has reached text message limit. Showing upgrade modal.");
-        const { modalHandler, domElements } = getSafeDeps("Upgrade Modal Trigger")!;
-        if (modalHandler && domElements?.upgradeLimitModal) {
-            modalHandler.open(domElements.upgradeLimitModal);
-        } else {
-            alert(`You've reached your monthly message limit for the ${usageResult.plan} plan. Please upgrade for unlimited messages!`);
-        }
-        // IMPORTANT: Re-enable the send button and stop execution
-        if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-        return;
-    }
+
+
+          const { checkAndIncrementUsage } = await import('./usageManager');
+const { openUpgradeModal } = await import('../ui/modalUtils');
+
+const usageResult = await checkAndIncrementUsage('textMessages');
+if (!usageResult.allowed) {
+    console.log("TMH (Modal): User has reached text message limit. Showing upgrade modal.");
+    openUpgradeModal('text', usageResult.daysUntilReset);
+    if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
+    return;
+}
     // ==========================================================
     // === FREEMIUM USAGE GATE - END ===
     // ==========================================================
@@ -1736,9 +1740,9 @@ Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_STA
     }
     document.dispatchEvent(new CustomEvent('textMessageHandlerReady'));
     console.log('text_message_handler.ts: "textMessageHandlerReady" (FULLY FUNCTIONAL) event dispatched.');
-} // <<< ***** THIS IS THE CRUCIAL FIX: Added closing brace for initializeActualTextMessageHandler *****
+}
 
-// Dependency checking logic remains outside the initializeActualTextMessageHandler function
+// Dependency checking logic is now correctly INSIDE the initializeActualTextMessageHandler function
 const dependenciesForTMH_Functional = [
     'uiUpdaterReady',
     'aiServiceReady',
@@ -1747,7 +1751,7 @@ const dependenciesForTMH_Functional = [
     'polyglotHelpersReady',
     'aiApiConstantsReady',
     'activityManagerReady',
-    'modalHandlerReady' // <<< Now this is a valid dependency to wait for
+    'modalHandlerReady'
 ];
 const tmhMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForTMH_Functional.forEach((dep: string) => tmhMetDependenciesLog[dep] = false);
@@ -1778,6 +1782,9 @@ function checkAndInitTMH(receivedEventName?: string) {
             case 'activityManagerReady': 
                 verified = !!(window.activityManager && typeof window.activityManager.simulateAiTyping === 'function'); 
                 break;
+            case 'modalHandlerReady': 
+                verified = !!(window.modalHandler && typeof window.modalHandler.open === 'function'); 
+                break;
             default: 
                 console.warn(`TMH_EVENT: Unknown event ${receivedEventName}`); 
                 return;
@@ -1797,13 +1804,6 @@ function checkAndInitTMH(receivedEventName?: string) {
         initializeActualTextMessageHandler();
     }
 }
-
-
-
-
-
-
-
 
 console.log('TMH_SETUP: Starting initial dependency pre-check for functional TextMessageHandler.');
 tmhDepsMet = 0;
@@ -1834,6 +1834,9 @@ dependenciesForTMH_Functional.forEach((eventName: string) => {
          case 'activityManagerReady':
                 isVerifiedNow = !!(window.activityManager && typeof window.activityManager.simulateAiTyping === 'function' && !(window.activityManager as any).isPlaceholder);
                 break;
+        case 'modalHandlerReady': 
+            isVerifiedNow = !!(window.modalHandler && typeof window.modalHandler.open === 'function'); 
+            break;
         default: 
             console.warn(`TMH_PRECHECK: Unknown functional dependency: ${eventName}`); 
             break;

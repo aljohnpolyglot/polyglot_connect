@@ -1,10 +1,11 @@
 // D:\polyglot_connect\src\js\ui\chat_event_listeners.ts
 console.log('chat_event_listeners.ts: SCRIPT EXECUTION STARTED - TOP OF FILE (TS Version).');
+// THIS IS THE CORRECTED CODE:
 import type {
     YourDomElements,
     PersonaModalManager,
-    ConversationManager, // <<< ADD THIS LINE
-    AiTranslationServiceModule, // <<< ADD THIS LINE
+    ConversationManager,
+    AiTranslationServiceModule,
     ChatSessionHandler,
     ChatActiveTargetManager,
     VoiceMemoHandler,
@@ -18,7 +19,9 @@ import type {
     PolyglotHelpersOnWindow, // <<< THIS IS THE ALIAS
     SessionData,
     RecapData,
-    ChatMessageOptions // Ensure this is imported if used by addSafeListener or handleCallEventButtonClick indirectly
+    ChatMessageOptions, // Ensure this is imported if used by addSafeListener or handleCallEventButtonClick indirectly
+    TabManagerModule,   // <<< ADD THIS
+    ChatOrchestrator    // <<< AND THIS
 } from '../types/global.d.ts';
 
 console.log('chat_event_listeners.ts: Script loaded, waiting for core dependencies (TS Version).');
@@ -34,7 +37,7 @@ window.chatEventListeners = {} as ChatEventListenersModule;
 console.log('chat_event_listeners.ts: Placeholder window.chatEventListeners assigned.');
 
 // Define VerifiedDeps type at the module scope so getSafeDeps can use it
-type VerifiedDepsForCelInit = { // Renamed for clarity of its purpose
+type VerifiedDepsForCelInit = {
     domElements: YourDomElements;
     personaModalManager: PersonaModalManager;
     chatSessionHandler: ChatSessionHandler;
@@ -42,18 +45,19 @@ type VerifiedDepsForCelInit = { // Renamed for clarity of its purpose
     voiceMemoHandler: VoiceMemoHandler;
     textMessageHandler: TextMessageHandler;
     groupManager: GroupManager;
-    // polyglotApp: PolyglotApp; // REMOVED - handlers will access window.polyglotApp
     sessionHistoryManager: SessionHistoryManager;
     uiUpdater: UiUpdater;
     modalHandler: ModalHandler;
     polyglotConnectors: Connector[];
-    polyglotHelpers: PolyglotHelpersOnWindow; // <<< USE THE ALIAS FROM YOUR IMPORTS
+    polyglotHelpers: PolyglotHelpersOnWindow;
     conversationManager: ConversationManager;
+    tabManager: TabManagerModule; // <<< THIS IS THE FIX
+    chatOrchestrator?: ChatOrchestrator; // <<< THIS IS THE OTHER FIX (optional)
 };
 // Define getSafeDeps at the module scope or ensure it's correctly defined before its first call
 // D:\polyglot_connect\src\js\ui\chat_event_listeners.ts
+
 const getSafeDeps = (): VerifiedDepsForCelInit | null => {
-    console.log("CEL_DEBUG_GETSAFEDEPS: --- Entered getSafeDeps (polyglotApp check removed) ---");
     const deps = {
         domElements: window.domElements,
         personaModalManager: window.personaModalManager,
@@ -67,9 +71,12 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
         modalHandler: window.modalHandler,
         polyglotConnectors: window.polyglotConnectors,
         polyglotHelpers: window.polyglotHelpers,
-        conversationManager: window.conversationManager // <<< THIS WAS THE MISSING LINE
+        conversationManager: window.conversationManager,
+        tabManager: window.tabManager, // <<< ADD THIS
+        chatOrchestrator: window.chatOrchestrator // <<< ADD THIS
     };
     const missing: string[] = [];
+
 
     if (!deps.domElements) missing.push("domElements");
     if (!deps.personaModalManager?.openDetailedPersonaModal) missing.push("personaModalManager or its .openDetailedPersonaModal method");
@@ -87,7 +94,7 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
     // VVVVVV ADD THIS CHECK VVVVVV
     if (!deps.conversationManager?.getConversationById) missing.push("conversationManager or its .getConversationById method");
     // ^^^^^^ ADD THIS CHECK ^^^^^^
-
+    if (!deps.tabManager?.getCurrentActiveTab) missing.push("tabManager or its .getCurrentActiveTab method"); // <<< ADD 
     if (missing.length > 0) {
         console.error(`ChatEventListeners: getSafeDeps - FINAL VERDICT: MISSING/INVALID: ${missing.join(', ')}. RETURNING NULL.`);
         return null;
@@ -121,15 +128,16 @@ function initializeActualChatEventListeners(): void {
         'use strict';
         console.log("chat_event_listeners.ts: IIFE (module definition) STARTING.");
 
-// D:\polyglot_connect\src\js\ui\chat_event_listeners.ts
-// ... (inside the IIFE)
-const { // Destructure all needed dependencies from resolvedDeps!
-    domElements, personaModalManager, chatSessionHandler,
-    chatActiveTargetManager, voiceMemoHandler, textMessageHandler,
-    groupManager, /* polyglotApp, */ sessionHistoryManager, // polyglotApp REMOVED/COMMENTED
-    uiUpdater, modalHandler, polyglotConnectors,
-    polyglotHelpers, conversationManager // <<< ENSURE THIS IS HERE // <<< ADD THIS LINE if missing
-} = resolvedDeps!;
+        const initializedButtons = new WeakMap<HTMLButtonElement, boolean>();
+
+        const {
+            domElements, personaModalManager, chatSessionHandler,
+            chatActiveTargetManager, voiceMemoHandler, textMessageHandler,
+            groupManager, sessionHistoryManager, uiUpdater, modalHandler,
+            polyglotConnectors, polyglotHelpers, conversationManager, tabManager, chatOrchestrator
+        } = resolvedDeps!;
+
+      
 
 // --- START OF MODIFIED BLOCK ---
 const MAX_PREVIEW_IMAGES = 1; // Max images user can queue up (set to 1 for single image)
@@ -602,6 +610,27 @@ function createSendHandler(
                 domElements.embeddedImageCaptionInput &&
                 domElements.embeddedMessageSendBtn /* Ensure send button is checked */) {
 
+
+// Inside initializeEventListeners function
+addSafeListener(domElements.closeUpgradeCallModalBtn, 'click', () => modalHandler.close(domElements.upgradeCallLimitModal));
+addSafeListener(domElements.upgradeCallModalMaybeLaterBtn, 'click', () => modalHandler.close(domElements.upgradeCallLimitModal));
+
+addSafeListener(domElements.upgradeLimitModal, 'click', (e: Event) => {
+    // Close modal if user clicks on the dark background overlay
+    if ((e.target as HTMLElement).id === 'upgrade-limit-modal') {
+        modalHandler.close(domElements.upgradeLimitModal);
+    }
+});
+addSafeListener(domElements.closeUpgradeModalBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
+addSafeListener(domElements.upgradeModalMaybeLaterBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
+
+// This button now takes the user to the new standalone pricing page
+addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
+    window.location.href = '/pricing.html'; 
+});
+
+
+
                 addSafeListener(
                     domElements.embeddedMessageTextInput,
                     'paste',
@@ -850,72 +879,51 @@ function createSendHandler(
             // --- END OF ADDED LISTENERS ---
         
 
-
+            setupHeaderButtonListener(domElements.embeddedChatCallBtn, () => {
+                const id = chatActiveTargetManager.getEmbeddedChatTargetId();
+                return id ? polyglotConnectors.find(c => c.id === id) : null;
+            });
+            setupHeaderButtonListener(domElements.messageModalCallBtn, () => chatActiveTargetManager.getModalMessageTargetConnector());
+            // =================== END: PASTE THE LOGIC HERE ===================
+        
+            console.log("CEL_TS: setupAllChatInteractionListeners() - FINISHED.");
+        }
+        
 
             
             // D:\polyglot_connect\src\js\ui\chat_event_listeners.ts
 // (Inside the eventListenerMethods IIFE, ensure `personaModalManager` is correctly destructured at the top of the IIFE)
 
-        const setupHeaderButtonListener = (
-            btn: HTMLButtonElement | null,
-            actType: 'call' | 'info',
-            getConnFn: () => Connector | null | undefined,
-            iface: string
-        ): void => {
-            if (!btn) return; // Early exit if button is null
-
-            const actionHandler = () => {
-                const connector = getConnFn ? getConnFn() : null;
-                if (!connector || !connector.id) {
-                    console.warn(`CEL_TS: No valid connector found for ${iface} ${actType} action.`);
-                    return;
-                }
-
-                if (actType === 'call') {
-                    const currentPolyglotApp = window.polyglotApp as PolyglotApp | undefined;
-                    if (currentPolyglotApp && typeof currentPolyglotApp.initiateSession === 'function') {
-                        console.log(`CEL_TS: Header button initiating 'direct_modal' call for ${connector.id} via ${iface}`);
-                        currentPolyglotApp.initiateSession(connector, 'direct_modal');
-                    } else {
-                        console.warn(`CEL_TS: polyglotApp.initiateSession not available for header button call (${iface}). Deferring.`);
-                        // Simple deferral without button state change for header buttons for now
-                        const retryHeaderCall = () => {
-                            console.log(`CEL_TS: Retrying header button call for ${connector.id} after polyglotAppReady.`);
-                            const updatedPolyglotApp = window.polyglotApp as PolyglotApp | undefined;
-                            if (updatedPolyglotApp && typeof updatedPolyglotApp.initiateSession === 'function') {
-                                updatedPolyglotApp.initiateSession(connector, 'direct_modal');
-                            } else {
-                                console.error(`CEL_TS: polyglotApp.initiateSession still not ready on retry for header button (${iface}).`);
-                                alert(`Call feature for ${iface} is still initializing. Please try again shortly.`);
-                            }
-                        };
-                        document.addEventListener('polyglotAppReady', retryHeaderCall, { once: true });
-                        // Optionally, briefly disable the button or show a small message
-                        // btn.disabled = true; setTimeout(() => { if(btn) btn.disabled = false; }, 3000);
-                    }
-                } else if (actType === 'info') {
-                    // personaModalManager is from the IIFE's destructured scope
-                    if (personaModalManager && typeof personaModalManager.openDetailedPersonaModal === 'function') {
-                        personaModalManager.openDetailedPersonaModal(connector);
-                    } else {
-                        console.error(`CEL_TS: personaModalManager or openDetailedPersonaModal method not available in setupHeaderButtonListener for info (${iface}).`);
-                        alert(`Profile information for ${iface} is currently unavailable.`);
-                    }
-                }
-            };
-            addSafeListener(btn, 'click', actionHandler);
+    // =================== START OF REPLACEMENT BLOCK ===================
+    const setupHeaderButtonListener = (
+        btn: HTMLButtonElement | null,
+        getConnFn: () => Connector | null | undefined
+    ): void => {
+        if (!btn) return;
+        if (initializedButtons.has(btn)) { // Corrected variable name
+            return;
+        }
+        const actionHandler = () => {
+            const connector = getConnFn ? getConnFn() : null;
+            if (!connector || !connector.id) {
+                console.warn(`CEL_TS: No valid connector found for header call button.`);
+                return;
+            }
+            const currentPolyglotApp = window.polyglotApp as PolyglotApp | undefined;
+            if (currentPolyglotApp && typeof currentPolyglotApp.initiateSession === 'function') {
+                console.log(`CEL_TS: Header button initiating 'direct_modal' call for ${connector.id}.`);
+                currentPolyglotApp.initiateSession(connector, 'direct_modal');
+            } else {
+                console.warn(`CEL_TS: polyglotApp.initiateSession not available for header button call.`);
+                alert(`Call feature is still initializing. Please try again shortly.`);
+            }
         };
-            setupHeaderButtonListener(domElements.embeddedChatCallBtn, 'call', () => {
-                const id = chatActiveTargetManager.getEmbeddedChatTargetId(); return id ? polyglotConnectors.find(c => c.id === id) : null;
-            }, 'Embedded Chat');
-            setupHeaderButtonListener(domElements.embeddedChatInfoBtn, 'info', () => {
-                const id = chatActiveTargetManager.getEmbeddedChatTargetId(); return id ? polyglotConnectors.find(c => c.id === id) : null;
-            }, 'Embedded Chat');
-            setupHeaderButtonListener(domElements.messageModalCallBtn, 'call', () => chatActiveTargetManager.getModalMessageTargetConnector(), 'Message Modal');
-            setupHeaderButtonListener(domElements.messageModalInfoBtn, 'info', () => chatActiveTargetManager.getModalMessageTargetConnector(), 'Message Modal');
+        addSafeListener(btn, 'click', actionHandler);
+        initializedButtons.set(btn, true); // Corrected variable name
+    };
 
-            console.log("CEL_TS: setupAllChatInteractionListeners() - FINISHED.");
-        } 
+ 
+
         
         function initializeEventListeners(domElements: YourDomElements, conversationManager: ConversationManager): void {
             console.log("CEL_TS_DEBUG_FLOW: ENTERING initializeEventListeners() - ATTACHING LISTENERS NOW.");
@@ -958,52 +966,35 @@ if (window.reactionHandler?.initialize && window.aiTranslationService && window.
 // ===============================================================
 
          // =================== START: ADD NEW RECAP CLOSE LISTENER ===================
-addSafeListener(domElements.closeRecapBtn, 'click', async () => {
-    // First, get the connector from the last session
-    const lastSession = sessionHistoryManager?.getLastSession?.();
-    if (!lastSession || !lastSession.connector) {
-        console.warn("CEL (Recap Close): Could not retrieve last session's connector. Closing modal only.");
-        modalHandler.close(domElements.sessionRecapScreen);
+// The old, "dumb" listener in chat_event_listeners.ts
+// The new, smarter listener in chat_event_listeners.ts
+addSafeListener(domElements.closeRecapBtn, 'click', () => {
+    // Step 1: Get the dependencies.
+    const deps = getSafeDeps();
+
+    // Step 2: If the dependencies object is null, we can't do anything. Exit.
+    if (!deps) {
+        console.error("Cannot handle recap close: Core dependencies are missing.");
         return;
     }
-    
-    const connectorToOpen = lastSession.connector;
 
-    // Close the recap modal
+    // Step 3: Now we know 'deps' is a valid object. We can safely use its properties.
+    const { modalHandler, tabManager, sessionHistoryManager, chatOrchestrator } = deps;
+
     modalHandler.close(domElements.sessionRecapScreen);
 
-    // Now, perform the "Flawless Handoff"
-    console.log(`%c[Flawless Handoff] Recap closed. Forcing view switch to 'messages' and opening chat for [${connectorToOpen.id}]`, 'color: #007bff; font-weight: bold;');
-
-    // 1. Tell the chat orchestrator to open the correct conversation in the embedded view.
-    //    This function will handle the prompt rebuild and all other necessary logic.
-    if (window.chatOrchestrator?.openConversation) { // Using the orchestrator is cleaner
-         window.chatOrchestrator.openConversation(connectorToOpen);
-    } else if (window.chatSessionHandler?.openConversationInEmbeddedView) { // Fallback
-         window.chatSessionHandler.openConversationInEmbeddedView(connectorToOpen);
+    const currentTab = tabManager.getCurrentActiveTab();
+    if (currentTab !== 'summary') {
+        const lastSession = sessionHistoryManager?.getLastSession?.();
+        if (lastSession?.connector) {
+            chatOrchestrator?.openConversation(lastSession.connector);
+        }
     }
-    
-    // 2. Explicitly switch the main view to 'messages'.
-    window.shellController?.switchView('messages');
 });
-
 // ==========================================================
 // === ADD THIS ENTIRE NEW BLOCK OF CODE ===
 // ==========================================================
 // Listeners for the "Upgrade Limit" modal that pops up
-addSafeListener(domElements.upgradeLimitModal, 'click', (e: Event) => {
-    // Close modal if user clicks on the dark background overlay
-    if ((e.target as HTMLElement).id === 'upgrade-limit-modal') {
-        modalHandler.close(domElements.upgradeLimitModal);
-    }
-});
-addSafeListener(domElements.closeUpgradeModalBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
-addSafeListener(domElements.upgradeModalMaybeLaterBtn, 'click', () => modalHandler.close(domElements.upgradeLimitModal));
-
-// This button now takes the user to the new standalone pricing page
-addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
-    window.location.href = '/pricing.html'; 
-});
 
 
 
@@ -1035,26 +1026,6 @@ addSafeListener(domElements.messageChatLog, 'click', handleChatLogClick);
 addSafeListener(domElements.groupChatLogDiv, 'click', handleChatLogClick); // Also add to group chat for consistency
 listenersInitialized = true; 
 
-
-
-
-// ===================  END: ADD NEW RECAP CLOSE LISTENER  ===================
-            console.log("CEL_TS_DEBUG_FLOW: Checking embeddedChatLog for attaching call button listener:", domElements.embeddedChatLog);
-            if (domElements.embeddedChatLog) {
-                domElements.embeddedChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
-                console.log("CEL_TS_DEBUG_FLOW: ATTEMPTED to attach call event listener to embeddedChatLog.");
-            } else {
-                console.warn("CEL_TS: domElements.embeddedChatLog not found for call event buttons.");
-            }
-
-            console.log("CEL_TS_DEBUG_FLOW: Checking messageChatLog for attaching call button listener:", domElements.messageChatLog);
-            if (domElements.messageChatLog) { 
-                domElements.messageChatLog.addEventListener('click', handleCallEventButtonClick as EventListener);
-                console.log("CEL_TS_DEBUG_FLOW: ATTEMPTED to attach call event listener to messageChatLog.");
-            } else {
-                console.warn("CEL_TS: domElements.messageChatLog not found for call event buttons.");
-            }
-            listenersInitialized = true; 
         }
 
 // =================== ADD THIS BLOCK INSIDE initializeEventListeners ===================
@@ -1158,9 +1129,9 @@ setupInputFocusListeners();
 
         console.log("chat_event_listeners.ts: IIFE (module definition) FINISHED.");
         return {
-            initializeEventListeners 
+            initializeEventListeners
         };
-    })(); // End of IIFE
+    })();
 
     Object.assign(window.chatEventListeners!, eventListenerMethods);
 
@@ -1171,8 +1142,7 @@ setupInputFocusListeners();
     }
     document.dispatchEvent(new CustomEvent('chatEventListenersReady'));
     console.log('chat_event_listeners.ts: "chatEventListenersReady" event dispatched.');
-
-} // End of initializeActualChatEventListeners
+} // <<< This is the closing brace for initializeActualChatEventListeners
 // ... (rest of the file for dependency checking and initialization logic remains the same) ...
 
 const dependenciesForCEL: string[] = [
@@ -1301,11 +1271,13 @@ if (celAllPreloadedAndVerified && celDepsMetCount === dependenciesForCEL.length)
     console.log(`chat_event_listeners.ts: Some deps pre-verified (${celDepsMetCount}/${dependenciesForCEL.length}), waiting for events.`);
 } else if (celDepsMetCount === 0 && !celAllPreloadedAndVerified) {
     console.log(`chat_event_listeners.ts: No deps pre-verified. Waiting for all ${dependenciesForCEL.length} events.`);
-} else if (dependenciesForCEL.length === 0) { // Handle case with no dependencies
+
+// ... lots of code before
+} else if (dependenciesForCEL.length === 0) { 
     console.log('chat_event_listeners.ts: No dependencies listed. Initializing directly.');
     initializeActualChatEventListeners();
 }
-// This was the line causing the TS1005 error, it was an extra, unneeded closing brace.
-// } 
+// }  // You even commented this one out, but there must be another one
 
 console.log("chat_event_listeners.ts: Script execution FINISHED (TS Version).");
+// The error is caused by a stray '}' right around here. Just delete it.

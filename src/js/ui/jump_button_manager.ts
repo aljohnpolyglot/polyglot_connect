@@ -18,7 +18,7 @@ function initializeActualJumpButtonManager(): void {
   // =================== REPLACE THE ENTIRE IIFE BLOCK in jump_button_manager.ts ===================
 window.jumpButtonManager = ((): JumpButtonManagerModule => {
     'use strict';
-
+    let hasBeenInitialized = false;
     // --- State variables for dragging ---
     let isDragging = false;
     let offsetX = 0, offsetY = 0;
@@ -120,6 +120,14 @@ window.jumpButtonManager = ((): JumpButtonManagerModule => {
     }
     
     function initialize(initialTab: string): void {
+        // --- THIS IS THE FIX ---
+        // If we've already run setup, don't do it again.
+        if (hasBeenInitialized) {
+            console.warn("JBM: initialize() called more than once. Ignoring subsequent calls.");
+            return;
+        }
+        // --- END OF FIX ---
+    
         container = window.domElements?.universalJumpButtons ?? null;
         if (!container) {
             console.error('JBM: Universal jump button container not found. Cannot initialize.');

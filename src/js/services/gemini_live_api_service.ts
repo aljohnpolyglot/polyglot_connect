@@ -89,7 +89,8 @@ function initializeActualGeminiLiveApiService(): void {
         let webSocket: WebSocket | null = null;
         let currentFacadeCallbacks: GeminiLiveApiCallbacks | null = null;
         let sdkOnOpenTime: number | null = null; // For measuring time to SetupComplete
-        let setupTimeoutId: number | null = null;
+   // CORRECTED CODE
+let setupTimeoutId: any = null; // Use 'any' to accept both number and Timeout object
 
         function arrayBufferToBase64(buffer: ArrayBuffer): string {
             let binary = '';

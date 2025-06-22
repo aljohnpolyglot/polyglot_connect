@@ -112,7 +112,27 @@ This object is the technical backbone for voice calls and language display.
     -   **Use Case:** For languages not officially supported for speech recognition by Google's Live API (e.g., Swedish, Norwegian, Thai, Finnish, Tagalog).
     -   **Action:** Set this to a supported language the persona is fluent in, almost always `"en-US"`.
     -   **Result:** This allows the persona to speak their native language with a realistic accent, as the AI generates text in the target language but uses the English voice model to speak it. **This prevents the call from failing.**
+### 5.3. Time, Place, and Presence (The "Reality Engine")
 
+This is one of the most powerful features for creating a "living" persona. These properties determine the character's sense of time, their daily habits, and their reason for being online.
+
+-   **`physicalTimezone`**: The IANA timezone of the persona's *physical* location (e.g., `"Europe/Paris"`). This is their "home base."
+-   **`activeTimezone`**: The IANA timezone the persona is *currently operating in*. **99% of the time, this should be the same as `physicalTimezone`.** The only exception is for characters like Luc, who lives in Paris but works Sydney hours. This is the property the system uses to calculate the AI's current time.
+-   **`sleepSchedule`**: Defines the persona's typical wake and sleep times in **24-hour format, relative to their `activeTimezone`**.
+    -   **Example:** `{ wake: "07:30", sleep: "23:30" }`
+    -   **How it's used:** The system checks this against the user's real-world time. If the persona "should" be asleep, the AI is prompted to invent a plausible reason for being awake (e.g., "couldn't sleep," "working late"). This prevents the jarring experience of a character being chipper at what is 3 AM their time.
+-   **`dailyRoutineNotes`**: A brief, first-person description of the persona's typical day.
+    -   **Example:** `"Teaches in the morning and late afternoon. Reads or watches films in the evening. Enjoys a long lunch, especially on weekends."`
+    -   **How it's used:** When the persona is "awake," the AI uses this note to invent a plausible reason for being online. Instead of saying, "I am waiting for input," it will say, "I've just finished my morning tutoring sessions and am enjoying a cup of tea."
+
+**The Combined Effect:**
+
+By setting these four properties, you create a powerful illusion. The system:
+1.  Calculates the persona's **real, current local time and date** using `activeTimezone`.
+2.  Checks if this time falls within their `sleepSchedule`.
+3.  Uses `dailyRoutineNotes` or the sleep schedule to give the AI a **character-driven reason** for its presence.
+
+This grounds the persona in a tangible reality, making every conversation feel more authentic and context-aware.
 ---
 
 ## 6. Gemini Live API Voice Guide

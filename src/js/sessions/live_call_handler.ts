@@ -1,6 +1,6 @@
 // src/js/sessions/live_call_handler.ts
 
-
+import { openUpgradeModal } from '../ui/modalUtils';
 import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_service'; // Adjust path if necessary
 import type {
     Connector,
@@ -122,231 +122,231 @@ window.liveCallHandler = ((): LiveCallHandlerModule => {
     let isMicEffectivelyMuted: boolean = true;
     let isAiSpeakerMuted: boolean = false;
 
-    function initializeCallUI(connector: Connector | null, sessionType: string | null): void {
-        const functionName = "initializeCallUI (TS)";
-        const { uiUpdater, domElements, modalHandler } = getDeps(functionName);
-
-        if (!connector || !sessionType || !domElements || !uiUpdater || !modalHandler) {
-            console.error(`LCH Facade (${functionName}): Missing critical args or UI deps. Cannot initialize UI.`);
-            return;
-        }
-        let modalToOpenId: keyof YourDomElements | null = null;
-        let modalElement: HTMLElement | null = null;
-
-        if (sessionType === "direct_modal") {
-            modalToOpenId = 'directCallInterface';
-            modalElement = domElements.directCallInterface;
-            if (!modalElement) { console.error(`LCH Facade (${functionName}): domElements.directCallInterface missing!`); return; }
-
-            uiUpdater.updateDirectCallHeader?.(connector);
-            uiUpdater.clearDirectCallActivityArea?.();
-            uiUpdater.updateDirectCallStatus?.("Live Call Connected", false);
-            uiUpdater.updateDirectCallMicButtonVisual?.(isMicEffectivelyMuted);
-            uiUpdater.updateDirectCallSpeakerButtonVisual?.(isAiSpeakerMuted);
-        } else if (sessionType === "voiceChat_modal") {
-            console.warn(`LCH Facade (${functionName}): UI Initialization for "voiceChat_modal" not fully implemented yet.`);
-        }
-
-        if (modalElement && modalHandler.open) {
-            modalHandler.open(modalElement);
-            console.log(`LCH Facade (${functionName}): Opened modal for key '${String(modalToOpenId)}'.`);
-        } else if (modalToOpenId) {
-            console.error(`LCH Facade (${functionName}): Modal element for key '${String(modalToOpenId)}' not found OR modalHandler.open missing.`);
-        }
-    }
-// D:\polyglot_connect\src\js\sessions\live_call_handler.ts
-
-// Ensure 'LiveApiSystemInstruction' and 'buildLiveApiSystemInstructionForConnector' are correctly imported
-// Ensure 'Connector' and other types from global.d.ts are imported at the top of this file.
-// Ensure 'LiveCallHandlerDeps', 'LiveApiCallbacks', and 'LiveCallHandlerModule' interfaces are defined correctly in this file.
-
-// Inside window.liveCallHandler = ((): LiveCallHandlerModule => { ... })();
+   // Previous imports and interface definitions in live_call_handler.ts remain the same...
+// window.liveCallHandler = ((): LiveCallHandlerModule => {
+//    'use strict';
+//    ...
+//    let currentConnector: Connector | null = null;
+//    let currentSessionType: string | null = null;
+//    let isMicEffectivelyMuted: boolean = true; // Should be set false when call starts
+//    let isAiSpeakerMuted: boolean = false;
+//
+//    function initializeCallInterfaceUI(...) { ... } // Defined earlier
+// PASTE STARTS HERE (REPLACE THE ENTIRE startLiveCall FUNCTION)
 
 async function startLiveCall(connector: Connector, sessionType: string): Promise<boolean> {
-    const functionName = "startLiveCall (TS)";
-    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): TRYING TO START - Connector: ${connector?.id}, Type: ${sessionType}`);
+    const functionName = "startLiveCall (TS - Corrected Structure)";
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Connector: ${connector?.id}, Type: ${sessionType}`);
     const deps = getDeps(functionName);
 
-    // Dependency checks
-    const requiredDepNames: (keyof LiveCallHandlerDeps)[] = ['geminiLiveApiService', 'sessionStateManager', 'liveApiMicInput', 'liveApiAudioOutput', 'liveApiTextCoordinator', 'uiUpdater', 'domElements', 'modalHandler', 'polyglotHelpers'];
+    // --- 1. VERIFY ALL CRITICAL DEPENDENCIES ---
+    const requiredDepNames: (keyof LiveCallHandlerDeps)[] = [
+        'geminiLiveApiService', 'sessionStateManager', 'liveApiMicInput',
+        'liveApiAudioOutput', 'liveApiTextCoordinator', 'uiUpdater',
+        'domElements', 'modalHandler', 'polyglotHelpers'
+    ];
+
     for (const depName of requiredDepNames) {
         if (!deps[depName]) {
-            console.error(`LCH Facade (${functionName}): ABORT! CRITICAL DEPENDENCY '${depName}' IS MISSING.`);
-            alert(`Live call error: Component '${depName}' missing (LCH-TS-S01).`);
-            // Ensure sessionStateManager and resetBaseSessionState are callable before using them
-            if (deps.sessionStateManager && typeof deps.sessionStateManager.resetBaseSessionState === 'function') {
-                deps.sessionStateManager.resetBaseSessionState();
-            }
+            console.error(`LCH Facade (${functionName}): ABORT! DEP MISSING: '${depName}'.`);
+            alert(`Call error: Component '${depName}' missing (LCH-TS-S01).`);
+            deps.sessionStateManager?.resetBaseSessionState?.(); // Attempt to reset
             if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-                deps.modalHandler.close(deps.domElements.virtualCallingScreen);
+                try { deps.modalHandler.close(deps.domElements.virtualCallingScreen); } catch (e) { /*ignore*/ }
             }
-            return false; // Must return boolean
-        }
-        if (['liveApiMicInput', 'liveApiAudioOutput', 'liveApiTextCoordinator'].includes(depName)) {
-            const subModule = deps[depName as 'liveApiMicInput' | 'liveApiAudioOutput' | 'liveApiTextCoordinator'];
-            if (typeof subModule?.initialize !== 'function') {
-                 console.error(`LCH Facade (${functionName}): ABORT! Sub-module '${depName}' MISSING 'initialize' METHOD.`);
-                 alert(`Live call error: Sub-component '${depName}' broken (LCH-TS-S02).`);
-                 if (deps.sessionStateManager && typeof deps.sessionStateManager.resetBaseSessionState === 'function') {
-                     deps.sessionStateManager.resetBaseSessionState();
-                 }
-                 if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-                     deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-                 }
-                 return false; // Must return boolean
-            }
+            return false;
         }
     }
-    console.log(`LCH Facade (${functionName}): All critical dependencies appear present.`);
 
-    // Non-null assertions because we checked them above
+    // Assert non-null for checked dependencies for the rest of this function's scope
+    const geminiLiveApiService = deps.geminiLiveApiService!;
+    const sessionStateManager = deps.sessionStateManager!;
     const liveApiMicInput = deps.liveApiMicInput!;
     const liveApiAudioOutput = deps.liveApiAudioOutput!;
     const liveApiTextCoordinator = deps.liveApiTextCoordinator!;
-    const sessionStateManager = deps.sessionStateManager!;
-    const geminiLiveApiService = deps.geminiLiveApiService!;
+    const uiUpdater = deps.uiUpdater!;
+    const domElements = deps.domElements!;
+    const modalHandler = deps.modalHandler!;
+    const polyglotHelpers = deps.polyglotHelpers!;
 
+    console.log(`LCH Facade (${functionName}): Critical direct dependencies verified.`);
+
+    // --- 2. VERIFY AND INITIALIZE SUB-MODULES ---
     console.log(`LCH Facade (${functionName}): Initializing sub-modules...`);
-    if (!liveApiMicInput.initialize(geminiLiveApiService, () => isMicEffectivelyMuted)) {
-        console.error("LCH: liveApiMicInput.initialize failed"); return false;
+
+    if (typeof liveApiMicInput.initialize !== 'function' || !liveApiMicInput.initialize(geminiLiveApiService, () => isMicEffectivelyMuted)) {
+        console.error("LCH: liveApiMicInput.initialize failed or missing.");
+        sessionStateManager.resetBaseSessionState(); // Use asserted version
+        if (domElements.virtualCallingScreen && modalHandler.close) { try { modalHandler.close(domElements.virtualCallingScreen); } catch (e) {} }
+        return false;
     }
-    if (!liveApiAudioOutput.initialize(() => isAiSpeakerMuted)) {
-        console.error("LCH: liveApiAudioOutput.initialize failed"); return false;
+
+    if (typeof liveApiAudioOutput.initialize !== 'function' || !liveApiAudioOutput.initialize(() => isAiSpeakerMuted)) {
+        console.error("LCH: liveApiAudioOutput.initialize failed or missing.");
+        sessionStateManager.resetBaseSessionState(); // Use asserted version
+        if (domElements.virtualCallingScreen && modalHandler.close) { try { modalHandler.close(domElements.virtualCallingScreen); } catch (e) {} }
+        return false;
     }
-    if (!liveApiTextCoordinator.initialize(sessionStateManager, deps.polyglotHelpers!, deps.uiUpdater!)) {
-        console.error("LCH: liveApiTextCoordinator.initialize failed"); return false;
+
+    if (typeof liveApiTextCoordinator.initialize !== 'function' || !liveApiTextCoordinator.initialize(sessionStateManager, polyglotHelpers, uiUpdater)) {
+        console.error("LCH: liveApiTextCoordinator.initialize failed or missing.");
+        sessionStateManager.resetBaseSessionState(); // Use asserted version
+        if (domElements.virtualCallingScreen && modalHandler.close) { try { modalHandler.close(domElements.virtualCallingScreen); } catch (e) {} }
+        return false;
     }
     liveApiTextCoordinator.setCurrentSessionTypeContext(sessionType);
     liveApiTextCoordinator.resetBuffers();
-    console.log(`LCH Facade (${functionName}): Sub-modules initialized.`);
+    console.log(`LCH Facade (${functionName}): Sub-modules initialized successfully.`);
 
+    // --- 3. SET LCH STATE ---
     currentConnector = connector;
     currentSessionType = sessionType;
-    isMicEffectivelyMuted = false; // Default to unmuted for new call
-    isAiSpeakerMuted = false;    // Default to unmuted for new call
+    isMicEffectivelyMuted = false; // Call starting, mic should be unmuted by default
+    isAiSpeakerMuted = false;    // AI speaker unmuted by default
     console.log(`LCH Facade (${functionName}): Facade state set. MicMuted: ${isMicEffectivelyMuted}, SpeakerMuted: ${isAiSpeakerMuted}`);
 
-    if (!sessionStateManager.initializeBaseSession(connector, sessionType)) {
-        console.error("LCH: sessionStateManager.initializeBaseSession failed");
-        // Potentially close virtual calling screen if opened by initializeBaseSession
-         if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-        }
-        return false; // Must return boolean
-    }
-    console.log(`LCH Facade (${functionName}): sessionStateManager.initializeBaseSession successful.`);
+    // --- 4. CONFIRM SESSION STATE MANAGER IS READY ---
+    // This part assumes session_manager has ALREADY called sessionStateManager.initializeBaseSession
+    // to show the virtualCallingScreen and play the ringtone.
+    // LCH now mostly confirms or, in a very specific fallback, might re-init state (but not UI).
+    let currentCallSessionId = sessionStateManager.getCurrentSessionDetails?.()?.sessionId;
 
+    if (!sessionStateManager.isSessionActive() || !currentCallSessionId) {
+        console.warn(`LCH Facade (${functionName}): SSM session not active or no sessionId when LCH started. This might indicate an issue in session_manager's SSM init. Attempting LCH-side SSM init (skipModalManagement=true).`);
+        if (typeof sessionStateManager.initializeBaseSession !== 'function' || !sessionStateManager.initializeBaseSession(connector, sessionType, undefined, true)) { // 4th arg is skipModalManagement
+            console.error("LCH: sessionStateManager.initializeBaseSession (called from LCH, skipping modal mgmt) failed or missing.");
+            if (domElements.virtualCallingScreen && modalHandler.close) {
+                 try { modalHandler.close(domElements.virtualCallingScreen); } catch(e){ console.warn("LCH: Error closing vCS on LCH's SSM init fail", e); }
+            }
+            return false;
+        }
+        currentCallSessionId = sessionStateManager.getCurrentSessionDetails?.()?.sessionId;
+        if (!currentCallSessionId) {
+             console.error("LCH: Critical - Failed to get/set session ID after LCH's SSM init.");
+             sessionStateManager.resetBaseSessionState();
+             if (domElements.virtualCallingScreen && modalHandler.close) { try { modalHandler.close(domElements.virtualCallingScreen); } catch(e){} }
+             return false;
+        }
+        console.log(`LCH Facade (${functionName}): SSM was re-initialized/confirmed by LCH (skipModal=true). SessionID: ${currentCallSessionId}`);
+    } else {
+        console.log(`LCH Facade (${functionName}): SSM session confirmed active (likely by session_manager). SessionID: ${currentCallSessionId}. LCH proceeding.`);
+    }
+
+    // --- 5. BUILD SYSTEM INSTRUCTION & API CONFIG ---
     let systemInstructionObject: LiveApiSystemInstruction;
     try {
+        if (typeof buildLiveApiSystemInstructionForConnector !== 'function') {
+            throw new Error("buildLiveApiSystemInstructionForConnector is not a function. Check import.");
+        }
         systemInstructionObject = await buildLiveApiSystemInstructionForConnector(connector);
         if (!systemInstructionObject?.parts?.[0]?.text?.trim()) {
-            throw new Error("Invalid system instruction: empty or whitespace text from prompt builder.");
+            throw new Error("Invalid system instruction: empty text from prompt builder.");
         }
-        console.log(`LCH Facade (${functionName}): Using DYNAMIC system instruction.`);
+        console.log(`LCH Facade (${functionName}): Dynamic system instruction built.`);
     } catch (promptError: any) {
         console.error(`LCH Facade (${functionName}): Error building system instruction:`, promptError.message, promptError);
-        systemInstructionObject = { parts: [{ text: "You are a helpful assistant. Please be concise." }] };
-        console.warn(`LCH Facade (${functionName}): Using fallback system instruction due to error.`);
+        systemInstructionObject = { parts: [{ text: "You are a helpful assistant. Please be concise." }] }; // Fallback
+        console.warn(`LCH Facade (${functionName}): Using fallback system instruction.`);
     }
 
     const primaryConnectorLanguage = connector.language || "English";
     const langInfo = connector.languageSpecificCodes?.[primaryConnectorLanguage];
-    let liveApiModelName = connector.liveApiModelName || "gemini-2.0-flash-live-001"; // Corrected from your snippet's re-declaration
+    const liveApiModelName = connector.liveApiModelName || "gemini-2.0-flash-live-001"; // Or your default
 
     let speechLanguageCodeForApi: string;
     let voiceNameToUseForApi: string;
 
     if (langInfo?.liveApiSpeechLanguageCodeOverride) {
         speechLanguageCodeForApi = langInfo.liveApiSpeechLanguageCodeOverride;
-        console.log(`LCH Facade (${functionName}): Using SPEECH LANGUAGE OVERRIDE: '${speechLanguageCodeForApi}' for connector ${connector.id} (primary lang: '${primaryConnectorLanguage}').`);
-
-        // Determine voice for the override language
-        const overrideLangKey = speechLanguageCodeForApi.startsWith("en") ? "English" : speechLanguageCodeForApi; // Simple mapping for English
+        const overrideLangKey = speechLanguageCodeForApi.startsWith("en") ? "English" : speechLanguageCodeForApi; // Normalize key for lookup
         const overrideVoiceInfo = connector.languageSpecificCodes?.[overrideLangKey];
-
         if (overrideVoiceInfo?.liveApiVoiceName) {
             voiceNameToUseForApi = overrideVoiceInfo.liveApiVoiceName;
-        } else if (speechLanguageCodeForApi.startsWith("en") && connector.languageSpecificCodes?.["English"]?.liveApiVoiceName) { // More specific check for "English" key
+        } else if (speechLanguageCodeForApi.startsWith("en") && connector.languageSpecificCodes?.["English"]?.liveApiVoiceName) {
+             // Fallback to general English voice if specific override (e.g., en-AU) doesn't have its own API voice
             voiceNameToUseForApi = connector.languageSpecificCodes["English"].liveApiVoiceName;
+        } else {
+            voiceNameToUseForApi = "Puck"; // Default if no specific voice found after override
         }
-         else {
-            voiceNameToUseForApi = "Puck"; // Fallback voice
-            console.warn(`LCH Facade (${functionName}): No specific voice found for override language '${speechLanguageCodeForApi}'. Defaulting to '${voiceNameToUseForApi}'.`);
-        }
-        console.log(`LCH Facade (${functionName}): Voice for overridden speech language ('${speechLanguageCodeForApi}') set to '${voiceNameToUseForApi}'.`);
     } else {
         speechLanguageCodeForApi = langInfo?.languageCode || connector.languageCode || "en-US";
-        voiceNameToUseForApi = langInfo?.liveApiVoiceName || "Puck";
-        if (!langInfo?.languageCode || !langInfo?.liveApiVoiceName) {
-            console.warn(`LCH Facade (${functionName}): Connector ${connector.id} (lang: '${primaryConnectorLanguage}') might be missing 'languageCode' or 'liveApiVoiceName' in its primary languageSpecificCodes entry. Using fallbacks: API Speech Lang='${speechLanguageCodeForApi}', API Voice='${voiceNameToUseForApi}'. This might lead to 'Unsupported language' if '${speechLanguageCodeForApi}' is not supported by the live model.`);
-        }
+        voiceNameToUseForApi = langInfo?.liveApiVoiceName || "Puck"; // Default voice
     }
+    console.log(`LCH Facade (${functionName}): API Model: '${liveApiModelName}', Voice: '${voiceNameToUseForApi}', Speech Lang: '${speechLanguageCodeForApi}'`);
 
-    console.log(`LCH Facade (${functionName}): Final System Instruction (AI to respond textually in ${primaryConnectorLanguage}): "${systemInstructionObject.parts[0].text.substring(0, 70)}..."`);
-    console.log(`LCH Facade (${functionName}): Final Live API Model: '${liveApiModelName}'`);
-    console.log(`LCH Facade (${functionName}): Final Voice Name SENT TO API: '${voiceNameToUseForApi}', Speech Language Code SENT TO API: '${speechLanguageCodeForApi}'`);
-
-    const sessionConfigForService: any = {
+    const sessionConfigForService: LiveApiSessionSetupConfig = {
         systemInstruction: systemInstructionObject,
         generationConfig: {
-            responseModalities: ["AUDIO"],
+            responseModalities: ["AUDIO"], // We want the AI to speak
             speechConfig: {
                 voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceNameToUseForApi } },
                 languageCode: speechLanguageCodeForApi
             },
         },
         realtimeInputConfig: { activityHandling: "START_OF_ACTIVITY_INTERRUPTS" },
-        inputAudioTranscription: {},
+        inputAudioTranscription: {}, // Default empty objects
         outputAudioTranscription: {}
     };
-    console.log(`LCH Facade (${functionName}): Session Config being sent to service:`, JSON.stringify(sessionConfigForService).substring(0, 400) + "...");
 
+    // --- 6. DEFINE API CALLBACKS ---
     const liveApiCallbacks: LiveApiCallbacks = {
-        onOpen: handleLiveApiSessionOpen,
+        onOpen: handleLiveApiSessionOpen, // This will handle UI transition after connection
         onAiAudioChunk: liveApiAudioOutput.handleReceivedAiAudioChunk,
         onAiText: liveApiTextCoordinator.handleReceivedAiText,
         onUserTranscription: liveApiTextCoordinator.handleReceivedUserTranscription,
         onModelTranscription: liveApiTextCoordinator.handleReceivedModelTranscription,
         onAiInterrupted: handleAiInterrupted,
-        onError: handleLiveApiError,
-        onClose: handleLiveApiClose
+        onError: handleLiveApiError, // Ensure this is async if it calls async endLiveCall
+        onClose: handleLiveApiClose  // Ensure this is async if it calls async endLiveCall
     };
-    console.log(`LCH Facade (${functionName}): Callbacks defined.`);
-    console.log(`LCH Facade (${functionName}): CONFIG PASSED TO SERVICE Connect: Model='${liveApiModelName}', sessionConfigForService=`, JSON.stringify(sessionConfigForService));
+
+    // --- 7. INTRODUCE MINIMAL PERCEIVED RINGING TIME & ATTEMPT CONNECTION ---
+    const MINIMUM_RINGING_DURATION_MS = 2500; // 2.5 seconds (adjust as needed for desired "ringing" feel)
+
+    console.log(`LCH Facade (${functionName}): Virtual calling screen should be up. Waiting for ${MINIMUM_RINGING_DURATION_MS}ms to simulate ringing before attempting AI connection.`);
+
+    // This promise introduces the delay. The virtualCallingScreen (ringing modal) is visible during this time.
+    await new Promise(resolve => setTimeout(resolve, MINIMUM_RINGING_DURATION_MS));
+
+    console.log(`LCH Facade (${functionName}): Minimum ringing time elapsed. Now attempting geminiLiveApiService.connect...`);
 
     try {
-        console.log(`LCH Facade (${functionName}): Attempting geminiLiveApiService.connect...`);
+        if (typeof geminiLiveApiService.connect !== 'function') {
+            throw new Error("geminiLiveApiService.connect is not a function.");
+        }
         const connectResult = await geminiLiveApiService.connect(liveApiModelName, sessionConfigForService, liveApiCallbacks);
-        console.log(`LCH Facade (${functionName}): connectResult from service: ${!!connectResult}`);
-        if (connectResult) { // Assuming connectResult is boolean or truthy/falsy
-            console.log(`LCH Facade (${functionName}): Connect process INITIATED by service.`);
-            return true; // Must return boolean
+
+        if (connectResult) {
+            console.log(`LCH Facade (${functionName}): Connect process INITIATED successfully by service. onOpen callback will handle UI transition.`);
+            // The call doesn't "start" for the user until onOpen is called.
+            return true; // Indicates connection attempt was successful
         } else {
-            throw new Error("geminiLiveApiService.connect returned falsy or failed.");
+            // This case means the service's connect method itself indicated an immediate failure.
+            throw new Error("geminiLiveApiService.connect returned falsy, indicating immediate connection failure.");
         }
     } catch (error: any) {
         console.error(`LCH Facade (${functionName}): ABORT! Error DURING geminiLiveApiService.connect call:`, error.message, error);
-        // Ensure uiUpdater and updateDirectCallStatus are callable
-        if (deps.uiUpdater && typeof deps.uiUpdater.updateDirectCallStatus === 'function') {
-            deps.uiUpdater.updateDirectCallStatus("Connection Failed", true);
+        
+        // Cleanup UI that might have been started by session_manager
+        if (domElements.virtualCallingScreen && modalHandler.close) {
+            try { modalHandler.close(domElements.virtualCallingScreen); } catch (e) { /*ignore*/ }
         }
-        if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-            deps.modalHandler.close(deps.domElements.virtualCallingScreen);
+        // Ensure session state is reset, which should also stop the ringtone if it was playing.
+        sessionStateManager.resetBaseSessionState();
+
+        uiUpdater.updateDirectCallStatus?.("Connection Failed", true);
+        let failureReason = "API connection issue";
+        if (error?.message) {
+            if (error.message.toLowerCase().includes("sdk") || error.message.toLowerCase().includes("key")) failureReason = "API SDK/key issue";
+            else if (error.message.toLowerCase().includes("falsy")) failureReason = "API service indicated failure";
+            else failureReason = `API error: ${error.message.substring(0,30)}`;
         }
-        // Ensure sessionStateManager and recordFailedCallAttempt are callable
-        if (sessionStateManager && typeof sessionStateManager.recordFailedCallAttempt === 'function' && connector) {
-            let failureReason = "could not connect";
-            if (error?.message) {
-                if (error.message.toLowerCase().includes("sdk instance") || error.message.toLowerCase().includes("api key")) failureReason = "due to an SDK/API key issue";
-                else if (error.message.toLowerCase().includes("returned falsy")) failureReason = "service indicated failure";
-            }
-            sessionStateManager.recordFailedCallAttempt(connector, failureReason);
-        } else if (sessionStateManager && typeof sessionStateManager.resetBaseSessionState === 'function') {
-            sessionStateManager.resetBaseSessionState();
-        }
-        return false; // Must return boolean
+        sessionStateManager.recordFailedCallAttempt(connector, failureReason);
+        return false; // Connection failed
     }
 } // End of startLiveCall
+
+// PASTE ENDS HERE
    // REPLACE LANDMARK 2 WITH THIS NEW ASYNC VERSION:
 // =================== START: REPLACEMENT FOR endLiveCall ===================
 // REPLACE LANDMARK 4 WITH THIS NEW ASYNC VERSION:
@@ -499,47 +499,132 @@ if (stepEl) stepEl.textContent = 'Cleaning up transcript...';
          console.log(`LCH Facade (${functionName}): Activity requested - ${game.title} with ${imgInfo.file}`);
     }
 
-   
-function handleLiveApiSessionOpen(): void {
-    const functionName = "handleLiveApiSessionOpen (TS)";
-    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Call session FULLY OPEN.`);
+// PASTE STARTS HERE
+function initializeCallUI(connector: Connector | null, sessionType: string | null): void {
+    const functionName = "initializeCallUI (TS)";
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Initializing UI for call. Connector: ${connector?.id}, Type: ${sessionType}`);
     const deps = getDeps(functionName);
 
-    // 1. Close the "Calling..." screen
-    if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-        deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-        console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
-    }
-
-    // 2. Mark the session as officially started (for timers, etc.)
-    if (!deps.sessionStateManager?.markSessionAsStarted()) {
-         console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.markSessionAsStarted FAILED!`);
-         handleLiveApiError(new Error("Failed to mark session as started."));
-         return;
-    }
-    console.log(`LCH Facade (${functionName}): Session marked as started.`);
-
-    // 3. Show the actual call interface
-    initializeCallUI(currentConnector, currentSessionType);
-    console.log(`LCH Facade (${functionName}): Call UI initialized.`);
-
-    // 4. Start capturing the user's microphone
-    if (deps.liveApiMicInput?.startCapture) {
-        deps.liveApiMicInput.startCapture(handleLiveApiError);
-    } else {
-        console.error(`LCH Facade (${functionName}): CRITICAL! liveApiMicInput.startCapture missing.`);
-        handleLiveApiError(new Error("Mic module 'startCapture' missing."));
+    if (!deps.uiUpdater || !deps.domElements || !deps.modalHandler) {
+        console.error(`LCH Facade (${functionName}): Missing critical UI dependencies (uiUpdater, domElements, modalHandler). Cannot initialize call UI.`);
+        // Convert to async if handleLiveApiError becomes async. For now, assume it's still sync or this error is fatal.
+         handleLiveApiError(new Error("Critical UI components missing. Cannot show call interface."));
         return;
     }
 
-    // 5. DO NOTHING ELSE. Wait for the user to speak.
-    // The following comment from your own code confirms this is the correct design:
-    // REMOVED: Proactive greeting logic. The AI should wait for the user to speak first.
-    // This prevents the AI's own greeting from polluting the chat history and causing confusion.
+    if (!connector) {
+        console.error(`LCH Facade (${functionName}): Connector is null. Cannot initialize call UI.`);
+        handleLiveApiError(new Error("Connector data missing. Cannot show call interface."));
+        return;
+    }
 
-    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks.`);
+    // Example: For a 'direct_modal' call type
+    if (sessionType === "direct_modal") {
+        if (deps.domElements.directCallInterface && deps.modalHandler.open) {
+            deps.uiUpdater.updateDirectCallHeader?.(connector);
+            deps.uiUpdater.updateDirectCallStatus?.("Connected", false);
+            // Access LCH IIFE-scope variables isMicEffectivelyMuted and isAiSpeakerMuted directly
+            deps.uiUpdater.updateDirectCallMicButtonVisual?.(isMicEffectivelyMuted);
+            deps.uiUpdater.updateDirectCallSpeakerButtonVisual?.(isAiSpeakerMuted);
+            deps.uiUpdater.clearDirectCallActivityArea?.();
+
+            try {
+                deps.modalHandler.open(deps.domElements.directCallInterface);
+                console.log(`LCH Facade (${functionName}): Direct call interface opened.`);
+            } catch (e: any) {
+                console.error(`LCH Facade (${functionName}): Error opening direct call interface:`, e.message, e);
+                handleLiveApiError(new Error(`Failed to open call interface modal: ${e.message}`));
+            }
+        } else {
+            const missing = [];
+            if (!deps.domElements.directCallInterface) missing.push("domElements.directCallInterface");
+            if (!deps.modalHandler.open) missing.push("modalHandler.open");
+            console.error(`LCH Facade (${functionName}): Required components missing for direct call UI: ${missing.join(', ')}.`);
+            handleLiveApiError(new Error("Direct call UI components missing."));
+        }
+    } else if (sessionType === "voiceChat_modal") {
+        // Placeholder: Implement UI initialization for 'voiceChat_modal' if it's a distinct UI.
+        // This might involve different domElements or uiUpdater calls.
+        console.warn(`LCH Facade (${functionName}): UI initialization for sessionType '${sessionType}' is not fully implemented in this stub. Assuming it might use direct_modal or other UI elements.`);
+        // If it uses the same UI as direct_modal, you might call common setup functions or replicate logic.
+        // For now, let's assume it should also try to open directCallInterface as a common modal for voice.
+         if (deps.domElements.directCallInterface && deps.modalHandler.open) {
+            deps.uiUpdater.updateDirectCallHeader?.(connector); // or a specific voiceChatHeaderUpdate
+            deps.uiUpdater.updateDirectCallStatus?.("Voice Chat Active", false);
+            deps.uiUpdater.updateDirectCallMicButtonVisual?.(isMicEffectivelyMuted);
+            deps.uiUpdater.updateDirectCallSpeakerButtonVisual?.(isAiSpeakerMuted);
+             try {
+                deps.modalHandler.open(deps.domElements.directCallInterface); // Or a specific voiceChatModalElement
+                console.log(`LCH Facade (${functionName}): Voice chat (direct_modal style) interface opened.`);
+            } catch (e: any) {
+                console.error(`LCH Facade (${functionName}): Error opening voice chat (direct_modal style) interface:`, e.message, e);
+                handleLiveApiError(new Error(`Failed to open voice chat interface: ${e.message}`));
+            }
+        } else {
+            console.error(`LCH Facade (${functionName}): Required components missing for voice chat UI.`);
+            handleLiveApiError(new Error("Voice chat UI components missing."));
+        }
+    } else {
+        console.warn(`LCH Facade (${functionName}): Unknown sessionType '${sessionType}' for UI initialization.`);
+        handleLiveApiError(new Error(`Cannot initialize UI for unknown session type: ${sessionType}`));
+    }
 }
+// PASTE ENDS HERE
+// PASTE STARTS HERE
 
+// PASTE STARTS HERE
+// PASTE STARTS HERE
+async function handleLiveApiSessionOpen(): Promise<void> {
+    const functionName = "handleLiveApiSessionOpen (TS)";
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Live API connection established. Transitioning UI.`);
+    const deps = getDeps(functionName);
+
+    // 1. Close the "Calling..." screen (virtualCallingScreen)
+    // This screen was opened by sessionStateManager.initializeBaseSession
+    if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
+        deps.modalHandler.close(deps.domElements.virtualCallingScreen);
+        console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
+    } else {
+        console.warn(`LCH Facade (${functionName}): Could not close virtual calling screen (deps missing).`);
+    }
+
+    // 2. Mark the session as officially started.
+    // IMPORTANT: sessionStateManager.markSessionAsStarted() also calls stopRingtone().
+    if (!deps.sessionStateManager?.markSessionAsStarted()) {
+         console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.markSessionAsStarted FAILED!`);
+         // Ensure handleLiveApiError is awaited if it's async
+         await handleLiveApiError(new Error("Failed to mark session as started."));
+         return;
+    }
+    console.log(`LCH Facade (${functionName}): Session marked as started (ringtone stopped).`);
+
+    // 3. Show the actual call interface (e.g., directCallInterface)
+    // initializeCallUI uses currentConnector and currentSessionType which are IIFE-scoped
+    initializeCallUI(currentConnector, currentSessionType);
+    console.log(`LCH Facade (${functionName}): Actual call UI initialized and shown.`);
+
+    // 4. Start capturing the user's microphone
+    if (deps.liveApiMicInput?.startCapture) {
+        try {
+            // Pass the async error handler correctly if startCapture takes one
+            await deps.liveApiMicInput.startCapture(async (err) => await handleLiveApiError(err));
+        } catch (captureError: any) {
+             console.error(`LCH Facade (${functionName}): Error during liveApiMicInput.startCapture call:`, captureError);
+             await handleLiveApiError(new Error(captureError.message || "Mic capture failed to start."));
+             return;
+        }
+    } else {
+        console.error(`LCH Facade (${functionName}): CRITICAL! liveApiMicInput.startCapture missing.`);
+        await handleLiveApiError(new Error("Mic module 'startCapture' missing."));
+        return;
+    }
+
+    // 5. AI is ready. Wait for the user to speak.
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks. AI ready, waiting for user input.`);
+}
+// PASTE ENDS HERE
+// PASTE ENDS HERE
+// PASTE ENDS HERE
     function handleAiInterrupted(): void {
         const functionName = "handleAiInterrupted (TS)";
         console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): AI speech interrupted.`);
@@ -550,47 +635,54 @@ function handleLiveApiSessionOpen(): void {
         console.log(`LCH Facade (${functionName}): Barge-in processed.`);
     }
 
-    function handleLiveApiError(error: Error | any): void {
-        const functionName = "handleLiveApiError (TS)";
-        console.error(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Error received:`, error?.message || error, error);
-        const { uiUpdater, liveApiTextCoordinator } = getDeps(functionName);
-        const errorMessage = error?.message || (typeof error === 'string' ? error : 'Unknown Live API error');
+ // PASTE STARTS HERE
+async function handleLiveApiError(error: Error | any): Promise<void> { // Made async, returns Promise<void>
+    const functionName = "handleLiveApiError (TS)";
+    console.error(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Error received:`, error?.message || error, error);
+    const { uiUpdater, liveApiTextCoordinator } = getDeps(functionName);
+    const errorMessage = error?.message || (typeof error === 'string' ? error : 'Unknown Live API error');
 
-        if (currentSessionType === "direct_modal" && uiUpdater?.updateDirectCallStatus) {
-            uiUpdater.updateDirectCallStatus(`Error: ${errorMessage.substring(0,40)}...`, true);
-        }
-        liveApiTextCoordinator?.flushUserTranscription?.();
-        liveApiTextCoordinator?.flushAiSpokenText?.();
-        console.log(`LCH Facade (${functionName}): Calling endLiveCall(false) due to error.`);
-        endLiveCall(false);
-        console.error(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED error processing.`);
+    if (currentSessionType === "direct_modal" && uiUpdater?.updateDirectCallStatus) {
+        uiUpdater.updateDirectCallStatus(`Error: ${errorMessage.substring(0,40)}...`, true);
     }
+    liveApiTextCoordinator?.flushUserTranscription?.();
+    liveApiTextCoordinator?.flushAiSpokenText?.();
+    
+    console.log(`LCH Facade (${functionName}): Calling endLiveCall(false) due to error. Awaiting completion...`);
+    await endLiveCall(false); // Await the async endLiveCall
+    
+    console.error(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED error processing.`);
+}
+// PASTE ENDS HERE
 
-    function handleLiveApiClose(wasClean: boolean, code: number, reason: string): void {
-        const functionName = "handleLiveApiClose (TS)";
-        console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Connection closed. Clean: ${wasClean}, Code: ${code}, Reason: "${reason}"`);
-        const deps = getDeps(functionName);
+   // PASTE STARTS HERE
+async function handleLiveApiClose(wasClean: boolean, code: number, reason: string): Promise<void> { // Made async
+    const functionName = "handleLiveApiClose (TS)";
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Connection closed. Clean: ${wasClean}, Code: ${code}, Reason: "${reason}"`);
+    const deps = getDeps(functionName);
 
-        if (deps.sessionStateManager?.isSessionActive()) {
-            console.warn(`LCH Facade (${functionName}): Connection closed unexpectedly while session active.`);
-            const message = `Call ended: ${reason || 'Connection closed'} (Code: ${code || 'N/A'})`;
-            if (currentSessionType === "direct_modal" && deps.uiUpdater) deps.uiUpdater.updateDirectCallStatus?.(message, !wasClean);
+    if (deps.sessionStateManager?.isSessionActive()) {
+        console.warn(`LCH Facade (${functionName}): Connection closed unexpectedly while session active.`);
+        const message = `Call ended: ${reason || 'Connection closed'} (Code: ${code || 'N/A'})`;
+        if (currentSessionType === "direct_modal" && deps.uiUpdater) deps.uiUpdater.updateDirectCallStatus?.(message, !wasClean);
 
-            deps.liveApiTextCoordinator?.flushUserTranscription?.();
-            deps.liveApiTextCoordinator?.flushAiSpokenText?.();
-            console.log(`LCH Facade (${functionName}): Calling endLiveCall. Recap: ${!!wasClean}`);
-            endLiveCall(!!wasClean);
-        } else {
-            console.log(`LCH Facade (${functionName}): Close called, no active session. Minimal cleanup.`);
-            if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-                deps.modalHandler.close(deps.domElements.virtualCallingScreen);
-            }
-            deps.liveApiMicInput?.stopCapture?.();
-            deps.liveApiAudioOutput?.cleanupAudioContext?.();
-            deps.liveApiTextCoordinator?.resetBuffers?.();
+        deps.liveApiTextCoordinator?.flushUserTranscription?.();
+        deps.liveApiTextCoordinator?.flushAiSpokenText?.();
+        
+        console.log(`LCH Facade (${functionName}): Calling endLiveCall. Recap: ${!!wasClean}. Awaiting completion...`);
+        await endLiveCall(!!wasClean); // Await the async endLiveCall
+    } else {
+        console.log(`LCH Facade (${functionName}): Close called, no active session. Minimal cleanup.`);
+        if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
+            try { deps.modalHandler.close(deps.domElements.virtualCallingScreen); } catch(e) { /* ignore */ }
         }
-        console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED processing close.`);
+        deps.liveApiMicInput?.stopCapture?.();
+        deps.liveApiAudioOutput?.cleanupAudioContext?.();
+        deps.liveApiTextCoordinator?.resetBuffers?.();
     }
+    console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED processing close.`);
+}
+// PASTE ENDS HERE
 
     console.log(`live_call_handler.ts (TS Facade ${LCH_FACADE_VERSION}): IIFE FINISHED.`);
     return {

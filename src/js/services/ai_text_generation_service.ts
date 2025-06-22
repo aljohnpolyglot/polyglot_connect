@@ -364,32 +364,23 @@ const estimatedTokenCount = JSON.stringify(openAIMessages).length / 4;
                 
                 console.log(`${Function}: Config check PASSED. Using model [${modelForVision}].`);
                 
-                // --- Payload preparation (as before) ---
-                let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
-                
-                // Initialize openAIMessages with system prompt and any existing history
-                // For image replies, existingConversationHistory should be empty, so this will just be the system prompt.
-                const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
-                
-                // Determine the final user text query for the API
-                let finalUserTextQueryForApi = userTextQuery; // Default to the detailed prompt passed in
+               // Determine the final user text query for the API
+                let apiCallOptions = { temperature: 0.5, max_tokens: 512 }; 
 
                 if (provider === PROVIDERS.TOGETHER) {
-                    // If the provider is "Together", use a much simpler prompt for vision,
-                    // as it seems to struggle with complex instructional prompts for images.
-                    console.warn(`[AI_TEXT_GEN_SVC.OpenAI_Vision] PROVIDER IS TOGETHER. Using OVERRIDE SIMPLIFIED prompt for vision. Original detailed prompt (first 100 chars): "${userTextQuery.substring(0,100)}..."`);
-                    finalUserTextQueryForApi = `User sent an image. What do you see or think about it? Respond naturally in ${connector.language || 'English'}. Keep it brief.`;
-                    // Alternative simpler prompt if the above is still too much for Together:
-                    // finalUserTextQueryForApi = `Describe this image in ${connector.language || 'English'} in one or two sentences.`;
+                    console.warn(`[AI_TEXT_GEN_SVC.OpenAI_Vision] PROVIDER IS TOGETHER. Adjusting temperature to 0.2 for vision call.`);
+                    apiCallOptions.temperature = 0.2; // << LOWER TEMPERATURE SPECIFICALLY FOR TOGETHER
                 } else {
-                    // For other providers (like if Gemini was called through this OpenAI-compatible path),
-                    // use the original detailed userTextQuery from text_message_handler.
-                    console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] Provider is NOT Together (or unknown). Using the detailed prompt: "${userTextQuery.substring(0,100)}..."`);
+                    console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] Provider is NOT Together (it's ${provider}). Using default temperature ${apiCallOptions.temperature}.`);
                 }
                 
-                // Construct the user content part of the message
+                // --- Payload Assembly (this part remains the same as your current working version) ---
+                // It should use userTextQuery (the detailed prompt from text_message_handler)
+                let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
+                const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
+                
                 const userMessageContentParts: OpenAIMessageContentPart[] = [
-                    { type: "text", text: finalUserTextQueryForApi } // Use the (potentially simplified) prompt
+                    { type: "text", text: userTextQuery } // Use the original detailed prompt
                 ];
 
                 if (base64ImageString) {

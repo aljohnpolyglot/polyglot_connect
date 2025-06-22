@@ -1,7 +1,13 @@
 // D:\polyglot_connect\src\js\app.ts
 // --- START: FIREBASE AND AUTH GUARD SETUP ---
 import { auth } from "./firebase-config"; // <<< ADD THIS
-import { onAuthStateChanged, type User } from "firebase/auth"; // <<< KEEP THIS
+import { onAuthStateChanged, type User } from "firebase/auth"; // <<< KEEP 
+// In app.ts, with your other imports
+import { initializeAccountPanel } from './ui/accountPanelHandler';
+import { handleHomeTabActive } from './ui/homeDashboardHandler';
+
+
+
 
 (window as any).enterScreenshotMode = (secretCode: string) => {
     if (secretCode === "polyglotDev2024") {
@@ -317,6 +323,48 @@ function initializeAppLogic(): void {
     } else {
         console.error('[APP INIT] CRITICAL: filterController not found for final initialization.');
     }
+
+// ==========================================================
+// === START: NEW DASHBOARD & ACCOUNT PANEL WIRING        ===
+// ==========================================================
+
+console.log('[APP INIT] Setting up Home Dashboard and Account Panel listeners...');
+
+// We listen for the 'tabSwitched' event that our tabManager sends out.
+document.addEventListener('tabSwitched', (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    
+    // When the user clicks on the "Home" tab, we run our home dashboard logic.
+    if (detail.newTab === 'home') {
+        console.log("Event received: Switched to Home tab. Initializing dashboard content.");
+        handleHomeTabActive();
+    }
+});
+
+// We initialize the Account Panel once, right after login.
+// It will attach its own real-time listener to Firestore and stay updated.
+try {
+    initializeAccountPanel();
+    console.log('[APP INIT] initializeAccountPanel() called successfully.');
+} catch (error) {
+    console.error('[APP INIT] Error calling initializeAccountPanel():', error);
+}
+
+// Since the app loads on the 'home' tab by default, we need to trigger
+// the handler once manually to populate the content on first load.
+const initialTab = window.tabManager?.getCurrentActiveTab();
+if (initialTab === 'home') {
+    console.log('[APP INIT] App is starting on Home tab. Triggering initial dashboard load.');
+    handleHomeTabActive();
+}
+
+// ==========================================================
+// === END: NEW DASHBOARD & ACCOUNT PANEL WIRING          ===
+// ==========================================================
+
+
+
+
     (window.polyglotApp as PolyglotApp).initiateSession = (connector: Connector, sessionTypeWithContext: string): void => {
         console.log(`APP_TS_DEBUG: polyglotApp.initiateSession for connector ID: ${connector?.id}, type: ${sessionTypeWithContext}`);
 
@@ -425,20 +473,25 @@ if (jumpButtonManager && tabManager) {
 // D:\polyglot_connect\src\js\app.ts (The Correct Final Block)
 
 } // End of initializeAppLogic
+// D:\polyglot_connect\src\js\app.ts
 
 let _allCoreModulesReadyFired = false;
+let _authStateConfirmed = false; // Flag to check if Firebase auth state is resolved
 let _appLogicInitialized = false;
 
 function tryInitializeApp() {
-    if (_allCoreModulesReadyFired && !_appLogicInitialized) {
-        console.log("app.ts (tryInitializeApp): 'allCoreModulesReady' has fired AND app logic not yet initialized. Initializing final app logic NOW.");
+    // We can only initialize the main app logic when BOTH conditions are met:
+    // 1. All core JS modules have loaded.
+    // 2. Firebase has confirmed an authenticated user (or dev override).
+    if (_allCoreModulesReadyFired && _authStateConfirmed && !_appLogicInitialized) {
+        console.log("app.ts (tryInitializeApp): 'allCoreModulesReady' AND 'authStateConfirmed' are both true. Initializing final app logic NOW.");
         _appLogicInitialized = true; // Set flag before calling to prevent re-entry
         initializeAppLogic();
     } else if (_appLogicInitialized) {
-        // This is normal, it means the app is already running.
-        // console.log("app.ts (tryInitializeApp): App logic already initialized.");
-    } else if (!_allCoreModulesReadyFired) {
-        console.log("app.ts (tryInitializeApp): Waiting for 'allCoreModulesReady' to fire.");
+        // This is normal, it means the app is already running and this function was likely called by the other event.
+    } else {
+        // This is also normal, it means one of the two prerequisites has not fired yet.
+        console.log(`app.ts (tryInitializeApp): Waiting for all conditions. Status: allCoreModulesReady=${_allCoreModulesReadyFired}, authStateConfirmed=${_authStateConfirmed}`);
     }
 }
 
@@ -446,14 +499,13 @@ function tryInitializeApp() {
 document.addEventListener('allCoreModulesReady', () => {
     console.log("app.ts: Event 'allCoreModulesReady' RECEIVED by top-level listener.");
     _allCoreModulesReadyFired = true;
-    tryInitializeApp();
+    tryInitializeApp(); // Check if we can initialize
 }, { once: true });
 
 // DOMContentLoaded listener
 document.addEventListener('DOMContentLoaded', () => {
     console.log('app.ts: DOMContentLoaded event fired.');
-    // Don't call tryInitializeApp() here directly. Let the dependency system handle it.
-    // The 'allCoreModulesReady' event is the true signal that the app is ready to start.
+    // This listener is fine as is; it doesn't trigger app initialization.
 });
 
 console.log("app.ts: Script parsing finished. Event listeners are set.");
@@ -464,27 +516,21 @@ onAuthStateChanged(auth, (user: User | null) => {
     // Check for our secret sessionStorage key
     const devOverride = sessionStorage.getItem("dev_override");
 
-    onAuthStateChanged(auth, (user: User | null) => {
-        // Check for our secret sessionStorage key
-        const devOverride = sessionStorage.getItem("dev_override");
-    
-        if (user || devOverride === "true") {
-            // Access is granted if user is logged in OR dev override is active
-            if (devOverride === "true") {
-                console.warn("Auth Guard: Bypassed by developer override. Welcome, master.");
-            } else {
-                console.log("Auth Guard: Access granted for user", user?.uid);
-            }
-            
-            // --- THIS IS THE ONLY CHANGE ---
-            tryInitializeApp(); // <<< CALL THE CORRECT, EXISTING FUNCTION
-    
+    if (user || devOverride === "true") {
+        // Access is granted if user is logged in OR dev override is active
+        if (devOverride === "true") {
+            console.warn("Auth Guard: Bypassed by developer override. Welcome, master.");
         } else {
-            // User is not signed in and no dev override is present
-            console.log("Auth Guard: Access denied. Redirecting to login page.");
-            window.location.href = '/index.html';
+            console.log("Auth Guard: Access granted for user", user?.uid);
         }
-    });
+        
+        _authStateConfirmed = true; // Set the auth flag to true
+        tryInitializeApp(); // Check if we can initialize
+    } else {
+        // User is not signed in and no dev override is present
+        console.log("Auth Guard: Access denied. Redirecting to login page.");
+        window.location.href = '/index.html';
+    }
 });
   // --- END: AUTH GUARD LOGIC ---
 // =======================================================================================

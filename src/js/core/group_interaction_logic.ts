@@ -24,6 +24,7 @@ import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 
 // WITH THIS:
 import { getGroupPersonaSummary } from './persona_prompt_parts.js';
+// Add this line
 
 console.log('group_interaction_logic.ts: (Hybrid V2) Script loaded.');
 
@@ -69,6 +70,7 @@ function interruptAndTrackGroupOperation(groupId: string): AbortController {
 
 // --- DEPENDENCY GETTER ---
   // REPLACE WITH THIS BLOCK:
+// Replace with this block
 const getDeps = () => ({
     polyglotHelpers: window.polyglotHelpers!,
     groupDataManager: window.groupDataManager!,
@@ -77,8 +79,11 @@ const getDeps = () => ({
     aiService: window.aiService!,
     aiApiConstants: window.aiApiConstants!,
     uiUpdater: window.uiUpdater!,
-    chatOrchestrator: window.chatOrchestrator!, // <<< ADD THIS LINE
-    tutor: tutor // <<< ADD THIS LINE
+    chatOrchestrator: window.chatOrchestrator!,
+    tutor: tutor,
+    // ADD THESE TWO FOR THE FREEMIUM MODAL
+    modalHandler: window.modalHandler!,
+    domElements: window.domElements!
 });
 
 
@@ -1594,6 +1599,22 @@ const groupInteractionLogic = {
     imageBase64Data?: string;
     imageMimeType?: string;
   }): Promise<void> => {
+    const { checkAndIncrementUsage } = await import('./usageManager');
+    const { openUpgradeModal } = await import('../ui/modalUtils');
+
+    // Check the 'textMessages' usage limit.
+    const usageResult = await checkAndIncrementUsage('textMessages');
+    if (!usageResult.allowed) {
+        console.log("GroupInteractionLogic: User has reached text message limit. Opening upgrade modal.");
+
+        // Use the utility to open the *text-specific* modal.
+        openUpgradeModal('text', usageResult.daysUntilReset);
+
+        // Stop execution to prevent the message from being processed.
+        return; 
+    }
+
+
     // --- THIS IS THE FIX: MAKE THIS THE "MASTER OF INTERRUPTIONS" ---
     if (!conversationFlowActive) return;
 

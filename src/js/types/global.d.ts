@@ -57,6 +57,13 @@ export interface PersonaIdentity {
   languageSpecificCodes?: { [key: string]: { languageCode: string; flagCode: string; voiceName: string; liveApiVoiceName: string; } };
   learningLevels?: { [key: string]: string; };
 }
+export interface KeyLifeEvent { // <<< Make sure 'export' is there
+  event: string;
+  date: string; 
+  description?: string;
+}
+
+export type InterestsStructured = Record<string, string[] | string | undefined>; // <<< Make sure 'export' is there
 export interface LanguageEntry {
   lang: string;
   levelTag: string;
@@ -526,6 +533,29 @@ export interface ConvoStoreModule { // << MAKE SURE THIS IS EXPORTED
 }
 // --- INTERFACE for DomElements (based on dom_elements.js and index.html) ---
 export interface YourDomElements { // Ensure EXPORT
+
+
+
+
+// in global.d.ts, inside YourDomElements interface
+// Home View (Now a Dashboard)
+homeViewGreeting: HTMLElement | null,
+homeFindPartnerBtn: HTMLButtonElement | null,
+homeJoinGroupBtn: HTMLButtonElement | null,
+homeContinueChatBtn: HTMLButtonElement | null,
+homeLastChatName: HTMLElement | null,
+communityCallsStat: HTMLElement | null,
+communityMessagesStat: HTMLElement | null,
+communityUsersOnlineStat: HTMLElement | null,
+
+// Account Panel (in Right Sidebar)
+accountPanel: HTMLElement | null,
+accountPanelAvatar: HTMLImageElement | null,
+accountPanelDisplayName: HTMLElement | null,
+accountPanelEmail: HTMLElement | null,
+accountPanelPlanDetails: HTMLElement | null,
+accountPanelSignOutBtn: HTMLButtonElement | null,
+
    //Image Input Send
    imagePreviewContainerEmbedded: HTMLElement | null;
    embeddedImageCaptionInput: HTMLInputElement | null;
@@ -540,6 +570,12 @@ upgradeLimitModal: HTMLElement | null;
 closeUpgradeModalBtn: HTMLButtonElement | null;
 upgradeModalCtaBtn: HTMLButtonElement | null;
 upgradeModalMaybeLaterBtn: HTMLButtonElement | null;
+upgradeCallLimitModal: HTMLElement | null;
+closeUpgradeCallModalBtn: HTMLButtonElement | null;
+upgradeCallModalMaybeLaterBtn: HTMLButtonElement | null;
+
+
+
 // === END OF NEW BLOCK ===
   
   // App Shell
@@ -553,10 +589,10 @@ upgradeModalMaybeLaterBtn: HTMLButtonElement | null;
     themeToggleButton: HTMLButtonElement | null;
   // ================= ADD THIS LINE =================
   universalJumpButtons: HTMLElement | null;
-  devPanelToggleButton?: HTMLButtonElement | null; // <<< ADD THIS
+  devPanelToggleButton?: HTMLButtonElement | null; // <<< ADD 
+  personaModalViewDossierBtn: HTMLButtonElement | null;
   // =================================================
-    // Home View
-    homepageTipsList: HTMLUListElement | null;
+   
 
     // Find Someone View
     friendsView: HTMLElement | null;
@@ -1388,16 +1424,27 @@ export interface ConversationRecordInStore { // << MAKE SURE THIS IS EXPORTED
     geminiHistory: GeminiChatItem[];
     userProfileSummary?: string; // <<< ADD THIS LINE
 }
+// PASTE STARTS HERE
 export interface SessionStateManager {
-  initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string) => any; // Be more specific if possible
+  initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string, skipModalManagement?: boolean) => boolean; // CORRECTED: 4th arg, returns boolean
+  markSessionAsStarted: () => boolean; // Ensuring it's here and required
   addTurnToTranscript: (turn: TranscriptTurn) => void;
-  isSessionActive: () => boolean; // <<< ADD THIS LINE
-  getCurrentSessionDetails?: () => { connector?: Connector| null; [key: string]: any } | null; // <<< ADD THIS LINE (optional method)
-  recordFailedCallAttempt?: (connector: Connector, reason: string) => void; // <<< ADD THIS LINE (optional method)
-  resetBaseSessionState?: () => void; // <<< ADD THIS LINE (optional method)
-  // Add other methods from session_state_manager.js that are called by session_manager.ts
-  [key: string]: any; // Keep for flexibility if other methods exist
+  getRawTranscript: () => TranscriptTurn[]; // Ensuring it's here
+  getCurrentTranscript: () => TranscriptTurn[]; // Ensuring it's here
+  getCurrentSessionDetails?: () => { // Optional method is fine
+      connector?: Connector | null;
+      sessionType?: string | null;
+      sessionId?: string | null;
+      startTime?: Date | null;
+      transcript?: TranscriptTurn[];
+      [key: string]: any;
+  } | null;
+  finalizeBaseSession: (generateRecap?: boolean, transcriptOverride?: TranscriptTurn[], cleanedTranscriptForRecap?: string | null) => Promise<void>; // Ensuring it's here and required
+  resetBaseSessionState: () => void; // CORRECTED: Made required
+  isSessionActive: () => boolean;
+  recordFailedCallAttempt: (connector: Connector, reason?: string) => void; // CORRECTED: Made required
 }
+// PASTE ENDS HERE
 export interface ChatUiUpdaterModule {
   initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }): void;
   appendSystemMessage(logEl: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean): HTMLElement | null;

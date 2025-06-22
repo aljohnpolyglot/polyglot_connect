@@ -76,6 +76,9 @@ function initializeActualSidebarPanelManager(): void {
             let rightPanelIdToShow: string | null = null;
 
             switch (currentTab) {
+                case 'home': // <<< THIS IS THE CHANGE
+                rightPanelIdToShow = 'accountPanel';
+                break;
                 case 'friends':
                     rightPanelIdToShow = 'friendsFiltersPanel';
                     break;

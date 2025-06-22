@@ -1,10 +1,8 @@
 // landing/persona_modal_renderer.ts
-
-import type { Connector, LanguageEntry } from '/src/js/types/global.d.ts';
-import { personasData } from '/src/data/personas.ts'; 
-import { polyglotHelpers } from '/src/js/utils/helpers.ts';
-import { flagLoader } from '/src/js/utils/flagcdn.ts';
-
+import type { Connector, LanguageEntry } from '../src/js/types/global.d.ts';
+import { personasData } from '../src/data/personas.ts'; 
+import { polyglotHelpers } from '../src/js/utils/helpers.ts';
+import { flagLoader } from '../src/js/utils/flagcdn.ts';
 document.addEventListener('DOMContentLoaded', () => {
     
     // --- Get DOM Elements ---
