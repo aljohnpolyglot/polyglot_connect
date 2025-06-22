@@ -2,6 +2,7 @@
 node_modules/
 .env
 *.local
+dist/
 
 # API Keys file (if you were to ever manually create one with real keys locally, though .env is preferred)
 js/config/api_keys.js 
