@@ -1,0 +1,273 @@
+/* Styles for detailed_persona_modal *//* css/components/modal_persona.css */
+
+/* Uses .modal-overlay from modal_call.css or global */
+
+#detailed-persona-modal .modal-content { /* Renamed from .persona-modal-content */
+    /* .modal-content base styles apply */
+    max-width: 550px;
+    text-align: left; /* Override modal default text-align:center */
+    padding: 0; /* Header/body/footer manage padding */
+}
+
+.persona-modal-header {
+    /* Uses .modal-header base styles */
+    flex-direction: column; /* Stack avatar, name, status */
+    padding: var(--spacing-lg) var(--spacing-xl);
+    text-align: center; /* Center header content */
+    border-top-left-radius: var(--border-radius-lg); /* Match modal content radius */
+    border-top-right-radius: var(--border-radius-lg);
+}
+
+#persona-modal-avatar { /* Renamed from .modal-avatar-large if it was generic */
+    width: 100px; height: 100px;
+    border-radius: var(--border-radius-circle);
+    border: 4px solid var(--bg-white);
+    box-shadow: var(--shadow-md);
+    margin-bottom: var(--spacing-md);
+    object-fit: cover;
+    margin-left: auto; margin-right: auto; /* Center avatar in header */
+}
+body.dark-mode #persona-modal-avatar {
+    border-color: var(--bg-dark-tertiary); /* Border against dark header */
+}
+
+#persona-modal-name { /* Was .modal-title */
+    font-size: 1.8em; font-weight: var(--font-weight-bold);
+    color: var(--text-color-dark); margin: 0 0 var(--spacing-xs) 0;
+}
+#persona-modal-location-age { /* Was .modal-subtitle */
+    font-size: 1em; color: var(--text-color-muted); margin-bottom: var(--spacing-sm);
+}
+.status-dot { /* Copied from app_shell.css, ensure consistency or centralize */
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: var(--border-radius-circle); background-color: var(--secondary-color);
+    margin-left: var(--spacing-xs); vertical-align: middle;
+    border: 2px solid var(--bg-white); box-shadow: 0 0 3px rgba(0,0,0,0.2);
+}
+.status-dot.active { background-color: var(--success-color); }
+body.dark-mode .status-dot { border-color: var(--bg-dark-secondary); } /* Against dark header */
+
+
+.persona-modal-body {
+    /* Uses .modal-body base styles */
+    padding: var(--spacing-lg) var(--spacing-xl); /* Specific padding for this modal's body */
+}
+
+.persona-section { margin-bottom: var(--spacing-lg); }
+.persona-section:last-child { margin-bottom: 0; }
+.persona-section h4 {
+    font-size: 1.05em; font-weight: var(--font-weight-bold);
+    color: var(--primary-color); margin: 0 0 var(--spacing-sm) 0;
+    padding-bottom: var(--spacing-xs); border-bottom: 1px dashed var(--border-color-light);
+    display: flex; align-items: center;
+}
+.persona-section h4 i { margin-right: var(--spacing-sm); font-size: 0.9em; opacity: 0.8; }
+.persona-section p, .persona-section ul.info-list {
+    font-size: 0.9rem; color: var(--text-color-muted); line-height: 1.6;
+}
+.persona-section ul.info-list { list-style: none; padding-left: 0; }
+.persona-section ul.info-list li { margin-bottom: var(--spacing-xs); display: flex; align-items: center;}
+
+/* Language sections in persona modal */
+#persona-modal-languages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+}
+
+/* Responsive: single column on mobile */
+@media (max-width: 480px) {
+    .language-items-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+
+.language-items-container li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Space between name and level tag */
+    padding: 4px 8px;
+    background: var(--bg-light);
+    border-radius: 4px;
+    border: 1px solid var(--border-color-light);
+}
+
+.language-items-container li:hover {
+    background: var(--bg-light-hover); /* Optional hover effect */
+}
+
+
+
+.language-item .lang-flag {
+    width: 20px;
+    height: auto;
+    margin-right: var(--spacing-xs);
+    border-radius: 2px;
+    border: 1px solid var(--border-color-light);
+}
+
+
+.language-item .level-tag {
+    font-size: 0.75em;
+    padding: 2px 6px;
+    border-radius: var(--border-radius-sm);
+    margin-left: var(--spacing-sm);
+    text-transform: capitalize;
+}
+
+.level-tag.native {
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+}
+
+.level-tag.fluent {
+    background-color: var(--success-color);
+    color: var(--text-color-light);
+}
+
+.level-tag.learning {
+    background-color: var(--warning-color);
+    color: var(--text-color-dark);
+}
+
+.level-tag.beginner {
+    background-color: var(--info-color);
+    color: var(--text-color-light);
+}
+
+/* Interests as tags */
+ul.tag-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); padding-left: 0; list-style: none;}
+ul.tag-list li {
+    background-color: var(--secondary-color-lighter);
+    color: var(--secondary-color-darker);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius-pill);
+    font-size: 0.8em;
+}
+
+.gallery-placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: var(--spacing-lg); background-color: var(--bg-light);
+    border-radius: var(--border-radius-md); color: var(--text-color-muted); text-align: center;
+    border: 1px dashed var(--border-color-light);
+}
+.gallery-placeholder i { font-size: 2.5em; margin-bottom: var(--spacing-sm); opacity: 0.5; }
+
+.persona-modal-actions {
+    /* Uses .modal-footer base styles */
+    justify-content: space-around; /* Evenly space buttons */
+    gap: var(--spacing-sm);
+    border-bottom-left-radius: var(--border-radius-lg); /* Match modal content radius */
+    border-bottom-right-radius: var(--border-radius-lg);
+}
+.persona-modal-actions .action-btn {
+    /* Uses .action-btn from buttons.css */
+    flex-grow: 1; /* Make buttons share space */
+}
+/* Specific colors for persona modal actions can be done with utility classes or direct targeting */
+#persona-modal-start-message-btn { /* Already styled by .primary-btn if that's used */ }
+#persona-modal-start-voicechat-btn { background-color: var(--accent-color-1); }
+#persona-modal-start-voicechat-btn:hover { background-color: var(--accent-color-1-darker); }
+#persona-modal-start-directcall-btn { background-color: var(--accent-color-2); }
+#persona-modal-start-directcall-btn:hover { background-color: var(--accent-color-2-darker); }
+
+
+/* Dark Mode Adjustments for Persona Modal */
+body.dark-mode #detailed-persona-modal .modal-content {
+    /* Base dark mode for .modal-content applies */
+}
+body.dark-mode .persona-modal-header { background-color: var(--bg-dark-tertiary); border-bottom-color: var(--border-color-dark); }
+body.dark-mode #persona-modal-name { color: var(--text-color-light); }
+body.dark-mode #persona-modal-location-age { color: #a0a3a8; }
+body.dark-mode .status-dot { border-color: var(--bg-dark-tertiary); }
+body.dark-mode .persona-section h4 { color: var(--primary-color-lighter); border-bottom-color: var(--border-color-dark); }
+body.dark-mode .persona-section p, body.dark-mode .persona-section ul.info-list { color: #b0b3b8; }
+body.dark-mode ul.tag-list li { background-color: var(--bg-dark-tertiary); color: #ccc; }
+body.dark-mode .gallery-placeholder { background-color: var(--bg-dark-tertiary); color: #888; border-color: var(--border-color-dark); }
+body.dark-mode .persona-modal-actions { background-color: var(--bg-dark-tertiary); border-top-color: var(--border-color-dark); }
+
+/* Language tags in persona modal */
+#persona-modal-languages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+}
+
+#persona-modal-languages .language-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Space between name and level tag */
+    padding: 6px 12px; /* Adjusted padding for better spacing */
+    background-color: var(--bg-light);
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-color-light);
+    transition: background-color var(--transition-fast);
+}
+
+#persona-modal-languages .language-item:hover {
+    background-color: var(--bg-light-hover); /* Optional hover effect */
+}
+
+#persona-modal-languages .lang-flag {
+    width: 20px;
+    height: auto;
+    margin-right: var(--spacing-xs);
+    border-radius: 2px;
+    border: 1px solid var(--border-color-light);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); /* Subtle shadow for flags */
+}
+
+#persona-modal-languages .level-tag {
+    font-size: 0.75em;
+    padding: 2px 6px;
+    border-radius: var(--border-radius-sm);
+    margin-left: var(--spacing-sm);
+    text-transform: capitalize;
+}
+
+/* Restored colors for level tags */
+.level-tag.native {
+    background-color: var(--primary-color);
+    color: var(--text-color-light);  
+    /* blue but not oversaturated for native. fluent is green, learning is yellow, beginner is white */
+    background-color: #2563eb; /* A moderate blue for native */
+    color: #fff;
+}
+.level-tag.fluent {
+    background-color: #22c55e; /* A moderate green for fluent */
+    color: #fff;
+}
+.level-tag.learning {
+    background-color: #fde047; /* A moderate yellow for learning */
+    color: #222;
+}
+.level-tag.beginner {
+    background-color: #fff; /* White for beginner */
+    color: #222;
+}
+
+
+
+/* Dark Mode Adjustments */
+body.dark-mode #persona-modal-languages .language-item {
+    background-color: var(--bg-dark-tertiary);
+    border-color: var(--border-color-dark);
+}
+
+body.dark-mode #persona-modal-languages .language-item.native {
+    background-color: var(--primary-color-dark);
+    color: var(--text-color-light);
+}
+
+body.dark-mode #persona-modal-languages .language-item.practice {
+    background-color: var(--secondary-color-dark);
+    color: var(--text-color-light);
+}
+
+body.dark-mode #persona-modal-languages .lang-flag {
+    border-color: var(--border-color-dark);
+}

@@ -1,0 +1,57 @@
+/* css/views/view_find.css */
+/* Styles specific to the Find Someone View, if any beyond what hub.css provides */
+
+#find-view .view-content {
+    /* The #connector-hub takes up this space. */
+    /* You might add padding here if hub.css doesn't handle it. */
+    padding: var(--spacing-xs) 0; /* Example padding */
+}
+
+/* Any specific styling for elements within #find-view's header or content,
+   if not covered by global view styles or hub.css */
+   /* ===== CSS for Friends View Tabs ===== */
+
+.friends-view-toggle-container {
+    display: flex;
+    gap: 8px; /* var(--spacing-sm, 8px) */
+    margin-bottom: 16px; /* var(--spacing-md, 16px) */
+    flex-shrink: 0;
+    border-bottom: 2px solid var(--border-color-light); /* Using global var */
+    padding: 0 16px; /* var(--spacing-sm) */
+}
+
+.friends-view-toggle-btn {
+    padding: 10px 16px; /* var(--spacing-sm) var(--spacing-md) */
+    font-size: 0.95em;
+    font-weight: 500; /* var(--font-weight-medium) */
+    color: var(--text-color-muted);
+    background-color: transparent;
+    border: none;
+    border-bottom: 3px solid transparent; /* Placeholder for active state */
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    margin-bottom: -2px; /* Pulls the bottom border up to overlap the container's border */
+    border-radius: 4px 4px 0 0;
+}
+
+.friends-view-toggle-btn:hover {
+    color: var(--text-color-primary);
+    background-color: var(--background-color-secondary);
+}
+
+.friends-view-toggle-btn.active {
+    color: var(--primary-color);
+    font-weight: 600; /* var(--font-weight-semibold) */
+    border-bottom-color: var(--primary-color);
+}
+
+body.dark-mode .friends-view-toggle-btn.active {
+    color: var(--primary-color-lighter);
+    border-bottom-color: var(--primary-color-lighter);
+}
+@media (max-width: 768px) { 
+    .connector-card{ 
+height: auto;
+
+    }
+}

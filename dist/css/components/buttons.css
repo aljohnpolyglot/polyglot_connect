@@ -1,0 +1,191 @@
+/* css/components/buttons.css */
+
+/* --- Base Button Styling (Generic, for modals and general use) --- */
+.modal-btn, .action-btn, .control-btn, .sidebar-action-btn, .send-btn {
+    display: inline-flex; /* For icon alignment */
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 0.95em;
+    font-weight: var(--font-weight-medium);
+    border-radius: var(--border-radius-md);
+    border: 1px solid transparent; /* Base border */
+    cursor: pointer;
+    text-align: center;
+    transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+    line-height: 1.4; /* Ensure text is vertically centered if it wraps slightly */
+}
+.modal-btn:disabled, .action-btn:disabled, .control-btn:disabled, .sidebar-action-btn:disabled, .send-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+.modal-btn i, .action-btn i, .control-btn i, .sidebar-action-btn i, .send-btn i {
+    margin-right: var(--spacing-xs);
+}
+.modal-btn:focus-visible, .action-btn:focus-visible, .control-btn:focus-visible,
+.sidebar-action-btn:focus-visible, .send-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+body.dark-mode .modal-btn:focus-visible, body.dark-mode .action-btn:focus-visible,
+body.dark-mode .control-btn:focus-visible, body.dark-mode .sidebar-action-btn:focus-visible,
+body.dark-mode .send-btn:focus-visible {
+    outline-color: var(--primary-color-lighter);
+}
+
+
+/* --- Color Variants --- */
+.primary-btn {
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+    border-color: var(--primary-color);
+}
+.primary-btn:hover {
+    background-color: var(--primary-color-darker);
+    border-color: var(--primary-color-darker);
+}
+
+.secondary-btn {
+    background-color: var(--secondary-color);
+    color: var(--text-color-light);
+    border-color: var(--secondary-color);
+}
+.secondary-btn:hover {
+    background-color: var(--secondary-color-darker);
+    border-color: var(--secondary-color-darker);
+}
+
+.accent-btn-1 { /* Green */
+    background-color: var(--accent-color-1);
+    color: var(--text-color-light);
+    border-color: var(--accent-color-1);
+}
+.accent-btn-1:hover { background-color: var(--accent-color-1-darker); border-color: var(--accent-color-1-darker); }
+
+.accent-btn-2 { /* Teal */
+    background-color: var(--accent-color-2);
+    color: var(--text-color-light);
+    border-color: var(--accent-color-2);
+}
+.accent-btn-2:hover { background-color: var(--accent-color-2-darker); border-color: var(--accent-color-2-darker); }
+
+
+.cancel-btn, .danger-btn {
+    background-color: var(--danger-color);
+    color: var(--text-color-light);
+    border-color: var(--danger-color);
+}
+.cancel-btn:hover, .danger-btn:hover {
+    background-color: #c82333; /* Darker red */
+    border-color: #c82333;
+}
+
+/* Outline/Ghost Button Variant */
+.outline-btn {
+    background-color: transparent;
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+.outline-btn:hover {
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+}
+body.dark-mode .outline-btn {
+    color: var(--primary-color-lighter);
+    border-color: var(--primary-color-lighter);
+}
+body.dark-mode .outline-btn:hover {
+    background-color: var(--primary-color-lighter);
+    color: var(--text-color-dark); /* Or a very dark grey from your palette */
+}
+
+
+/* --- Specific Button Types --- */
+.tts-toggle-btn {
+    background: none;
+    border: none;
+    font-size: 1.3em; /* Larger icon */
+    color: var(--primary-color);
+    padding: var(--spacing-xs);
+}
+.tts-toggle-btn:hover { color: var(--primary-color-darker); }
+.tts-toggle-btn .fa-volume-mute { color: var(--text-color-muted); }
+body.dark-mode .tts-toggle-btn { color: var(--primary-color-lighter); }
+body.dark-mode .tts-toggle-btn:hover { color: #79c0ff; /* Lighter blue hover */ }
+body.dark-mode .tts-toggle-btn .fa-volume-mute { color: #888; }
+
+
+.end-call-button { /* For modal chat/call close/end buttons */
+    background-color: var(--secondary-color);
+    color: var(--text-color-light);
+    padding: var(--spacing-xs) var(--spacing-sm); /* Smaller padding */
+    font-size: 0.9em;
+}
+.end-call-button:hover { background-color: var(--secondary-color-darker); }
+.end-call-button.danger { /* If you want a red end button for calls */
+    background-color: var(--danger-color);
+}
+.end-call-button.danger:hover { background-color: #c82333; }
+
+
+.attach-btn {
+    font-size: 1.2em;
+    color: var(--secondary-color-darker);
+    padding: var(--spacing-sm);
+}
+.attach-btn:hover { color: var(--primary-color); }
+body.dark-mode .attach-btn { color: #a0a3a8; }
+body.dark-mode .attach-btn:hover { color: var(--primary-color-lighter); }
+
+/* Theme toggle button in sidebar */
+.theme-toggle-btn {
+    background: none;
+    border: 1px solid var(--text-color-muted);
+    color: var(--text-color-muted);
+    border-radius: var(--border-radius-circle);
+    width: 36px;
+    height: 36px;
+    font-size: 1em;
+    margin-bottom: var(--spacing-sm);
+}
+.theme-toggle-btn:hover {
+    color: var(--text-color-light);
+    border-color: var(--text-color-light);
+    background-color: rgba(255,255,255,0.1); /* Subtle hover for dark sidebar */
+}
+body.dark-mode .theme-toggle-btn {
+    color: #8a8d91;
+    border-color: #8a8d91;
+}
+body.dark-mode .theme-toggle-btn:hover {
+    color: var(--text-color-light);
+    border-color: var(--text-color-light);
+    background-color: rgba(0,0,0,0.2); /* Subtle hover for light sidebar */
+}
+.mic-btn.recording {
+    background-color: var(--danger-color); /* Red to indicate recording */
+    color: white;
+}
+.mic-btn.recording:hover {
+    background-color: #c82333; /* Darker red */
+}
+
+/* Optional: Style for user audio placeholder messages */
+.chat-message-ui.user-audio,
+.chat-message-ui.user-thinking, /* For transcribing message */
+.chat-message-ui.user-error {
+    font-style: italic;
+    opacity: 0.8;
+}/* --- ADD THIS TO buttons.css --- */
+
+/* New reusable class for the "View Chat" button style */
+.view-chat-style-btn {
+    background-color: var(--view-groups-info-color);
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+
+.view-chat-style-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
+}

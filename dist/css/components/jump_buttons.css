@@ -1,0 +1,111 @@
+/* =================== REPLACE THIS ENTIRE FILE: css/components/jump_buttons.css =================== */
+
+.jump-button-container {
+    /* Base styles that are always active */
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 500;
+    cursor: grab;
+    transition: opacity 0.3s ease;
+    
+    /* By default, it is COMPLETELY HIDDEN, regardless of classes */
+    display: none; 
+}
+
+/* --- Media Query for Mobile and Tablet --- */
+/* This rule applies ONLY when the screen width is 768px or less. */
+@media (max-width: 768px) {
+    /*
+     * THE KEY RULE:
+     * On a small screen, IF the container has the .active class (added by JS),
+     * THEN we make it visible by setting its display property.
+    */
+    .jump-button-container.active {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
+
+/* --- The rest of the styling remains the same --- */
+
+.jump-button-container.dragging {
+    cursor: grabbing;
+    opacity: 0.8; 
+}
+
+.jump-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer; 
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.2s, transform 0.2s ease-out;
+    font-size: 1.1rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.jump-button:hover {
+    background-color: var(--primary-color-dark);
+    transform: scale(1.05);
+}
+
+.jump-button:active {
+    transform: scale(0.95);
+}
+
+/* Dark mode adjustments */
+body.dark-mode .jump-button {
+    background-color: var(--primary-color-lighter);
+    color: var(--background-color-dark);
+}
+
+body.dark-mode .jump-button:hover {
+    background-color: var(--primary-color);
+}
+/* =================================================================
+   ||   NEW: Mobile UX Improvement for Jump Buttons               ||
+   ================================================================= */
+
+/* 
+  This is the magic rule. It says:
+  "When the user is focused on ANY element INSIDE a chat footer
+   (like the text input), find the #universal-jump-buttons container
+   and hide it."
+*//* =================================================================
+   ||   NEW: Mobile UX Improvement - Hide Jump Buttons on Focus   ||
+   ================================================================= */
+
+/* 
+  This rule hides the jump button container when any element
+  inside a chat footer (like an <input>) receives focus.
+*/
+/* This rule hides the jump buttons when the body has the 'chat-input-active' class */
+body.chat-input-active #universal-jump-buttons {
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    opacity: 0;
+    transform: translateY(20px) scale(0.9);
+    pointer-events: none;
+}
+
+/* Ensure the default state has the transition for a smooth return */
+#universal-jump-buttons {
+    transition: opacity 0.3s ease-in, transform 0.3s ease-in;
+}
+
+/* 
+  And this is the default state for the container, which includes
+  the transition property so it animates back into view smoothly.
+*/
+#universal-jump-buttons {
+    transition: opacity 0.3s ease-in, transform 0.3s ease-in;
+}

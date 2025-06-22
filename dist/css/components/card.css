@@ -1,0 +1,361 @@
+/*
+   ===================================================================
+   ||   MANIFEST 4: css/components/card.css                       ||
+   ||   The Persona Construct: Styling for Connector Display Units  ||
+   ===================================================================
+*/
+/* Card container */
+.connector-card {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    position: relative;
+    width: 300px; /* Default width, can be overridden by grid */
+    height: 400px; /* Fixed height for consistency */
+    margin: 0 auto; /* Centering if in a non-grid context, or for single card views */
+}
+/* --- ADD THIS NEW RULE to card.css --- */
+
+/* This rule specifically targets the taller "My Friends" cards */
+.connector-card.is-friend-card {
+    height: 460px;
+}
+.connector-card .connector-card-bg {
+    height: 100px;
+    background: linear-gradient(135deg, var(--primary-color-lighter) 0%, var(--accent-color-2) 100%);
+    border-bottom: 1px solid var(--border-color-light);
+    flex-shrink: 0; /* Prevents the header from shrinking */
+}
+/* Hover effect */
+.connector-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Card background */
+.connector-card-bg {
+    height: 100px;
+    background: linear-gradient(135deg, var(--primary-color-lighter) 0%, var(--accent-color-2) 100%);
+    border-bottom: 1px solid var(--border-color-light); /* Optional: if bg isn't enough separation */
+}
+
+/* Avatar styling */
+.connector-avatar {
+    width: 90px;
+    height: 90px;
+    border-radius: var(--border-radius-circle);
+    border: 3px solid var(--bg-white);
+    margin: -45px auto 0 auto; /* Pulls avatar up over the background */
+    display: block;
+    position: relative; /* For z-index stacking if needed for status dot */
+    z-index: 1;
+    background-color: var(--secondary-color-lighter); /* Fallback for transparent images */
+    box-shadow: var(--shadow-sm);
+    object-fit: cover; /* Ensures image covers the area nicely */
+}
+
+/* Status dot */
+.connector-status {
+    width: 14px;
+    height: 14px;
+    border-radius: var(--border-radius-circle);
+    background-color: var(--secondary-color); /* Default/inactive status */
+    border: 2px solid var(--bg-white); /* Creates a nice separation */
+    position: absolute;
+    /* Position relative to the avatar. This requires avatar to be accurately centered.
+       top: (bg_height - avatar_height/2) + (avatar_height - status_offset_from_bottom)
+       This is a bit tricky. A simpler way is relative to the card, or adjust this based on visual.
+       The original top: 55px and left: calc(50% + 25px) positions relative to the CARD.
+       If avatar is truly centered, this might work.
+    */
+    top: calc(100px - 45px + 90px - 14px - 5px); /* Approximation: (bg_height - avatar_margin_top) + avatar_height - dot_height - offset_from_bottom_of_avatar */
+    left: calc(50% + 90px/2 - 14px/2 - 5px); /* Approximation: 50% + avatar_radius - dot_radius - offset_from_right_of_avatar */
+    /* The provided top: 55px and left: calc(50% + 25px) is simpler and might be intended for card-relative positioning */
+    /* Using original values for now as they are explicit: */
+    top: 55px; /* Distance from top of the CARD */
+    left: calc(50% + 25px); /* Offset from center of the CARD */
+    z-index: 2; /* Above avatar if overlapping */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: background-color var(--transition-fast);
+}
+
+.connector-status.active {
+    background-color: var(--success-color);
+}
+
+/* Connector name */
+.connector-name {
+    font-family: var(--font-secondary);
+    font-size: 1.3em;
+    font-weight: var(--font-weight-bold);
+    text-align: center;
+    margin: var(--spacing-md) var(--spacing-md) var(--spacing-xs) var(--spacing-md);
+    color: var(--text-color-dark);
+}
+
+/* Connector bio */
+.connector-bio {
+    font-size: 0.85em;
+    text-align: center;
+    color: var(--text-color-muted);
+    padding: 0 var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    flex-grow: 1; /* Allows bio to take available space before actions */
+    line-height: 1.5;
+    /* For multi-line ellipsis if desired:
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: calc(1.5em * 3);
+    */
+}
+
+/* Actions section */
+/* AFTER - The final, correct rule */
+/* AFTER */
+.connector-actions {
+    padding: var(--spacing-lg); /* Increased padding for more height */
+    border-top: 1px solid var(--border-color-light);
+    background-color: var(--bg-light);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+}
+
+/* Assuming .view-profile-btn is a general button style, potentially from a buttons.css */
+.connector-actions .view-profile-btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 0.9em;
+    background-color: var(--primary-color);
+    color: var(--text-color-light);
+    /* Add other button base styles like border-radius, border:none if not globally set */
+    border-radius: var(--border-radius-sm);
+    text-decoration: none;
+    transition: background-color var(--transition-fast);
+}
+
+.connector-actions .view-profile-btn:hover {
+    background-color: var(--primary-color-darker);
+}
+
+/* Language tags container */
+.connector-languages {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center; /* Center tags horizontally */
+    align-items: center; /* Center tags vertically */
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+    padding: 0 var(--spacing-sm); /* Horizontal padding for the container */
+}
+.connector-languages-summary { /* Make sure this class matches your HTML */
+    display: flex; /* Make this a flex container */
+    flex-direction: column; /* Stack its children (the language tags/spans) vertically */
+    align-items: center; /* Center the stacked items horizontally */
+    gap: var(--spacing-xs, 6px); /* Space between each stacked language tag */
+    margin-bottom: var(--spacing-md, 16px);
+    padding: 0 var(--spacing-sm, 12px); /* Horizontal padding for the container */
+    width: 100%; /* Ensure it takes full width to center its content */
+}
+.connector-languages-summary > span { /* Targeting direct span children */
+    display: flex; /* Or display: block; text-align: center; */
+    justify-content: center; /* If span is flex, this centers the .language-tag inside it */
+    width: auto; /* Let the tag define its width */
+}
+/* Language tag styling */
+.language-tag {
+    display: inline-flex; /* Keep as inline-flex for internal alignment of flag/text */
+    align-items: center;
+    justify-content: center; /* This centers content if the tag itself has a fixed width, otherwise not much effect */
+    gap: var(--spacing-xs, 6px); /* Original gap was 0.2rem which is ~3.2px if 1rem=16px */
+    padding: 0.2rem 0.6rem; /* Original padding */
+    border-radius: 12px; /* Original border-radius */
+    font-size: 0.75em; /* Original font-size */
+    font-weight: 600; /* Original font-weight */
+    text-transform: uppercase; /* Original text-transform */
+    letter-spacing: 0.4px; /* Original letter-spacing */
+    white-space: nowrap; /* Original white-space */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); /* Original box-shadow */
+    /* REMOVE: width: 100%; - unless you want each tag to span the full card width (unlikely) */
+    /* Instead of making the tag itself 100% wide, its parent container (.connector-languages-summary)
+       will center it because of align-items: center. */
+}
+/* Native language tag */
+.language-tag.native {
+    background-color: var(--primary-color-lighter);
+    color: var(--text-color-dark); /* Ensure contrast */
+    border: 1px solid var(--primary-color-dark);
+}
+
+/* Practice language tag */
+.language-tag.practice {
+    background-color: var(--secondary-color-lighter);
+    color: var(--text-color-dark); /* Ensure contrast */
+    border: 1px solid var(--secondary-color-dark);
+}
+
+/* Flag styling within tags */
+.language-tag .lang-flag {
+    width: 16px;
+    height: auto; /* Maintain aspect ratio */
+    border-radius: 2px; /* Match tag visual style if desired */
+    /* border: 1px solid var(--border-color-light); /* Optional: if flags need a border */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); /* Subtle shadow for depth */
+    vertical-align: middle; /* Aligns with text if not using flex gap */
+}
+
+/* Level indicator styling */
+.language-tag .level-indicator {
+    font-size: 0.7em; /* Relative to tag font-size */
+    font-weight: 500;
+    opacity: 0.8;
+}
+
+/* Dark mode adjustments for language tags */
+body.dark-mode .language-tag.native {
+    background-color: var(--primary-color-dark);
+    color: var(--text-color-light);
+    border-color: var(--primary-color-lighter);
+}
+
+body.dark-mode .language-tag.practice {
+    background-color: var(--secondary-color-dark);
+    color: var(--text-color-light);
+    border-color: var(--secondary-color-lighter);
+}
+
+body.dark-mode .language-tag .lang-flag {
+    border-color: var(--border-color-dark); /* If flags have borders */
+}/* --- ADD THIS TO card.css --- */
+/* ================================================== */
+/* ==   GLOBAL STYLES FOR ALL CARD ACTION BUTTONS  == */
+/* ================================================== */
+/* ================================================== */
+/* ==   GLOBAL STYLES FOR ALL CARD ACTION BUTTONS  == */
+/* ================================================== */
+
+/* 1. General LAYOUT for ALL card buttons. */
+.group-card-join-btn,
+.group-card-view-chat-btn,
+.group-card-info-btn,
+.view-profile-btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.9em;
+    text-decoration: none;
+    width: 100%;
+    max-width: 95%;
+    line-height: 1.5;
+    border: 1px solid;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s ease-out;
+}
+
+/* 2. Specific COLOR for the "View Chat" button */
+.group-card-view-chat-btn {
+    background-color: var(--view-groups-info-color);
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+.group-card-view-chat-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
+}
+
+/* 3. Specific STYLE for the "Info" button */
+.group-card-info-btn {
+    background-color: transparent;
+    color: var(--view-groups-text-secondary);
+    border-color: var(--view-groups-border-strong);
+    margin-top: 0.3rem;
+}
+.group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--view-groups-text-primary);
+}
+/* ======================================================= */
+/* ==   SPECIFIC STYLES FOR CONNECTOR CARD BUTTONS        == */
+/* ======================================================= */
+
+/* 1. This makes the button container stack them vertically. */
+.connector-card .connector-actions {
+    /* This part is correct and remains */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+
+    /* This is the fix for the header being pushed */
+    margin-top: auto; /* Pushes this block to the bottom */
+    flex-shrink: 0; /* Prevents this block from shrinking */
+}
+
+.connector-card .group-card-view-chat-btn {
+    background-color: var(--view-groups-info-color); /* Now works globally! */
+    color: var(--view-groups-text-on-accent);
+    border-color: var(--view-groups-info-color);
+}
+.connector-card .group-card-view-chat-btn:hover {
+    background-color: var(--view-groups-info-color-hover);
+    border-color: var(--view-groups-info-color-hover);
+}
+
+/* This rule styles the "View Info" button */
+.connector-card .group-card-info-btn {
+    background-color: transparent;
+    color: var(--view-groups-text-secondary); /* This uses a global var, so it's fine */
+    border-color: var(--view-groups-border-strong);
+}
+.connector-card .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--text-color-dark); /* Uses a global var */
+}
+.connector-card .group-card-info-btn:hover {
+    background-color: var(--view-groups-border-light);
+    color: var(--view-groups-text-primary);
+}/* ========================================================== */
+/* ==   RESPONSIVE STYLES FOR CARD ACTION BUTTONS          == */
+/* ========================================================== */
+
+/* --- On Tablets and Smaller --- */
+@media (max-width: 992px) {
+    /* This targets all our action buttons on any card */
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 90%; /* Make buttons a bit wider */
+        font-size: 0.85em; /* Slightly smaller text */
+        padding: 8px 16px; /* Adjust padding */
+    }
+}
+
+/* --- On Mobile Phones --- */
+@media (max-width: 768px) {
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 95%; /* Even wider to feel more proportional */
+        font-size: 0.9em; /* Can slightly increase font size again on mobile */
+    }
+}
+
+/* --- On Very Small Screens --- */
+@media (max-width: 480px) {
+    .group-card-join-btn,
+    .group-card-view-chat-btn,
+    .group-card-info-btn,
+    .view-profile-btn {
+        max-width: 100%; /* Make buttons take the full available width */
+        padding: 10px;   /* Adjust padding for a better fit */
+    }
+}

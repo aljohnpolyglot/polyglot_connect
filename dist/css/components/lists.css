@@ -1,0 +1,230 @@
+/*
+   ===================================================================
+   ||   css/components/lists.css                                  ||
+   ||   Styling for Sidebar List Items (Chats, Summaries, etc.)     ||
+   ===================================================================
+*/
+
+/* --- Sidebar List General Structure (UL & LI) --- */
+.sidebar-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar-list li {
+    margin-bottom: var(--spacing-xs, 6px); /* Space between list items */
+}
+
+/* --- Base Styling for ALL Sidebar List Item WRAPPERS --- */
+/* This class should be on the main <div> inside each <li> */
+.list-item-base {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-sm, 10px) var(--spacing-sm, 10px); /* Consistent padding */
+    text-decoration: none;
+    color: var(--text-color-default, #333); /* Default text color for items */
+    border-radius: var(--border-radius-md, 6px); /* Slightly larger radius */
+    transition: background-color var(--transition-fast, 0.2s), border-color var(--transition-fast, 0.2s), box-shadow var(--transition-fast, 0.2s);
+    cursor: pointer;
+    border: 1px solid transparent; /* For hover/active state emphasis */
+    background-color: var(--bg-list-item-light, #f9f9f9); /* Subtle base background */
+}
+
+.list-item-base:hover {
+    background-color: var(--bg-list-item-hover-light, #eef2f7);
+    border-color: var(--border-list-item-hover-light, var(--primary-color-light, #a6cfff));
+    box-shadow: var(--shadow-xs, 0 1px 3px rgba(0,0,0,0.05));
+}
+
+body.dark-mode .list-item-base {
+    color: var(--text-color-default-dark, #e0e0e0);
+    background-color: var(--bg-list-item-dark, #2c2f33); /* Darker item background */
+    border-color: transparent;
+}
+
+body.dark-mode .list-item-base:hover {
+    background-color: var(--bg-list-item-hover-dark, #36393f);
+    border-color: var(--border-list-item-hover-dark, var(--primary-color-dark-variant, #0056b3));
+}
+
+/* --- Avatar Styling (for <img class="list-item-avatar">) --- */
+.list-item-avatar {
+    width: 38px; /* Consistent avatar size */
+    height: 38px;
+    margin-right: var(--spacing-md, 12px);
+    object-fit: cover;
+    background-color: var(--avatar-bg-fallback-light, #e0e0e0); /* Fallback color */
+    border: 1px solid var(--avatar-border-light, #d1d1d1);
+    flex-shrink: 0;
+}
+/* Default shape: circular for 1-on-1, can be overridden for groups */
+.list-item-avatar {
+    border-radius: var(--border-radius-circle, 50%);
+}
+/* Additional class for group photos if they need a different shape by default in lists */
+.list-item-avatar.group-photo {
+    border-radius: var(--border-radius-sm, 4px); /* e.g., slightly rounded square for groups */
+}
+
+body.dark-mode .list-item-avatar {
+    background-color: var(--avatar-bg-fallback-dark, #4f4f4f);
+    border-color: var(--avatar-border-dark, #5f5f5f);
+}
+
+/* --- Info Block Styling (for <div class="sidebar-item-info">) --- */
+.sidebar-item-info {
+    flex-grow: 1;
+    overflow: hidden; /* Essential for text truncation */
+    display: flex;
+    flex-direction: column; /* Stack name and subtext */
+    justify-content: center; /* Vertically center if item height is fixed by avatar */
+}
+
+/* --- Name Styling (for <span class="sidebar-item-name">) --- */
+.sidebar-item-name {
+    font-size: 0.9em;
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--text-color-strong-light, #212529); /* Slightly stronger color for name */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block; /* Ensure it takes width for ellipsis */
+    line-height: 1.3;
+    margin-bottom: var(--spacing-xxs, 3px); /* Small space between name and subtext */
+}
+body.dark-mode .sidebar-item-name {
+    color: var(--text-color-strong-dark, #f8f9fa);
+}
+
+/* --- Subtext Styling (for <span class="sidebar-item-subtext">) --- */
+.sidebar-item-subtext {
+    font-size: 0.8em;
+    color: var(--text-color-muted-light, #6c757d);
+    line-height: 1.3;
+    display: flex; /* To allow preview and timestamp to align nicely */
+    align-items: baseline; /* Align text baselines */
+    white-space: nowrap; /* Prevent wrapping of the container itself */
+    overflow: hidden; /* Hide overflow from children */
+}
+.sidebar-item-subtext .list-item-subtext-preview { /* For the actual message/date preview */
+    flex-grow: 1; /* Allow preview to take available space */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline; /* For natural flow with timestamp */
+}
+.sidebar-item-subtext .list-item-timestamp { /* For the timestamp part */
+    font-size: 0.9em; /* Relative to .sidebar-item-subtext's font-size */
+    color: var(--text-color-subtle-light, #868e96);
+    margin-left: var(--spacing-xs, 6px);
+    white-space: nowrap;
+    flex-shrink: 0; /* Don't let timestamp shrink */
+    display: inline;
+}
+
+body.dark-mode .sidebar-item-subtext {
+    color: var(--text-color-muted-dark, #adb5bd);
+}
+body.dark-mode .sidebar-item-subtext .list-item-timestamp {
+    color: var(--text-color-subtle-dark, #868e96);
+}
+
+
+/* --- Specifics for CHAT LIST Items --- */
+/* Add class "chat-list-item-wrapper" to the .list-item-base div for chat items */
+
+
+/* Status Dot for 1-on-1 Chats */
+.chat-list-item-status {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--border-radius-circle, 50%);
+    background-color: var(--status-indicator-inactive-light, #ced4da);
+    margin-left: var(--spacing-sm, 10px);
+    flex-shrink: 0;
+    border: 2px solid var(--bg-list-item-light, #f9f9f9); /* Match item background */
+    transition: background-color var(--transition-fast);
+}
+.chat-list-item-status.active {
+    background-color: var(--status-indicator-active-light, #28a745);
+}
+body.dark-mode .chat-list-item-status {
+    background-color: var(--status-indicator-inactive-dark, #495057);
+    border-color: var(--bg-list-item-dark, #2c2f33);
+}
+body.dark-mode .chat-list-item-status.active {
+    background-color: var(--status-indicator-active-dark, #20c997);
+}
+
+/* Active Chat Item Highlighting (when a chat is selected/open) */
+.list-item-base.active-chat-item { /* Add "active-chat-item" class via JS */
+    background-color: var(--bg-list-item-active-light, var(--primary-color-x-light, #d1eaff));
+    border-left: 3px solid var(--primary-color, #007bff); /* Example: Accent border */
+    padding-left: calc(var(--spacing-sm, 10px) - 3px); /* Adjust padding to account for border */
+}
+.list-item-base.active-chat-item .sidebar-item-name {
+    font-weight: var(--font-weight-bold, 600);
+    color: var(--text-list-item-active-light, var(--primary-color-dark, #0056b3));
+}
+body.dark-mode .list-item-base.active-chat-item {
+    background-color: var(--bg-list-item-active-dark, var(--primary-color-dark-variant, #004a7c));
+    border-left-color: var(--primary-color-dark, #03a9f4);
+}
+body.dark-mode .list-item-base.active-chat-item .sidebar-item-name {
+    color: var(--text-list-item-active-dark, #e0e0e0);
+}
+
+
+/* --- Specifics for SUMMARY LIST Items --- */
+/* Add class "summary-list-item-wrapper" to the .list-item-base div for summary items */
+
+/* Styles for elements unique to summary items (like specific date/duration spans)
+   These would be inside the .sidebar-item-subtext for summaries.
+   The HTML structure from list_renderer.ts needs to match.
+   Example if subtext for summary is:
+   <span class="sidebar-item-subtext">
+       <span class="summary-item-date">Date</span>
+       <span class="summary-item-time">Time</span>
+       <span class="summary-item-duration">(Duration)</span>
+   </span>
+*/
+.list-item-base.summary-list-item-wrapper .sidebar-item-subtext .summary-item-date,
+.list-item-base.summary-list-item-wrapper .sidebar-item-subtext .summary-item-time,
+.list-item-base.summary-list-item-wrapper .sidebar-item-subtext .summary-item-duration {
+    margin-right: var(--spacing-xs, 6px); /* Space between date/time/duration parts */
+    white-space: nowrap;
+}
+.list-item-base.summary-list-item-wrapper .sidebar-item-subtext .summary-item-duration {
+    opacity: 0.8;
+}
+
+/* --- Styles for "Available Groups List" if it uses this component's structure --- */
+/* The `.available-groups-list .group-list-item` section from your original lists.css
+   was for a different kind of list item, likely not using the same internal structure
+   as these sidebar items. If you have a simple list display for groups somewhere
+   (NOT the main grid cards, and NOT the sidebar chat list items), then those styles
+   would be adapted here. For now, assuming it's not needed as per our current focus. */
+   /* --- Styles for Sidebar Search --- */
+.sidebar-search-container {
+    padding: 0 var(--spacing-sm) var(--spacing-md);
+    margin-top: calc(-1 * var(--spacing-sm)); /* Pulls it up closer to the h4 */
+}
+
+.sidebar-search-container .styled-input {
+    width: 100%;
+    font-size: 0.9em;
+}
+/* ========================================================== */
+/* ==   SIDEBAR SEARCH SPACING OVERRIDE                    == */
+/* ========================================================== */
+
+/*
+  This rule is more specific because it targets a .sidebar-search-container
+  that is *inside* a .sidebar-panel. It will override any general styles
+  from .filter-group without affecting the main filter panel.
+*/
+.sidebar-panel .sidebar-search-container {
+    padding: 0 0 var(--spacing-sm); /* Removes top/side padding, keeps a little space at the bottom */
+    margin-top: 0;                  /* Removes the negative top margin */
+}

@@ -1,0 +1,371 @@
+/* Improved CSS for modal_message.css */
+
+/* General Modal Styling */
+/* In modal_message.css */
+.messaging-interface-modal {
+    max-width: 600px;
+    /* This clamp is good, but let's make it more robust for mobile keyboard */
+    height: clamp(400px, 85vh, 700px); /* Use vh (viewport height) for better keyboard response */
+    max-height: 90vh; /* Absolute max height */
+
+    /* --- ADD/VERIFY THESE --- */
+    display: flex;
+    flex-direction: column;
+    /* --- END ADDITION --- */
+    
+    padding: 0;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+/* Header Styling */
+.messaging-interface-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md);
+    background-color: var(--bg-light-secondary); /* Subtle header background */
+    border-bottom: 1px solid var(--border-light); /* Separator line */
+}
+.messaging-interface img {
+    width: var(--chat-bubble-avatar-size, 30px);
+    height: var(--chat-bubble-avatar-size, 30px);
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background-color: var(--avatar-bg-fallback-light, #e0e0e0); /* Fallback */
+    /* Consider a subtle border that matches the chat-log-bg for a cutout effect */
+    /* border: 2px solid var(--chat-log-bg, var(--bg-white, #ffffff)); */
+}
+
+.message-modal-header .chat-header-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-circle, 50%);
+    object-fit: cover;
+    border: 1px solid var(--avatar-border-light, #ced4da);
+
+}
+.messaging-interface-header .modal-title-inline {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.messaging-interface-header .modal-controls {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.messaging-interface-header .modal-btn {
+    background-color: var(--bg-light-primary);
+    color: var(--text-primary);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.messaging-interface-header .modal-btn:hover {
+    background-color: var(--bg-light-hover);
+}
+
+/* Chat Log Styling */
+/* REPLACE THE RULE ABOVE WITH THIS */
+.message-chat-log {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    background-color: var(--bg-white);
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    line-height: var(--line-height-md);
+    
+    /* --- ADD THESE LINES --- */
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-message-gap, var(--spacing-xs, 6px));
+    /* --- END ADDITION --- */
+}
+
+.message-chat-log::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+}
+
+.message-chat-log::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: var(--border-radius-sm);
+}
+
+/* Footer Styling */
+.messaging-interface-footer {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md);
+    background-color: var(--bg-light-secondary); /* Subtle footer background */
+    border-top: 1px solid var(--border-light); /* Separator line */
+}
+
+.messaging-interface-footer .chat-input-field {
+    flex-grow: 1;
+    margin-right: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-md);
+    color: var(--text-primary);
+    background-color: var(--bg-white);
+}
+
+.messaging-interface-footer .chat-input-field:focus {
+    outline: 2px solid var(--focus-outline);
+}
+
+.messaging-interface-footer .send-btn {
+    background-color: var(--bg-accent-primary);
+    color: var(--text-white);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.messaging-interface-footer .send-btn:hover {
+    background-color: var(--bg-accent-hover);
+}
+
+/* Dark Mode Adjustments */
+body.dark-mode .messaging-interface-modal {
+    background-color: var(--bg-dark-primary);
+    box-shadow: var(--shadow-dark-lg);
+}
+
+body.dark-mode .messaging-interface-header {
+    background-color: var(--bg-dark-secondary);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+body.dark-mode .message-chat-log {
+    background-color: var(--bg-dark-primary);
+    color: var(--text-light);
+}
+
+body.dark-mode .messaging-interface-footer {
+    background-color: var(--bg-dark-secondary);
+    border-top: 1px solid var(--border-dark);
+}
+
+body.dark-mode .messaging-interface-footer .chat-input-field {
+    background-color: var(--bg-dark-primary);
+    color: var(--text-light);
+    border: 1px solid var(--border-dark);
+}
+
+body.dark-mode .messaging-interface-footer .send-btn {
+    background-color: var(--bg-accent-dark);
+    color: var(--text-white);
+}
+
+body.dark-mode .messaging-interface-footer .send-btn:hover {
+    background-color: var(--bg-accent-hover-dark);
+}
+/*
+   ===================================================================
+   ||   css/components/modal_message.css                          ||
+   ||   Styles for the Messaging Interface Modal                  ||
+   ===================================================================
+*/
+
+/* --- Modal Message General Structure (styles for the modal itself) --- */
+/* .messaging-interface-modal { ... } */ /* Overall modal container styles */
+/* .messaging-interface-modal .modal-body { ... } */ /* Chat log area */
+/* .messaging-interface-modal .modal-footer { ... } */ /* Input area */
+
+
+/* --- Messaging Modal Header --- */
+.messaging-interface-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
+    border-bottom: 1px solid var(--modal-header-border-color, var(--border-color-light, #e0e0e0));
+    background-color: var(--modal-header-bg, var(--bg-light, #f8f9fa));
+    /* If it's part of a modal that scrolls, you might want it sticky too */
+    /* position: sticky; top: 0; z-index: 10; */
+}
+
+/* Partner Info section within the modal header */
+/* Partner Info section within the modal header */
+/* Partner Info section within the modal header */
+.messaging-interface-header .partner-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md, 12px);
+    min-width: 0;
+    flex-grow: 1;
+    text-align: left; /* <-- ADD THIS LINE */
+}
+/* Avatar specifically for the message modal header (targets #message-modal-header-avatar or .chat-header-avatar within this context) */
+.messaging-interface-header #message-modal-header-avatar,
+.messaging-interface-header .chat-header-avatar { /* If using shared class */
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-circle, 50%);
+    object-fit: cover;
+    border: 1px solid var(--avatar-border-light, #ced4da); /* Use a global avatar border var if available */
+}
+
+/* Name in modal header (targets #message-modal-header-name) */
+.messaging-interface-header #message-modal-header-name {
+    font-size: 1.1em; /* Slightly smaller for modal context if desired */
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--modal-header-text-strong-light, var(--text-color-strong-light, #212529));
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Details in modal header (targets #message-modal-header-details) */
+.messaging-interface-header #message-modal-header-details {
+    font-size: 0.75em; /* Slightly smaller for modal context */
+    color: var(--modal-header-text-muted-light, var(--text-color-muted-light, #6c757d));
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Controls/Actions section in modal header */
+.messaging-interface-header .modal-controls.chat-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+}
+/* Buttons within .modal-controls use global .control-btn or .modal-btn styles */
+/* Example if specific overrides are needed for modal header buttons: */
+/*
+.messaging-interface-header .modal-controls .control-btn {
+    font-size: 1.1em;
+    color: var(--modal-header-icon-color, var(--text-color-default, #333));
+}
+.messaging-interface-header .modal-controls .end-call-button { // Assuming .end-call-button is specific for close
+    color: var(--danger-color, #dc3545);
+}
+*/
+
+
+/* --- Dark Mode for Messaging Modal Header --- */
+body.dark-mode .messaging-interface-header {
+    background-color: var(--modal-header-bg-dark, var(--bg-dark-secondary, #242526));
+    border-bottom-color: var(--modal-header-border-color-dark, var(--border-color-dark, #393a3b));
+}
+
+body.dark-mode .messaging-interface-header #message-modal-header-avatar,
+body.dark-mode .messaging-interface-header .chat-header-avatar {
+    border-color: var(--avatar-border-dark, #495057);
+}
+
+body.dark-mode .messaging-interface-header #message-modal-header-name {
+    color: var(--modal-header-text-strong-dark, var(--text-color-strong-dark, #f8f9fa));
+}
+
+body.dark-mode .messaging-interface-header #message-modal-header-details {
+    color: var(--modal-header-text-muted-dark, var(--text-color-muted-dark, #adb5bd));
+}
+
+/* Example dark mode for modal header buttons: */
+/*
+body.dark-mode .messaging-interface-header .modal-controls .control-btn {
+    color: var(--modal-header-icon-color-dark, var(--text-color-light, #e0e0e0));
+}
+body.dark-mode .messaging-interface-header .modal-controls .end-call-button {
+    color: var(--danger-color-light, #ff8080);
+}
+*/
+
+/* Styles for the chat log (#message-chat-log) and footer (.messaging-interface-footer)
+   within the modal should also be here. They will likely use variables from
+   css/components/chat_bubbles.css for the messages themselves. */
+
+.messaging-interface-modal #message-chat-log {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: var(--chat-log-padding, var(--spacing-md, 16px)); /* Use chat_bubbles variable */
+    background-color: var(--chat-log-bg, var(--bg-white, #ffffff)); /* Use chat_bubbles variable */
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-message-gap, var(--spacing-xs, 6px)); /* Use chat_bubbles variable */
+}
+
+.messaging-interface-footer {
+    padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
+    border-top: 1px solid var(--modal-footer-border-color, var(--border-color-light, #e0e0e0));
+    background-color: var(--modal-footer-bg, var(--bg-light, #f8f9fa));
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    flex-shrink: 0;
+}
+
+/* Dark mode for modal chat log and footer */
+body.dark-mode .messaging-interface-modal #message-chat-log {
+    background-color: var(--chat-log-bg-dark, var(--bg-dark-primary, #18191a)); /* Use chat_bubbles variable */
+}
+body.dark-mode .messaging-interface-footer {
+    background-color: var(--modal-footer-bg-dark, var(--bg-dark-tertiary, #2c2f33));
+    border-top-color: var(--modal-footer-border-color-dark, var(--border-color-dark, #393a3b));
+}
+
+/* Input field #message-text-input and buttons #message-modal-attach-btn etc.
+   will use global styles from forms.css and buttons.css respectively,
+   or can be specialized here if needed for the modal context. */.chat-log-empty-placeholder {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    height: 100%;
+    padding: 20px;
+    color: var(--text-color-muted, #6c757d);
+    opacity: 0.8;
+    user-select: none;
+}
+
+.chat-log-empty-placeholder i {
+    font-size: 3rem; /* Larger icon */
+    margin-bottom: var(--spacing-md, 16px);
+}
+
+.chat-log-empty-placeholder p {
+    margin: 0;
+    line-height: 1.5;
+    font-size: 0.95rem;
+}
+
+.chat-log-empty-placeholder p:first-of-type {
+    font-weight: var(--font-weight-medium, 500);
+}
+
+/* Dark Mode Adjustments */
+body.dark-mode .chat-log-empty-placeholder {
+    color: var(--text-color-muted-dark, #adb5bd);
+}
+
+@media (max-width: 480px) { /* Very Small Screens */
+.messaging-interface-header #message-modal-header-name{
+    font-size: 0.86em;
+}
+
+.messaging-interface-header #message-modal-header-details{
+    font-size: 0.75em;
+}
+.modal-btn, .action-btn, .control-btn, .sidebar-action-btn, .send-btn{
+    padding: 0.4em;
+}
+}
