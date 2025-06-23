@@ -12,11 +12,65 @@ console.log('chat_ui_updater.ts: Script loaded.');
 // Define the interface for this module's public methods
 export interface ChatUiUpdaterModule {
     initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }): void;
-    appendSystemMessage(logEl: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean): HTMLElement | null;
-    appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options?: ChatMessageOptions): HTMLElement | null;
+    
+    appendSystemMessage(
+      logEl: HTMLElement | null, 
+      text: string, 
+      isError?: boolean, 
+      isTimestamp?: boolean
+    ): HTMLElement | null;
+    
+    appendChatMessage(
+      logElement: HTMLElement | null, 
+      text: string, 
+      senderClass: string, 
+      options?: ChatMessageOptions 
+    ): HTMLElement | null;
+    
     scrollChatLogToBottom(chatLogElement: HTMLElement | null): void;
+    
     clearLogCache(logElement: HTMLElement): void;
-}
+  
+    // --- NEW METHODS (Ensure these are identical to global.d.ts) ---
+    showUnifiedInteractionMenu: (
+        triggerBubbleElement: HTMLElement, 
+        currentUserReaction?: string 
+    ) => void;
+  
+    hideUnifiedInteractionMenu: () => void;
+  
+    updateDisplayedReactionOnBubble: (
+        messageWrapperElement: HTMLElement, 
+        newEmoji: string | null 
+    ) => void;
+  
+    isEventInsideUnifiedInteractionMenu: (event: Event) => boolean;
+  
+    isUnifiedInteractionMenuVisibleForBubble?: (triggerBubbleElement: HTMLElement) => boolean; 
+    
+    isUnifiedInteractionMenuVisible?: () => boolean; 
+  
+    showMenuActionFeedback?: (
+        menuButtonElement: HTMLElement, 
+        feedbackText: string 
+    ) => void;
+  
+    updateMenuTranslateButtonText?: (
+        menuButtonElement: HTMLElement, 
+        newButtonText: string 
+    ) => void;
+  
+    showMenuActionInProgress?: (
+        menuButtonElement: HTMLElement, 
+        progressText: string 
+    ) => void;
+  
+    resetMenuActionInProgress?: (
+        menuButtonElement: HTMLElement, 
+        defaultTextAfterProgress: string 
+    ) => void;
+    getWrapperForActiveUnifiedMenu?: () => HTMLElement | null; // <<< ADD THIS LINE
+  }
 
 const chatUiUpdater: ChatUiUpdaterModule = (() => {
     'use strict';
@@ -26,7 +80,11 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
     let polyglotHelpers: PolyglotHelpers;
     const lastDisplayedTimestamps: Map<HTMLElement, Date> = new Map();
     const lastSpeakerPerLog: Map<HTMLElement, string> = new Map();
-    const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
+    let activeUnifiedMenuElement: HTMLElement | null = null;
+let currentlyAttachedBubbleForMenu: HTMLElement | null = null; // To know which bubble triggered it
+let wrapperForActiveUnifiedMenu: HTMLElement | null = null; // <<< ADD THIS
+
+const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
 
     function getDepsLocal() {
         return { domElements, polyglotHelpers };
@@ -355,62 +413,71 @@ const chatUiUpdater: ChatUiUpdaterModule = (() => {
 
 // in src/js/ui/chat_ui_updater.ts, inside appendChatMessage()
 // =================== START: REPLACE THE REACTION CONTAINER BLOCK ===================
+if (!messageWrapper.classList.contains('system-event-wrapper') && 
+    !messageWrapper.classList.contains('system-message-wrapper')) {
 
-if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
-    
-    // 1. Create the Reaction Picker (for user interaction later)
-    const reactionPicker = document.createElement('div');
-    reactionPicker.className = 'reaction-picker';
+    // 1. Create the Desktop-Specific Reaction Picker (for hover interaction)
+    // This is appended to `messageDiv` (the bubble itself) and handled by desktop-specific logic.
+    const desktopReactionPicker = document.createElement('div');
+    desktopReactionPicker.className = 'reaction-picker'; 
     ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
         const button = document.createElement('button');
-        button.className = 'reaction-btn';
+        button.className = 'reaction-btn'; // Class for desktop picker buttons
         button.type = 'button';
         button.textContent = emoji;
         button.setAttribute('aria-label', `React with ${emoji}`);
-        reactionPicker.appendChild(button);
+        desktopReactionPicker.appendChild(button);
     });
-    messageDiv.appendChild(reactionPicker);
+    messageDiv.appendChild(desktopReactionPicker);
 
-    // 2. Create the Action Menu (for right-click)
-    const actionMenu = document.createElement('div');
-    actionMenu.className = 'action-menu';
-    actionMenu.innerHTML = `
+    // 2. Create the Desktop-Specific Action Menu (for right-click interaction)
+    // This is appended to `messageDiv` (the bubble itself) and handled by desktop-specific logic.
+    const desktopActionMenu = document.createElement('div');
+    desktopActionMenu.className = 'action-menu'; 
+    desktopActionMenu.innerHTML = `
         <button class="action-btn-item" data-action="copy" title="Copy message text"><i class="fas fa-copy"></i><span>Copy</span></button>
         <button class="action-btn-item" data-action="translate" title="Translate message"><i class="fas fa-language"></i><span>Translate</span></button>
     `;
-    messageDiv.appendChild(actionMenu);
+    messageDiv.appendChild(desktopActionMenu);
 
-    // 3. Create the container for displaying saved reactions from history
-    const reactionsContainer = document.createElement('div');
-    reactionsContainer.className = 'message-reactions';
+    // 3. Create and populate the container for displaying saved reactions from history.
+    // This container is appended to `messageWrapper` (typically below the bubble).
+    const reactionsDisplayContainer = document.createElement('div');
+    reactionsDisplayContainer.className = 'message-reactions'; 
 
-    // --- THIS IS THE CRITICAL NEW LOGIC ---
-    // Check if the message data from history (passed in `options`) has reactions.
-    if (options.reactions && Object.keys(options.reactions).length > 0) {
-        // Find the reaction made by the current user
-        const userReactionEmoji = Object.keys(options.reactions).find(emoji => 
-            options.reactions![emoji].includes('user_player')
+    if (options.reactions && typeof options.reactions === 'object' && Object.keys(options.reactions).length > 0) {
+        // A. Determine and set the current user's reaction on the message wrapper.
+        // This `data-user-reaction` attribute is used by reaction_handler.ts (for both mobile and desktop unified menus)
+        // to pre-select the user's current choice when a menu is opened.
+        const userSpecificReactionEmoji = Object.keys(options.reactions).find(emoji => 
+            options.reactions![emoji] && Array.isArray(options.reactions![emoji]) && options.reactions![emoji].includes('user_player')
         );
-
-        // If the user has reacted, store it on the wrapper for the UI state
-        if (userReactionEmoji) {
-            messageWrapper.dataset.userReaction = userReactionEmoji;
-            
-            // Create and append the reaction badge to the UI
-            const reactionEl = document.createElement('button');
-            reactionEl.className = 'reaction-item';
-            reactionEl.type = 'button';
-            
-            // Calculate total reactions for this emoji
-            const reactionCount = options.reactions[userReactionEmoji].length;
-            reactionEl.innerHTML = `${userReactionEmoji} <span class="reaction-count">${reactionCount}</span>`;
-            reactionsContainer.appendChild(reactionEl);
+        if (userSpecificReactionEmoji) {
+            messageWrapper.dataset.userReaction = userSpecificReactionEmoji;
         }
+
+        // B. Display all unique reactions with their counts in the reactionsDisplayContainer.
+        Object.entries(options.reactions).forEach(([emoji, userIds]) => {
+            if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+                const reactionBadge = document.createElement('button'); 
+                reactionBadge.className = 'reaction-item'; // Class for individual reaction badges
+                reactionBadge.type = 'button'; 
+                // reactionBadge.dataset.emoji = emoji; // Optional: if you need to identify the emoji on click
+                
+                // Sanitize emoji, though typically standard emojis are safe
+                const displayEmoji = currentPolyglotHelpers.sanitizeTextForDisplay(emoji);
+                const count = userIds.length;
+                
+                reactionBadge.innerHTML = `${displayEmoji} <span class="reaction-count">${count}</span>`;
+                reactionsDisplayContainer.appendChild(reactionBadge);
+            }
+        });
     }
-    // --- END OF CRITICAL NEW LOGIC ---
     
-    // Append the container (it will be empty if there are no saved reactions)
-    messageWrapper.appendChild(reactionsContainer);
+    // Append the reactions display container to the message wrapper if it has any content.
+    if (reactionsDisplayContainer.hasChildNodes()) {
+        messageWrapper.appendChild(reactionsDisplayContainer);
+    }
 }
 // ===================  END: REPLACE THE REACTION CONTAINER BLOCK  ===================
 // ======================================================================================
@@ -434,14 +501,249 @@ if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrappe
         return messageWrapper;
     }
 
+    
+    // **** LANDMARK: ADD NEW METHOD PLACEHOLDERS STARTING HERE ****
+    // These are the new methods needed by reaction_handler.ts.
+    // Add them within the scope of your main IIFE, alongside your existing methods.
+
+     // Inside chat_ui_updater.ts
+     const showUnifiedInteractionMenu = (
+        triggerBubbleElement: HTMLElement, 
+        currentUserReaction?: string
+    ): void => {
+        // ... (initial checks, hide previous menu) ...
+
+        const wrapper = triggerBubbleElement.closest<HTMLElement>('.chat-message-wrapper');
+        if (!wrapper) return;
+        wrapperForActiveUnifiedMenu = wrapper; // <<< STORE THE WRAPPER
+        
+        // Remove any old menu from this specific wrapper
+        wrapper.querySelector<HTMLElement>('.unified-context-menu-instance')?.remove();
+
+        activeUnifiedMenuElement = document.createElement('div');
+        activeUnifiedMenuElement.className = 'unified-context-menu-instance'; 
+        // ... (populate innerHTML with reaction bar and action bar as before) ...
+        // (Ensure buttons have data-unified-menu-emoji and data-unified-menu-action)
+        let reactionButtonsHTML = "";
+        ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
+            const isSelected = currentUserReaction === emoji ? 'selected-reaction' : '';
+            reactionButtonsHTML += `<button class="reaction-btn-in-menu ${isSelected}" data-unified-menu-emoji="${emoji}" aria-label="React with ${emoji}">${emoji}</button>`;
+        });
+        activeUnifiedMenuElement.innerHTML = `
+            <div class="reaction-bar-in-menu">
+                ${reactionButtonsHTML}
+            </div>
+            <div class="action-bar-in-menu">
+                <button class="action-btn-item-in-menu" data-unified-menu-action="copy"><i class="fas fa-copy"></i> <span>Copy Text</span></button>
+                <button class="action-btn-item-in-menu" data-unified-menu-action="translate"><i class="fas fa-language"></i> <span>Translate</span></button>
+            </div>
+        `;
+
+        // *** KEY CHANGE: Append to the WRAPPER, not the BUBBLE ***
+        wrapper.appendChild(activeUnifiedMenuElement); 
+        currentlyAttachedBubbleForMenu = triggerBubbleElement; // Still useful to know which bubble triggered it
+
+        // CSS will handle positioning relative to the wrapper/bubble
+        requestAnimationFrame(() => {
+            if (activeUnifiedMenuElement) {
+                activeUnifiedMenuElement.classList.add('visible');
+            }
+        });
+        console.log("[CUU] Unified interaction menu created and appended to wrapper, attempting to make visible.");
+    };
+
+    const hideUnifiedInteractionMenu = (): void => {
+        if (activeUnifiedMenuElement) {
+            console.log("[CUU] Hiding unified interaction menu.");
+            activeUnifiedMenuElement.classList.remove('visible');
+            // Optional: Remove the element after transition or immediately
+            // For dynamically created menus, it's good to remove them:
+            const parentBubble = currentlyAttachedBubbleForMenu;
+            setTimeout(() => { // Allow fade-out transition
+                if (activeUnifiedMenuElement && activeUnifiedMenuElement.parentElement) {
+                    activeUnifiedMenuElement.remove();
+                }
+                if (parentBubble) { // Clean up trigger class from the bubble
+                    parentBubble.classList.remove('mobile-menu-trigger');
+                }
+                activeUnifiedMenuElement = null; 
+                currentlyAttachedBubbleForMenu = null;
+                wrapperForActiveUnifiedMenu = null; // <<< RESET THE WRAPPER
+            }, 200); // Match your CSS transition duration
+        }
+    };
+
+    const updateDisplayedReactionOnBubble = (
+        messageWrapperElement: HTMLElement, 
+        newEmoji: string | null
+    ): void => {
+        if (!domElements || !polyglotHelpers) return; // Ensure deps
+    
+        let reactionsContainer = messageWrapperElement.querySelector<HTMLElement>('.message-reactions');
+    
+        // If newEmoji is null, we're clearing the reaction
+        if (newEmoji === null) {
+            if (reactionsContainer) {
+                reactionsContainer.innerHTML = ''; // Clear all reactions
+                // Or, if you want to be more specific and only remove the user's reaction
+                // while keeping others (e.g., in a group chat where multiple people can react):
+                // const userReactionBadge = reactionsContainer.querySelector(`.reaction-item[data-user-reaction="true"]`);
+                // if (userReactionBadge) userReactionBadge.remove();
+            }
+            console.log("[CUU] Cleared displayed reaction badge for wrapper:", messageWrapperElement.dataset.messageId);
+            return;
+        }
+    
+        // If we need to display a reaction
+        if (!reactionsContainer) {
+            reactionsContainer = document.createElement('div');
+            reactionsContainer.className = 'message-reactions';
+            // Append it. Position depends on your CSS for .message-reactions
+            // (e.g., absolute positioned at bottom of wrapper, or after the bubble)
+            const bubble = messageWrapperElement.querySelector('.chat-message-ui');
+            if (bubble) {
+                bubble.insertAdjacentElement('afterend', reactionsContainer); // Common placement
+            } else {
+                messageWrapperElement.appendChild(reactionsContainer); // Fallback
+            }
+        }
+    
+        // For simplicity, this example clears and adds the new one.
+        // A more complex version would handle multiple different emojis and counts.
+        reactionsContainer.innerHTML = ''; // Clear previous before adding new
+    
+        const reactionEl = document.createElement('button'); // Use button for accessibility
+        reactionEl.className = 'reaction-item';
+        reactionEl.type = 'button';
+        // reactionEl.dataset.userReaction = "true"; // Mark it as the user's reaction
+        
+        // For now, assume count is 1 (user's own reaction). 
+        // Reaction_handler's updateReactionInData handles data; this is just UI.
+        reactionEl.innerHTML = `${polyglotHelpers.sanitizeTextForDisplay(newEmoji)} <span class="reaction-count">1</span>`;
+        reactionsContainer.appendChild(reactionEl);
+        console.log(`[CUU] Updated displayed reaction badge to ${newEmoji} for wrapper:`, messageWrapperElement.dataset.messageId);
+    };
+
+    const isEventInsideUnifiedInteractionMenu = (event: Event): boolean => {
+        console.log("[CUU_DEBUG] isEventInsideUnifiedInteractionMenu called. activeUnifiedMenuElement:", activeUnifiedMenuElement, "event.target:", event.target);
+        if (!activeUnifiedMenuElement || !event.target) {
+            return false;
+        }
+        const isInside = activeUnifiedMenuElement.contains(event.target as Node);
+        console.log("[CUU_DEBUG] isEventInsideUnifiedInteractionMenu result:", isInside);
+        return isInside;
+    };
+    // --- Optional methods (implement fully if you use their specific features) ---
+    const isUnifiedInteractionMenuVisibleForBubble = (triggerBubbleElement: HTMLElement): boolean => {
+        return !!(activeUnifiedMenuElement && 
+                  activeUnifiedMenuElement.classList.contains('visible') &&
+                  currentlyAttachedBubbleForMenu === triggerBubbleElement);
+    };
+
+    const isUnifiedInteractionMenuVisible = (): boolean => {
+        return !!(activeUnifiedMenuElement && activeUnifiedMenuElement.classList.contains('visible'));
+    };
+
+    const showMenuActionFeedback = (menuButtonElement: HTMLElement, feedbackText: string): void => {
+        console.warn("ChatUiUpdater: showMenuActionFeedback NOT IMPLEMENTED (optional).", { menuButtonElement, feedbackText });
+        // Example:
+        // const originalContent = menuButtonElement.innerHTML;
+        // menuButtonElement.innerHTML = `<span>${feedbackText}</span>`;
+        // setTimeout(() => { menuButtonElement.innerHTML = originalContent; }, 1500);
+    };
+
+    const updateMenuTranslateButtonText = (
+        menuButtonElement: HTMLElement,
+        newButtonText: string
+    ): void => {
+        if (!menuButtonElement) return;
+        console.log("[CUU] updateMenuTranslateButtonText for:", menuButtonElement, "New Text:", newButtonText);
+    
+        const span = menuButtonElement.querySelector('span');
+        if (span) {
+            span.textContent = polyglotHelpers.sanitizeTextForDisplay(newButtonText);
+        } else {
+            // Fallback if structure is different, though the above methods should maintain it
+            let iconHTML = "";
+            const iconElement = menuButtonElement.querySelector('i');
+            if (iconElement) {
+                iconHTML = iconElement.outerHTML + " ";
+            }
+            menuButtonElement.innerHTML = `${iconHTML}<span>${polyglotHelpers.sanitizeTextForDisplay(newButtonText)}</span>`;
+        }
+        // Typically, you might also update a data attribute if the action itself changes
+        // e.g., menuButtonElement.dataset.currentActionState = newButtonText;
+    };
+
+    const showMenuActionInProgress = (
+        menuButtonElement: HTMLElement,
+        progressText: string
+    ): void => {
+        if (!menuButtonElement) return;
+        console.log("[CUU] showMenuActionInProgress for:", menuButtonElement, "Text:", progressText);
+    
+        // Store original content if you want to revert perfectly
+        // (Alternative: just reconstruct based on action)
+        if (!menuButtonElement.dataset.originalHtml) {
+            menuButtonElement.dataset.originalHtml = menuButtonElement.innerHTML;
+        }
+        // Assuming your button has an icon (<i class="..."></i>) and a <span> for text
+        menuButtonElement.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${polyglotHelpers.sanitizeTextForDisplay(progressText)}</span>`;
+        (menuButtonElement as HTMLButtonElement).disabled = true;
+        menuButtonElement.classList.add('action-in-progress'); // Add a class for styling
+    };
+
+    const resetMenuActionInProgress = (
+        menuButtonElement: HTMLElement,
+        defaultTextAfterProgress: string
+    ): void => {
+        if (!menuButtonElement) return;
+        console.log("[CUU] resetMenuActionInProgress for:", menuButtonElement, "Default Text:", defaultTextAfterProgress);
+    
+        // Reconstruct based on what the defaultTextAfterProgress implies
+        // This assumes the action 'translate' is the only one using this complex state.
+        let iconClass = "fas fa-language"; // Default for 'Translate'
+        if (defaultTextAfterProgress === "Original") {
+            // You might want a different icon for "Show Original", or keep it the same.
+            // For simplicity, keeping it fas fa-language.
+        }
+    
+        menuButtonElement.innerHTML = `<i class="${iconClass}"></i> <span>${polyglotHelpers.sanitizeTextForDisplay(defaultTextAfterProgress)}</span>`;
+        (menuButtonElement as HTMLButtonElement).disabled = false;
+        menuButtonElement.classList.remove('action-in-progress');
+        // delete menuButtonElement.dataset.originalHtml; // Clean up
+    };
+    
+
+    // **** ADD THIS FUNCTION DEFINITION ****
+    const getWrapperForActiveUnifiedMenu = (): HTMLElement | null => {
+        console.log("[CUU_DEBUG] getWrapperForActiveUnifiedMenu called. Returning:", wrapperForActiveUnifiedMenu);
+        return wrapperForActiveUnifiedMenu;
+    };
+
+
     return {
         initialize,
         appendSystemMessage,
         appendChatMessage,
         scrollChatLogToBottom,
-        clearLogCache
+        clearLogCache,
+
+        // --- Add the new method names to the returned object ---
+        showUnifiedInteractionMenu,
+        hideUnifiedInteractionMenu,
+        updateDisplayedReactionOnBubble,
+        isEventInsideUnifiedInteractionMenu,
+        // Add optional ones if you are implementing them right away or want them on the interface
+        isUnifiedInteractionMenuVisibleForBubble,
+        isUnifiedInteractionMenuVisible,
+        showMenuActionFeedback,
+        updateMenuTranslateButtonText,
+        showMenuActionInProgress,
+        resetMenuActionInProgress,
+        getWrapperForActiveUnifiedMenu // <<< ADD THIS LINE
     };
-})();
+})(); // End of IIFE
 
 window.chatUiUpdater = chatUiUpdater;
 document.dispatchEvent(new CustomEvent('chatUiUpdaterReady'));

@@ -33,521 +33,851 @@ window.reactionHandler = {} as ReactionHandlerModule;
         }
     };
 
-    const reactionHandlerMethods = ((): ReactionHandlerModule => {
+
+
+       const reactionHandlerMethods = ((): ReactionHandlerModule => {
         
-      // REPLACE WITH 
-        // REPLACE WITH 
+        // This initialize function is the main entry point for the module
         const initialize = (
             domElements: YourDomElements,
             conversationManager: ConversationManager,
             aiTranslationService: AiTranslationServiceModule,
-            groupDataManager: GroupDataManager // <<< ADD THIS
+            groupDataManager: GroupDataManager 
         ): void => {
-            console.log('ReactionHandler: Initializing listeners...');
-        const chatLogs = [
-        domElements.embeddedChatLog,
-        domElements.messageChatLog,
-        domElements.groupChatLogDiv
-    ].filter(el => el) as HTMLElement[];
-
-    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-    let activeMenu: HTMLElement | null = null;
-    let isLongPress = false;
-
-    // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
-      // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
-         // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
-       // VVVVVV THIS FUNCTION IS NOW MOVED *INSIDE* INITIALIZE VVVVVV
-    // PASTE THIS ENTIRE FUNCTION INSIDE THE `initialize` FUNCTION
-
-// in src/js/handlers/reaction_handler.ts, inside initialize()
-
-const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
-    const messageId = messageWrapper.dataset.messageId;
-    const userId = 'user_player'; // Assuming a static user ID
-
-    const isGroupChat = !!messageWrapper.closest('#group-chat-log');
-    console.log(`[RH_SAVE_DEBUG] updateReactionInData called for messageId: ${messageId}. Is Group: ${isGroupChat}`);
-
-    if (isGroupChat) {
-        // --- GROUP CHAT SAVE LOGIC ---
-        const groupId = groupDataManager.getCurrentGroupId();
-        if (!groupId) {
-            console.error("ReactionHandler (Group): Cannot save, current groupId is null.");
-            return;
-        }
-
-        const groupHistory = groupDataManager.getLoadedChatHistory();
-        const messageToUpdate = groupHistory.find(msg => msg.messageId === messageId);
-
-        if (!messageToUpdate) {
-            console.error(`ReactionHandler (Group): Could not find message with ID ${messageId} in history for group ${groupId}.`);
-            return;
-        }
-        
-        // This line ensures the reactions object exists.
-        messageToUpdate.reactions = messageToUpdate.reactions || {};
-        
-        // Remove old reaction
-        // TypeScript now knows .reactions is not undefined past the line above.
-        // We use the non-null assertion operator (!) to tell it.
-        Object.keys(messageToUpdate.reactions).forEach(key => {
-            messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter((id: string) => id !== userId);
-            if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
-        });
-
-        // Add new reaction
-        if (newEmoji) {
-            messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
-            if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
-                messageToUpdate.reactions[newEmoji].push(userId);
-            }
-        }
-        
-        groupDataManager.saveCurrentGroupChatHistory(false);
-        console.log(`%c[RH_SAVE_SUCCESS] Saved GROUP reaction.`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
-
-    } else {
-        // --- 1-on-1 CHAT SAVE LOGIC ---
-        const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
-        const conversationId = chatContainer?.dataset.currentConnectorId;
-        
-        if (!messageId || !conversationId) {
-            console.error("ReactionHandler (1-on-1): Cannot save, missing messageId or conversationId.", { messageId, conversationId });
-            return;
-        }
-
-        const convoRecord = conversationManager.getConversationById(conversationId);
-        if (!convoRecord?.messages) return;
-
-        const messageToUpdate = convoRecord.messages.find(msg => msg.id === messageId);
-        if (!messageToUpdate) return;
-        
-        // This line ensures the reactions object exists.
-        messageToUpdate.reactions = messageToUpdate.reactions || {};
-        
-        // Remove old reaction
-        // Again, we use the non-null assertion (!) here.
-        Object.keys(messageToUpdate.reactions).forEach(key => {
-            messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter((id: string) => id !== userId);
-            if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
-        });
-        
-        // Add new reaction
-        if (newEmoji) {
-            messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
-            if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
-                messageToUpdate.reactions[newEmoji].push(userId);
-            }
-        }
-        
-        window.convoStore?.updateConversationProperty(conversationId, 'messages', [...convoRecord.messages]);
-        window.convoStore?.saveAllConversationsToStorage();
-        console.log(`%c[RH_SAVE_SUCCESS] Saved 1-ON-1 reaction.`, 'color: #28a745; font-weight: bold;', messageToUpdate.reactions);
-    }
-};
-    // ^^^^^^ END OF MOVED FUNCTION ^^^^^^
-let activePicker: HTMLElement | null = null;
-
-
-const closeActivePicker = () => {
-    if (activePicker) {
-        activePicker.classList.remove('visible');
-        activePicker = null;
-    }
-    if (activeMenu) { // This part was missing
-        activeMenu.classList.remove('visible');
-        activeMenu = null;
-    }
-};
-
-const openPickerForBubble = (bubble: HTMLElement) => {
-    closeActivePicker(); 
-    
-    let picker = bubble.querySelector<HTMLElement>('.reaction-picker');
-    
-    // Create the picker if it doesn't exist
-    if (!picker) {
-        const newPicker = document.createElement('div'); // Create as a new const
-        newPicker.className = 'reaction-picker';
-        ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
-            const button = document.createElement('button');
-            button.className = 'reaction-btn';
-            button.type = 'button';
-            button.setAttribute('aria-label', `React with ${emoji}`);
-            button.textContent = emoji;
-            // No error: 'newPicker' is guaranteed to be an HTMLElement
-            newPicker.appendChild(button); 
-        });
-        bubble.appendChild(newPicker);
-        picker = newPicker; // Assign the newly created element back to the original variable
-    }
-
-    const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
-
-    // THIS IS THE FINAL FIX: We check for wrapper and picker together here
-    // This guarantees 'picker' is not null for all subsequent operations.
-    if (wrapper && picker) {
-        // --- THIS IS THE FIX ---
-        // 1. First, remove the 'selected' class from ALL buttons in this picker.
-        picker.querySelectorAll('.reaction-btn.selected').forEach(btn => {
-            btn.classList.remove('selected');
-        });
-
-        // 2. Then, check for the user's current reaction on the wrapper.
-        const currentUserReaction = wrapper.dataset.userReaction;
-        if (currentUserReaction) {
-            // 3. Find the specific button that matches and add the class ONLY to it.
-            const selectedBtn = picker.querySelector<HTMLButtonElement>(`button[aria-label="React with ${currentUserReaction}"]`);
-            if (selectedBtn) {
-                selectedBtn.classList.add('selected');
-            }
-        }
-        // --- END OF FIX ---
-
-        picker.classList.add('visible');
-        activePicker = picker;
-    }
-};
-// ADD THIS NEW FUNCTION FOR THE ACTION MENU
-const openActionMenu = (bubble: HTMLElement) => {
-    closeActivePicker(); // Close other popups first
-    const menu = bubble.querySelector<HTMLElement>('.action-menu');
-    if (menu) {
-        menu.classList.add('visible');
-        activeMenu = menu;
-    }
-};
-
-
-
-    // Global click listener to close the picker when clicking away
-    addSafeListener(document, 'click', (e) => {
-        const target = e.target as HTMLElement;
-        if (activePicker && !target.closest('.reaction-picker') && !target.closest('.message-reactions')) {
-            closeActivePicker();
-        }
-    });
-
- 
-    chatLogs.forEach(log => {
-
-        // --- Logic to SHOW the picker on Hover (Desktop) ---
-        addSafeListener(log, 'mouseover', (e: Event) => {
-            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-            if (!bubble) return;
-
-            // <<< THIS IS THE FIX >>>
-            // Do not show the reaction picker if a picker OR an action menu is already active.
-            if (activePicker || activeMenu) return; 
+            console.log('ReactionHandler: Initializing listeners with new mobile interaction model...');
             
-            openPickerForBubble(bubble);
-        });
+            const chatLogs = [
+                domElements.embeddedChatLog,
+                domElements.messageChatLog,
+                domElements.groupChatLogDiv
+            ].filter(el => el) as HTMLElement[];
 
-        // --- Logic to HIDE the picker when the mouse leaves the bubble/picker area ---
-              // --- Logic to HIDE the picker when the mouse leaves the "safe zone" ---
-                 // --- Logic to HIDE the picker when the mouse leaves the message WRAPPER ---
-              // --- Logic to HIDE the picker and menu when the mouse leaves the message WRAPPER ---
-                    // --- Logic to HIDE any active popup when the mouse leaves its "safe zone" ---
-        addSafeListener(log, 'mouseout', (e: Event) => {
-            const mouseEvent = e as MouseEvent;
-            const toElement = mouseEvent.relatedTarget as HTMLElement;
-            const fromElement = mouseEvent.target as HTMLElement;
+            let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+            let wasLongPressJustPerformed = false; // << NEW FLAG
+            let activeDesktopReactionPicker: HTMLElement | null = null;
+            let activeDesktopActionMenu: HTMLElement | null = null;
+            let lastTapTime = 0;
+            let lastTapBubble: HTMLElement | null = null;
+            const DOUBLE_TAP_DELAY = 300; // Milliseconds, adjust as needed
+            let wasMobileDoubleTapPerformed = false; // Flag to communicate to the click handler
+            // --- Helper for ChatUiUpdater Interaction ---
+            const getChatUiUpdater = (): import('../types/global.d.ts').ChatUiUpdaterModule | undefined => {
+                return window.chatUiUpdater;
+            };
 
-            // Find the wrapper of the message we are leaving from
-            const messageWrapper = fromElement.closest('.chat-message-wrapper');
-            if (!messageWrapper) return;
-
-            // Determine if there's an active menu or picker associated with THIS message
-            const hasActivePopup = activePicker?.closest('.chat-message-wrapper') === messageWrapper || 
-                                   activeMenu?.closest('.chat-message-wrapper') === messageWrapper;
-
-            if (hasActivePopup) {
-                // Check if the element we are moving TO is still within the message wrapper's bounds.
-                // This wrapper contains the bubble AND the popups.
-                if (!toElement || !messageWrapper.contains(toElement)) {
-                    // If we've truly left the wrapper area, close everything.
-                    closeActivePicker(); 
+            const requestHideUnifiedInteractionMenu = () => {
+                const cuu = getChatUiUpdater(); 
+                if (cuu && typeof cuu.hideUnifiedInteractionMenu === 'function') {
+                    cuu.hideUnifiedInteractionMenu();
                 }
-            }
-        });
-        // --- Logic to SHOW the picker (Long Press on Mobile) ---
-        addSafeListener(log, 'touchstart', (e: Event) => {
-            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-            if (!bubble) return;
-            
-            isLongPress = false; // Reset flag
-            longPressTimer = setTimeout(() => {
-                e.preventDefault(); // Prevent text selection, etc.
-                isLongPress = true;
-                
-                // Open the ACTION MENU on long-press now
-                openActionMenu(bubble);
+            };
 
-                longPressTimer = null;
-            }, 500); // 500ms for a long press
-        }, { passive: false });
+            // --- Data Update Function (remains crucial) ---
+            const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
+                const messageId = messageWrapper.dataset.messageId;
+                const userId = 'user_player'; 
 
-        const cancelLongPress = () => {
-            if (longPressTimer) clearTimeout(longPressTimer);
-            longPressTimer = null;
-        };
-        
-        addSafeListener(log, 'touchend', cancelLongPress);
-        addSafeListener(log, 'touchmove', cancelLongPress);
-               // --- Logic for Right-Click (Desktop) ---
-               addSafeListener(log, 'contextmenu', (e: Event) => {
-                const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
-                if (bubble) {
-                    // Prevent the default browser menu and stop other listeners from running.
-                    e.preventDefault();
-                    e.stopPropagation(); 
-    
-                    // Close any open reaction picker to ensure the action menu takes precedence.
-                    closeActivePicker(); 
-                    
-                    // Open the action menu.
-                    openActionMenu(bubble);
-                }
-            }, { capture: true }); // <<< THIS IS THE CRUCIAL FIX
-           
-           
-             // =================== REPLACE THE ENTIRE 'click' LISTENER WITH THIS FINAL VERSION ===================
-             addSafeListener(log, 'click', async (e: Event) => {
+                const isGroupChat = !!messageWrapper.closest('#group-chat-log');
+                console.log(`[RH_SAVE] updateReactionInData for msgId: ${messageId}. Group: ${isGroupChat}. Emoji: ${newEmoji}`);
 
-           
-
-
-
-                if (isLongPress) {
-                    e.preventDefault();
-                    isLongPress = false; // Reset the flag
-                    return;
-                }
-                const target = e.target as HTMLElement;
-
-
-                const actionButton = target.closest<HTMLElement>('.action-btn-item');
-                if (actionButton) {
-                    e.stopImmediatePropagation(); // <-- THE FIX
-                    e.stopPropagation();
-                    const bubble = actionButton.closest<HTMLElement>('.chat-message-ui');
-                    const messageWrapper = bubble?.closest<HTMLElement>('.chat-message-wrapper');
-                    const textElement = messageWrapper?.querySelector<HTMLElement>('.chat-message-text');
-    
-                    if (!messageWrapper || !textElement) {
-                        closeActivePicker();
+                if (isGroupChat) {
+                    const groupId = groupDataManager.getCurrentGroupId();
+                    if (!groupId) {
+                        console.error("[RH_SAVE_ERR] Group: No current groupId.");
                         return;
                     }
-                
-                    const action = actionButton.dataset.action;
-                
-                    if (action === 'copy') {
-                        navigator.clipboard.writeText(textElement.textContent || '');
-                        actionButton.querySelector('span')!.textContent = 'Copied!';
-                        setTimeout(() => { actionButton.querySelector('span')!.textContent = 'Copy'; }, 1500);
-                    } else if (action === 'translate') {
-                        console.log('[STEP 1] ✅ "Translate" button clicked. Preparing to call AI service.');
-                        const messageId = messageWrapper.dataset.messageId;
-                        const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
-                        const connectorId = chatContainer?.dataset.currentConnectorId;
-                        
-                        if (messageId && connectorId) {
-                            const originalText = messageWrapper.dataset.originalText || (messageWrapper.dataset.originalText = textElement.textContent || '');
-                            const isTranslated = messageWrapper.dataset.isTranslated === 'true';
-                    
-                            if (isTranslated) {
-                                textElement.textContent = originalText;
-                                messageWrapper.dataset.isTranslated = 'false';
-                                actionButton.querySelector('span')!.textContent = 'Translate';
-                            } else {
-                                const originalButtonContent = actionButton.innerHTML;
-                                actionButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>Translating...</span>`;
-                                (actionButton as HTMLButtonElement).disabled = true;
-                    
-                                try {
-                                    const translatedText = await aiTranslationService.generateTranslation(messageId, connectorId);
+                    const groupHistory = groupDataManager.getLoadedChatHistory();
+                    const messageToUpdate = groupHistory.find(msg => msg.messageId === messageId);
+                    if (!messageToUpdate) {
+                        console.error(`[RH_SAVE_ERR] Group: Msg ${messageId} not in history for group ${groupId}.`);
+                        return;
+                    }
+                    messageToUpdate.reactions = messageToUpdate.reactions || {};
+                    Object.keys(messageToUpdate.reactions).forEach(key => {
+                        messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter(id => id !== userId);
+                        if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
+                    });
+                    if (newEmoji) {
+                        messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
+                        if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
+                            messageToUpdate.reactions[newEmoji].push(userId);
+                        }
+                    }
+                    groupDataManager.saveCurrentGroupChatHistory(false); // Don't trigger sidebar list update from here
+                    console.log(`[RH_SAVE_OK] Group reaction saved. Reactions:`, JSON.parse(JSON.stringify(messageToUpdate.reactions)));
+                } else { // 1-on-1 Chat
+                    const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
+                    const conversationId = chatContainer?.dataset.currentConnectorId;
+                    if (!messageId || !conversationId) {
+                        console.error("[RH_SAVE_ERR] 1-on-1: Missing messageId or conversationId.", { messageId, conversationId });
+                        return;
+                    }
+                    const convoRecord = conversationManager.getConversationById(conversationId);
+                    if (!convoRecord?.messages) {
+                        console.error(`[RH_SAVE_ERR] 1-on-1: No convo record or messages for ${conversationId}.`);
+                        return;
+                    }
+                    const messageToUpdate = convoRecord.messages.find(msg => msg.id === messageId);
+                    if (!messageToUpdate) {
+                        console.error(`[RH_SAVE_ERR] 1-on-1: Msg ${messageId} not found in convo ${conversationId}.`);
+                        return;
+                    }
+                    messageToUpdate.reactions = messageToUpdate.reactions || {};
+                    Object.keys(messageToUpdate.reactions).forEach(key => {
+                        messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter(id => id !== userId);
+                        if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
+                    });
+                    if (newEmoji) {
+                        messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
+                        if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
+                            messageToUpdate.reactions[newEmoji].push(userId);
+                        }
+                    }
+                    window.convoStore?.updateConversationProperty(conversationId, 'messages', [...convoRecord.messages]);
+                    window.convoStore?.saveAllConversationsToStorage();
+                    console.log(`[RH_SAVE_OK] 1-on-1 reaction saved. Reactions:`, JSON.parse(JSON.stringify(messageToUpdate.reactions)));
+                }
+            };
 
-                                    console.log('[STEP 3] ✅ AI Translation Service responded. Result:', translatedText);
-                                    
-                                    if (translatedText) {
-                                        textElement.textContent = translatedText;
-                                        messageWrapper.dataset.isTranslated = 'true';
-                                        actionButton.innerHTML = `<i class="fas fa-language"></i><span>Original</span>`;
-                                    } else {
-                                        textElement.textContent += ' (Translation failed)';
-                                        actionButton.innerHTML = originalButtonContent;
-                                    }
-                                } catch (err) {
-                                    textElement.textContent += ' (Translation error)';
-                                    actionButton.innerHTML = originalButtonContent;
-                                } finally {
-                                    (actionButton as HTMLButtonElement).disabled = false;
-                                }
-                            }
+            const closeDesktopPopups = () => {
+                if (activeDesktopReactionPicker) {
+                    activeDesktopReactionPicker.classList.remove('visible');
+                    // Optional: Remove the picker from DOM if it was dynamically created and you don't want to keep it.
+                    // if (activeDesktopReactionPicker.parentElement && activeDesktopReactionPicker.dataset.isDynamicallyCreated === 'true') {
+                    //    activeDesktopReactionPicker.remove();
+                    // }
+                    activeDesktopReactionPicker = null;
+                }
+                if (activeDesktopActionMenu) {
+                    activeDesktopActionMenu.classList.remove('visible');
+                    // Optional: Remove the menu from DOM if dynamically created.
+                    // if (activeDesktopActionMenu.parentElement && activeDesktopActionMenu.dataset.isDynamicallyCreated === 'true') {
+                    //    activeDesktopActionMenu.remove();
+                    // }
+                    activeDesktopActionMenu = null;
+                }
+                // Remove trigger class from any bubble that might have had it
+                document.querySelectorAll('.desktop-popup-trigger').forEach(el => el.classList.remove('desktop-popup-trigger'));
+            };
+
+            const openDesktopReactionPicker = (bubble: HTMLElement) => {
+                // 1. Close any other active DESKTOP popups (either another reaction picker or an action menu).
+                //    Do NOT call requestHideUnifiedInteractionMenu() here, as that's for the mobile system.
+                if (activeDesktopActionMenu) { // If a desktop action menu is open, close it.
+                    activeDesktopActionMenu.classList.remove('visible');
+                    activeDesktopActionMenu.parentElement?.classList.remove('desktop-popup-trigger');
+                    activeDesktopActionMenu = null;
+                }
+                if (activeDesktopReactionPicker && activeDesktopReactionPicker.parentElement !== bubble) { // If a picker on ANOTHER bubble is open
+                    activeDesktopReactionPicker.classList.remove('visible');
+                    activeDesktopReactionPicker.parentElement?.classList.remove('desktop-popup-trigger');
+                    activeDesktopReactionPicker = null;
+                }
+
+                // 2. Find or create the .reaction-picker for THIS bubble.
+                //    This uses the OLD class names ".reaction-picker" and ".reaction-btn".
+                let picker = bubble.querySelector<HTMLElement>('.reaction-picker'); 
+                if (!picker) { 
+                    console.log("[RH_Desktop] Creating new desktop reaction picker for bubble.");
+                    picker = document.createElement('div'); 
+                    picker.className = 'reaction-picker'; // Your existing CSS class for the desktop hover picker
+                    // picker.dataset.isDynamicallyCreated = 'true'; // Optional: if you want to remove it on close
+                    ['👍', '❤️', '😂', '😯', '😢', '😡'].forEach(emoji => {
+                        const button = document.createElement('button');
+                        button.className = 'reaction-btn'; // Your existing CSS class for buttons in this picker
+                        button.type = 'button';
+                        button.setAttribute('aria-label', `React with ${emoji}`);
+                        button.textContent = emoji;
+                        picker!.appendChild(button); 
+                    });
+                    bubble.appendChild(picker); // Append to the .chat-message-ui (bubble) itself
+                }
+
+                // 3. Update selection state and show the picker.
+                const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+                if (wrapper && picker) {
+                    // Clear previous selections in THIS picker
+                    picker.querySelectorAll('.reaction-btn.selected').forEach(btn => btn.classList.remove('selected'));
+                    
+                    // Set selected based on current wrapper data (user's reaction to this message)
+                    const currentUserReaction = wrapper.dataset.userReaction;
+                    if (currentUserReaction) {
+                        const selectedBtn = picker.querySelector<HTMLButtonElement>(`.reaction-btn[aria-label="React with ${currentUserReaction}"]`);
+                        if (selectedBtn) {
+                            selectedBtn.classList.add('selected');
                         }
                     }
                     
-                    closeActivePicker(); // Close the menu after an action
-                    return; 
+                    picker.classList.add('visible');
+                    activeDesktopReactionPicker = picker; // Set this as the currently active desktop picker
+                    bubble.classList.add('desktop-popup-trigger'); // Mark the bubble
+                }
+            };
+
+            const openDesktopActionMenu = (bubble: HTMLElement) => {
+                requestHideUnifiedInteractionMenu(); 
+                closeDesktopPopups(); 
+
+                let menu = bubble.querySelector<HTMLElement>('.action-menu'); // OLD Desktop action menu class
+                if (!menu) { 
+                    menu = document.createElement('div');
+                    menu.className = 'action-menu'; 
+                    // menu.dataset.isDynamicallyCreated = 'true'; // Mark if you want to remove it later
+                    menu.innerHTML = `
+                        <button class="action-btn-item" data-action="copy" title="Copy message text"><i class="fas fa-copy"></i><span>Copy</span></button>
+                        <button class="action-btn-item" data-action="translate" title="Translate message"><i class="fas fa-language"></i><span>Translate</span></button>
+                    `;
+                    bubble.appendChild(menu); // Append to the .chat-message-ui (bubble)
+                }
+                
+                if (menu) {
+                    menu.classList.add('visible');
+                    activeDesktopActionMenu = menu;
+                    bubble.classList.add('desktop-popup-trigger'); 
+                }
+            };
+
+
+            // --- Global Document Click Listener (for closing menus/timestamps) ---
+
+
+
+            addSafeListener(document, 'click', (e: Event) =>
+                {
+                const target = e.target as HTMLElement;
+                const cuu = getChatUiUpdater();
+                let clickedInsideMobileMenu = false;
+
+                if (cuu && typeof cuu.isEventInsideUnifiedInteractionMenu === 'function') {
+                    clickedInsideMobileMenu = cuu.isEventInsideUnifiedInteractionMenu(e);
                 }
 
-                // CASE 1: Clicked on a displayed reaction badge (e.g., "👍 1").
-                const reactionBadge = target.closest<HTMLElement>('.reaction-item');
-                if (reactionBadge) {
-                    const bubble = reactionBadge.closest<HTMLElement>('.chat-message-wrapper')?.querySelector<HTMLElement>('.chat-message-ui');
-                    if (!bubble) return;
-                    const picker = bubble.querySelector<HTMLElement>('.reaction-picker');
-                    if (picker && activePicker === picker) {
-                        closeActivePicker();
-                    } else {
-                        openPickerForBubble(bubble);
-                    }
-                    e.stopPropagation();
-                    return;
+                // Close MOBILE unified menu if click is outside it and not on a bubble that might be its trigger
+                if (!clickedInsideMobileMenu && !target.closest('.chat-message-ui.mobile-menu-trigger')) {
+                    requestHideUnifiedInteractionMenu();
+                    document.querySelectorAll('.mobile-menu-trigger').forEach(el => el.classList.remove('mobile-menu-trigger'));
                 }
 
-                // CASE 2: Clicked a button inside the picker.
-              // =================== REPLACE CASE 2 WITH THIS CORRECTED VERSION ===================
-// CASE 2: Clicked a button inside the picker.
-// =================== REPLACE CASE 2 WITH THIS CORRECTED VERSION ===================
-                    // CASE 2: Clicked on a button inside the picker itself.
-                  // REPLACE CASE 2 WITH THIS
+                // Close DESKTOP popups if click is outside them and not on their trigger bubble
+                if (!target.closest('.reaction-picker') && 
+                    !target.closest('.action-menu') && 
+                    !target.closest('.message-reactions') && // message-reactions is part of the bubble display, not a popup itself
+                    !target.closest('.chat-message-ui.desktop-popup-trigger')) {
+                    closeDesktopPopups(); 
+                    // desktop-popup-trigger class is removed by closeDesktopPopups
+                }
 
-// CASE 2: Clicked a button inside the picker.
-// CASE 2: Clicked a button inside the picker.
-const pickerButton = target.closest<HTMLElement>('.reaction-btn');
-if (pickerButton) {
-    console.log('[RH_DEBUG] CASE 2 triggered by click on:', target);
-    console.log('[RH_DEBUG] Found pickerButton:', pickerButton);
+                // Close temporary timestamp if click is outside any message wrapper
+                const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+                if (existingTempTimestamp && !target.closest('.chat-message-wrapper')) {
+                    existingTempTimestamp.remove();
+                }
+            });
 
-    // Stop the event from bubbling up to other listeners IMMEDIATELY.
-    e.stopPropagation(); 
-    e.preventDefault();
+            // --- Event Listeners for each Chat Log ---
+            chatLogs.forEach(log => {
+               
+        
+        
+        addSafeListener(log, 'mouseover', (e: Event) => {
+            if (window.innerWidth <= 768) return; // Desktop only
 
-    // Use .closest() to find the wrapper, it's generally more reliable.
-    const wrapper = pickerButton.closest<HTMLElement>('.chat-message-wrapper');
-    console.log('[RH_DEBUG] Attempting to find wrapper. Found:', wrapper);
-
-    if (wrapper) {
-        console.log('[RH_DEBUG] Wrapper found. It has dataset:', JSON.parse(JSON.stringify(wrapper.dataset)));
-        const reactionsDisplay = wrapper.querySelector<HTMLElement>('.message-reactions');
-
-        if (reactionsDisplay) {
-            const emoji = pickerButton.textContent || '';
-            const currentReaction = wrapper.dataset.userReaction;
-
-            const existingEl = reactionsDisplay.querySelector('.reaction-item');
-            if (existingEl) existingEl.remove();
-
-            if (currentReaction === emoji) {
-                delete wrapper.dataset.userReaction;
-                console.log('[RH_DEBUG] Calling updateReactionInData to REMOVE reaction.');
-                updateReactionInData(wrapper, null);
-            } else {
-                wrapper.dataset.userReaction = emoji;
-                const newReactionEl = document.createElement('button');
-                newReactionEl.className = 'reaction-item';
-                newReactionEl.type = 'button';
-                newReactionEl.innerHTML = `${emoji} <span class="reaction-count">1</span>`;
-                reactionsDisplay.appendChild(newReactionEl);
-                console.log('[RH_DEBUG] Calling updateReactionInData to ADD reaction.');
-                updateReactionInData(wrapper, emoji);
+            const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+            if (!bubble) return;
+            
+            // Don't show if a desktop action menu is already up for this bubble,
+            // or if the mobile unified menu is visible.
+            const cuu = getChatUiUpdater();
+            if ((activeDesktopActionMenu && activeDesktopActionMenu.parentElement === bubble) || 
+                (cuu?.isUnifiedInteractionMenuVisible?.())) {
+                return;
             }
-        } else {
-            console.error('[RH_DEBUG] Wrapper was found, but its .message-reactions child was not.');
-        }
-    } else {
-        console.error('[RH_DEBUG] CRITICAL: pickerButton was clicked, but a .chat-message-wrapper parent could not be found.');
-    }
-    
-    closeActivePicker();
-    return; // IMPORTANT: Exit the click handler
-}
-// ==============================================================================
-// ==============================================================================
+            openDesktopReactionPicker(bubble);
+        });
 
-                // CASE 3: Clicked anywhere else.
-                // If it's on a bubble, open its picker. If not, close any active picker.
-                const bubble = target.closest<HTMLElement>('.chat-message-ui');
-                if (bubble) {
-                    const isMobile = window.innerWidth <= 768;
+        addSafeListener(log, 'mouseout', (e: Event) => {
+            if (window.innerWidth <= 768) return; // Desktop only
 
-                    // --- MOBILE: TAP-TO-REVEAL TIMESTAMP ---
-                    if (isMobile) {
-                        const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
-                        if (wrapper) {
-                            // Find any temporary timestamp that might already be visible and remove it.
-                            const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
-                            const parentOfOldTimestamp = existingTempTimestamp?.parentElement;
-                            if (existingTempTimestamp) {
-                                existingTempTimestamp.remove();
-                            }
+            const mouseEvent = e as MouseEvent;
+            const toElement = mouseEvent.relatedTarget as HTMLElement; // Where the mouse is going
+            const fromBubble = (mouseEvent.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
 
-                            // If the user tapped the bubble that *was* showing the timestamp, we're done. Just hide it.
-                            if (parentOfOldTimestamp === wrapper) {
-                                e.stopPropagation();
-                                return;
-                            }
+            if (fromBubble) { // If mouseout originated from within a bubble or its popups
+                // Check if the mouse is moving to an element outside the current bubble AND its active popups
+                const isLeavingDesktopReactionPickerZone = activeDesktopReactionPicker && 
+                                                          activeDesktopReactionPicker.parentElement === fromBubble &&
+                                                          (!toElement || !fromBubble.contains(toElement) && !activeDesktopReactionPicker.contains(toElement));
+                
+                const isLeavingDesktopActionMenuZone = activeDesktopActionMenu &&
+                                                      activeDesktopActionMenu.parentElement === fromBubble &&
+                                                      (!toElement || !fromBubble.contains(toElement) && !activeDesktopActionMenu.contains(toElement));
 
-                            // Create a new, temporary timestamp divider.
-                            const timestamp = wrapper.title; // The full timestamp is stored in the 'title' attribute
-                            if (timestamp && window.polyglotHelpers) {
-                                const date = new Date(timestamp);
-                                const now = new Date();
-                                let formattedText = '';
-                                
-                                const timePart = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                                
-                                // Use logic similar to the main UI updater for consistent formatting.
-                                if (date.toDateString() === now.toDateString()) {
-                                    formattedText = `Today, ${timePart}`;
-                                } else {
-                                    const yesterday = new Date();
-                                    yesterday.setDate(now.getDate() - 1);
-                                    if (date.toDateString() === yesterday.toDateString()) {
-                                        formattedText = `Yesterday, ${timePart}`;
-                                    } else {
-                                        formattedText = date.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ` at ${timePart}`;
+                if (isLeavingDesktopReactionPickerZone || isLeavingDesktopActionMenuZone) {
+                    closeDesktopPopups();
+                }
+            }
+        });
+                // --- Mobile Long Press: Show Unified Interaction Menu ---
+                              // --- Mobile Long Press: Show Unified Interaction Menu ---
+                              addSafeListener(log, 'touchstart', (e: Event) => {
+                                const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+                                if (!bubble || window.innerWidth > 768) return; 
+                
+                                wasLongPressJustPerformed = false; // Reset for new touch sequence
+                                // Clear any previous timer
+                                if (longPressTimer) clearTimeout(longPressTimer);
+                
+                                longPressTimer = setTimeout(() => {
+                                    e.preventDefault(); 
+                                    wasLongPressJustPerformed = true; // Set on successful long press
+                                    console.log("[RH] Mobile Long Press successful.");
+                
+                                    closeDesktopPopups(); // Close any desktop things first
+                                    const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+                                    const cuu = getChatUiUpdater();
+                                    if (wrapper && cuu && typeof cuu.showUnifiedInteractionMenu === 'function') {
+                                        const existingReaction = wrapper.dataset.userReaction;
+                                        cuu.showUnifiedInteractionMenu(bubble, existingReaction);
+                                        bubble.classList.add('mobile-menu-trigger'); 
                                     }
+                                    longPressTimer = null; // Timer has served its purpose
+                                }, 500);
+                            }, { passive: false });
+                
+                            // Adjusted cancelLongPressTimer, it will be called by new touchend/touchmove
+                            const cancelLongPressTimer = () => {
+                                if (longPressTimer) {
+                                    clearTimeout(longPressTimer);
+                                    longPressTimer = null;
+                                    // console.log("[RH] Long press timer cancelled (touch ended before 500ms or moved).");
                                 }
-
-                                const timestampDiv = document.createElement('div');
-                                timestampDiv.id = 'temp-chat-timestamp'; // Give it a unique ID for easy removal
-                                timestampDiv.className = 'chat-session-timestamp'; // Use the same class as other dividers
-                                timestampDiv.textContent = formattedText;
+                            };
+                            
+                            // --- Mobile Double Tap & Cancel Long Press on touchend ---
+                            addSafeListener(log, 'touchend', (e: Event) => {
+                                cancelLongPressTimer(); // Existing functionality: cancel long press if touch ends early
+            
+                                // <<< START NEW: Double-tap logic >>>
+                                if (window.innerWidth > 768) { // Mobile only
+                                    wasMobileDoubleTapPerformed = false; // Reset if somehow on desktop
+                                    return;
+                                }
+            
+                                const target = e.target as HTMLElement;
+                                const bubble = target.closest<HTMLElement>('.chat-message-ui');
+                                if (!bubble) {
+                                    wasMobileDoubleTapPerformed = false;
+                                    lastTapBubble = null; // Reset if tap is outside a bubble
+                                    return;
+                                }
                                 
-                                // Insert the new timestamp directly before the clicked message's wrapper.
-                                wrapper.before(timestampDiv);
+                                // If a long press was just performed, this touchend is part of that gesture.
+                                // Don't treat it as a tap for double-tap purposes.
+                                // wasLongPressJustPerformed will be reset by the click handler later.
+                                if (wasLongPressJustPerformed) {
+                                    console.log("[RH_DBLTAP] Ignoring touchend for double-tap; long press just occurred.");
+                                    wasMobileDoubleTapPerformed = false; // Ensure it's false
+                                    lastTapTime = 0; // Reset last tap time to prevent next tap from being double
+                                    lastTapBubble = null;
+                                    return;
+                                }
+            
+                                const currentTime = Date.now();
+                                const wrapper = bubble.closest<HTMLElement>('.chat-message-wrapper');
+            
+                                if (currentTime - lastTapTime < DOUBLE_TAP_DELAY && bubble === lastTapBubble && wrapper) {
+                                    console.log("[RH_DBLTAP] Mobile Double-Tap detected on bubble:", wrapper?.dataset.messageId);
+                                    e.preventDefault(); // Prevent click event from firing or doing other things like zooming
+            
+                                    const heartEmoji = '❤️';
+                                    const currentReactionOnWrapper = wrapper.dataset.userReaction;
+                                    const cuu = getChatUiUpdater(); // Ensure cuu is available
+                                    let newEmojiToDisplay: string | null = heartEmoji;
+            
+                                    if (currentReactionOnWrapper === heartEmoji) {
+                                        // Already hearted, so unheart
+                                        delete wrapper.dataset.userReaction;
+                                        updateReactionInData(wrapper, null);
+                                        newEmojiToDisplay = null;
+                                        console.log("[RH_DBLTAP] Unhearted message.");
+                                    } else {
+                                        // Not hearted or different reaction, so heart it
+                                        wrapper.dataset.userReaction = heartEmoji;
+                                        updateReactionInData(wrapper, heartEmoji);
+                                        console.log("[RH_DBLTAP] Hearted message.");
+                                    }
+            
+                                    if (cuu && typeof cuu.updateDisplayedReactionOnBubble === 'function') {
+                                        cuu.updateDisplayedReactionOnBubble(wrapper, newEmojiToDisplay);
+                                    }
+                                    
+                                    // Optionally hide unified menu if it was open
+                                    // requestHideUnifiedInteractionMenu();
+            
+                                    // Reset tap tracking to prevent triple tap from acting as another double tap
+                                    lastTapTime = 0;
+                                    lastTapBubble = null;
+                                    wasMobileDoubleTapPerformed = true; // Signal to click handler
+                                } else {
+                                    // Not a double tap (or first tap of a potential double tap)
+                                    lastTapTime = currentTime;
+                                    lastTapBubble = bubble;
+                                    wasMobileDoubleTapPerformed = false;
+                                }
+                                // <<< END NEW: Double-tap logic >>>
+            
+                            }, { passive: false }); // passive: false because we might call e.preventDefault()
+            
+                            // If finger moves, cancel long press (touchmove remains separate)
+                            addSafeListener(log, 'touchmove', cancelLongPressTimer); 
+            
+            
+                          
+            
+                            // --- Desktop Right-Click: Show Unified Interaction Menu ---
+              
+
+                // --- Desktop Right-Click: Show Unified Interaction Menu ---
+                addSafeListener(log, 'contextmenu', (e: Event) => {
+                    if (window.innerWidth <= 768) return; // Desktop only
+        
+                    const bubble = (e.target as HTMLElement).closest<HTMLElement>('.chat-message-ui');
+                    if (bubble) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        requestHideUnifiedInteractionMenu(); // Close mobile menu if somehow open
+                        // closeDesktopPopups(); // openDesktopActionMenu will handle this
+                        openDesktopActionMenu(bubble); 
+                    }
+                }, { capture: true });
+
+                // --- Main Click Listener for all interactions on messages ---
+                               // --- Main Click Listener for all interactions on messages ---
+                               addSafeListener(log, 'click', async (e: Event) => {
+                                console.log("[RH_CLICK_HANDLER] --- Click Event Start --- Target:", e.target); // <<< NEW LOG
+                                const target = e.target as HTMLElement;
+                                const bubble = target.closest<HTMLElement>('.chat-message-ui'); 
+                                const wrapper = bubble?.closest<HTMLElement>('.chat-message-wrapper'); 
+                                const cuu = getChatUiUpdater(); 
+                                const isMobile = window.innerWidth <= 768; // Define isMobile here earlier
+            
+                                // <<< START NEW: Check if this click was part of a handled double-tap on mobile >>>
+                                if (isMobile && wasMobileDoubleTapPerformed) {
+                                    console.log("[RH_CLICK_HANDLER] Click corresponds to a mobile double-tap. Action already handled. Preventing further click processing.");
+                                    wasMobileDoubleTapPerformed = false; // Reset flag
+                                    // e.preventDefault(); // touchend should have already done this
+                                    // e.stopPropagation(); // touchend should have already done this
+                                    return; // Stop processing this click further
+                                }
+                                // <<< END NEW >>>
+
+                                // Capture and reset the flag for *this specific click event*
+                                const clickIsEndOfLongPress = wasLongPressJustPerformed;
+                                if (wasLongPressJustPerformed) {
+                                    wasLongPressJustPerformed = false; // Reset for the *next independent* touch/click sequence
+                                }
+                                console.log("[RH_CLICK_HANDLER] clickIsEndOfLongPress:", clickIsEndOfLongPress); // <<< NEW LOG
+                                // --- DESKTOP INTERACTIONS (Old Picker/Menu) ---
+                                // (Your existing, now functional, desktop logic for old pickers/menus from the block you sent)
+                                // const isMobile = window.innerWidth <= 768; // isMobile already defined above
+                                console.log("[RH_CLICK_HANDLER] Bubble:", bubble, "Wrapper:", wrapper, "isMobile:", isMobile); // <<< NEW LOG
+
+                                if (!isMobile) {
+                                    console.log("[RH_CLICK_HANDLER] Checking desktop interactions..."); // <<< NEW LOG
+                                    const desktopPickerButton = target.closest<HTMLElement>('.reaction-picker .reaction-btn');
+                                    if (desktopPickerButton && wrapper && activeDesktopReactionPicker && activeDesktopReactionPicker.contains(desktopPickerButton)) {
+                                        console.log("[RH_CLICK_HANDLER] Desktop reaction picker button hit. Returning."); // <<< NEW LOG
+                                        e.preventDefault(); e.stopPropagation();
+                                        console.log("[RH] Desktop Reaction Picker button clicked.");
+                                        const emoji = desktopPickerButton.textContent || '';
+                                        const currentReactionOnWrapper = wrapper.dataset.userReaction;
+                                        let newEmojiToDisplay: string | null = emoji;
+                                        if (currentReactionOnWrapper === emoji) { delete wrapper.dataset.userReaction; updateReactionInData(wrapper, null); newEmojiToDisplay = null; } 
+                                        else { wrapper.dataset.userReaction = emoji; updateReactionInData(wrapper, emoji); }
+                                        let reactionsDisplayContainer = wrapper.querySelector<HTMLElement>('.message-reactions');
+                                        if (!reactionsDisplayContainer) { reactionsDisplayContainer = document.createElement('div'); reactionsDisplayContainer.className = 'message-reactions'; const mUi = wrapper.querySelector('.chat-message-ui'); if (mUi) mUi.insertAdjacentElement('afterend', reactionsDisplayContainer); else wrapper.appendChild(reactionsDisplayContainer); }
+                                        reactionsDisplayContainer.innerHTML = ''; 
+                                        if (newEmojiToDisplay) { const rEl = document.createElement('button'); rEl.className = 'reaction-item'; rEl.type = 'button'; rEl.innerHTML = `${newEmojiToDisplay} <span class="reaction-count">1</span>`; reactionsDisplayContainer.appendChild(rEl); }
+                                        closeDesktopPopups(); 
+                                        return;
+                                    }
+                    
+                                    const desktopActionButton = target.closest<HTMLElement>('.action-menu .action-btn-item');
+                                    if (desktopActionButton && wrapper && activeDesktopActionMenu && activeDesktopActionMenu.contains(desktopActionButton)) {
+                                        console.log("[RH_CLICK_HANDLER] Desktop action menu button hit. Returning."); // <<< NEW LOG
+                                        e.preventDefault(); e.stopPropagation();
+                                        const action = desktopActionButton.dataset.action;
+                                        const textElement = wrapper.querySelector<HTMLElement>('.chat-message-text');
+                                        console.log(`[RH] Desktop Action Menu: Action '${action}' clicked.`);
+                                        if (action === 'copy' && textElement) { /* Your copy logic */ 
+                                            navigator.clipboard.writeText(textElement.textContent || '');
+                                            const span = desktopActionButton.querySelector('span');
+                                            if(span) { const oldT = span.textContent; span.textContent = "Copied!"; setTimeout(()=> { if(span) span.textContent = oldT; }, 1500); }
+                                        }
+
+
+
+
+                                        else if (action === 'translate' && textElement && aiTranslationService) {
+                                            console.log("[RH_TRANSLATE_DESKTOP] Desktop: Executing TRANSLATE action."); // Corrected log message
+                                            const messageId = wrapper.dataset.messageId;
+                                    
+                                            // Determine convId (using logic from your file context)
+                                            const chatLogElCtx = wrapper.closest<HTMLElement>('.chat-log-area');
+                                            let convId: string | undefined;
+                                            if (chatLogElCtx?.id === 'group-chat-log') {
+                                                if (groupDataManager && typeof groupDataManager.getCurrentGroupId === 'function') {
+                                                    const groupIdFromManager = groupDataManager.getCurrentGroupId();
+                                                    convId = (groupIdFromManager === null) ? undefined : groupIdFromManager;
+                                                } else {
+                                                    console.warn("[RH_TRANSLATE_DESKTOP] groupDataManager or getCurrentGroupId method not available for group chat.");
+                                                }
+                                            } else {
+                                                convId = wrapper.closest<HTMLElement>('[data-current-connector-id]')?.dataset.currentConnectorId;
+                                            }
+                                    
+                                            if (messageId && convId) {
+                                                // Get original text, store it in dataset.originalText if not already there or if not translated
+                                                const originalText = wrapper.dataset.originalText || (wrapper.dataset.originalText = textElement.textContent || '');
+                                                const isTranslated = wrapper.dataset.isTranslated === 'true';
+                                    
+                                                const buttonSpan = desktopActionButton.querySelector('span'); // Get the span for text updates
+                                                const originalButtonIconHTML = desktopActionButton.querySelector('i')?.outerHTML || '<i class="fas fa-language"></i>'; // Save original icon
+                                    
+                                                if (isTranslated) {
+                                                    textElement.textContent = originalText;
+                                                    wrapper.dataset.isTranslated = 'false';
+                                                    if (buttonSpan) buttonSpan.textContent = 'Translate';
+                                                    // Ensure the icon is reset to language icon
+                                                    desktopActionButton.innerHTML = `${originalButtonIconHTML}<span>Translate</span>`;
+                                                } else {
+                                                    const preTranslationButtonHTML = desktopActionButton.innerHTML; // Save state before "Translating..."
+                                                    if (buttonSpan) {
+                                                        desktopActionButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>Translating...</span>`;
+                                                    } else { // Fallback, though span should exist
+                                                        desktopActionButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>Translating...</span>`;
+                                                    }
+                                                    (desktopActionButton as HTMLButtonElement).disabled = true;
+                                    
+                                                    try {
+                                                        const translatedText = await aiTranslationService.generateTranslation(messageId, convId);
+                                                        
+                                                        if (translatedText) {
+                                                            textElement.textContent = translatedText;
+                                                            wrapper.dataset.isTranslated = 'true';
+                                                            if (buttonSpan) {
+                                                                // Ensure icon is language icon for "Original" state
+                                                                desktopActionButton.innerHTML = `${originalButtonIconHTML}<span>Original</span>`;
+                                                            } else {
+                                                                desktopActionButton.innerHTML = `${originalButtonIconHTML}<span>Original</span>`;
+                                                            }
+                                                        } else {
+                                                            console.warn("[RH_TRANSLATE_DESKTOP] Translation returned null or empty. Reverting button.");
+                                                            desktopActionButton.innerHTML = preTranslationButtonHTML; // Revert button to its state before "Translating..."
+                                                        }
+                                                    } catch (err) {
+                                                        console.error("[RH_TRANSLATE_DESKTOP] Error during translation:", err);
+                                                        desktopActionButton.innerHTML = preTranslationButtonHTML; // Revert button on error
+                                                    } finally {
+                                                        (desktopActionButton as HTMLButtonElement).disabled = false;
+                                                    }
+                                                }
+                                            } else {
+                                                console.warn("[RH_TRANSLATE_DESKTOP] Missing messageId or convId. Cannot translate.", { messageId, convId });
+                                                // If button was changed to "Translating..." but IDs were missing, reset it
+                                                const buttonSpan = desktopActionButton.querySelector('span');
+                                                if (buttonSpan && buttonSpan.textContent === 'Translating...') {
+                                                     const originalButtonIconHTML = desktopActionButton.querySelector('i.fa-spinner')?.previousElementSibling?.outerHTML || '<i class="fas fa-language"></i>';
+                                                     desktopActionButton.innerHTML = `${originalButtonIconHTML}<span>Translate</span>`;
+                                                }
+                                            }
+                                          }
+                                        closeDesktopPopups();
+                                        return;
+                                    }
+                                } // End if (!isMobile) for desktop specific click handling
+            
+                                // --- START OF MOBILE AND UNIFIED MENU CLICK LOGIC ---
+                                console.log("[RH_CLICK_HANDLER] Proceeding to unified menu / mobile logic check..."); // <<< NEW LOG
+                                // A.1: Click on an EMOJI inside the Unified Interaction Menu
+                                
+                                
+                                
+                                
+                                           // A.1 & A.2: Handle clicks INSIDE the Unified Interaction Menu (Mobile or Desktop if unified)
+                const unifiedMenuEmojiButton = target.closest<HTMLElement>('[data-unified-menu-emoji]');
+                const unifiedMenuActionButton = target.closest<HTMLElement>('[data-unified-menu-action]');
+                
+                // Check if the click originated from within the currently active unified menu
+                let eventIsInsideActiveUnifiedMenu = false;
+                if (cuu && typeof cuu.isEventInsideUnifiedInteractionMenu === 'function') {
+                    eventIsInsideActiveUnifiedMenu = cuu.isEventInsideUnifiedInteractionMenu(e);
+                }
+
+                if (eventIsInsideActiveUnifiedMenu) {
+                    // If the click is inside the menu, get the wrapper the menu is for
+                    const actualWrapperForMenu = (cuu && typeof cuu.getWrapperForActiveUnifiedMenu === 'function')
+                                                  ? cuu.getWrapperForActiveUnifiedMenu()
+                                                  : null;
+
+                    if (!actualWrapperForMenu) {
+                        console.error("[RH] Click inside active unified menu, but could not get its associated wrapper. Aborting menu action.");
+                        requestHideUnifiedInteractionMenu(); // Hide the menu to be safe
+                        return;
+                    }
+                    
+                    // The original 'bubble' might be null if the click target was deep in the menu.
+                    // We need the bubble associated with 'actualWrapperForMenu' for classList.remove
+                    const bubbleForMenu = actualWrapperForMenu.querySelector<HTMLElement>('.chat-message-ui');
+
+
+                    if (unifiedMenuEmojiButton) { // It's an emoji click
+                        e.preventDefault(); e.stopPropagation();
+                        console.log("[RH] Unified Menu Emoji clicked. Wrapper ID:", actualWrapperForMenu.dataset.messageId);
+                        const emoji = unifiedMenuEmojiButton.dataset.unifiedMenuEmoji || '';
+                        const currentReactionOnWrapper = actualWrapperForMenu.dataset.userReaction;
+                        let newReactionForData: string | null = emoji;
+
+                        if (currentReactionOnWrapper === emoji) { 
+                            delete actualWrapperForMenu.dataset.userReaction; newReactionForData = null; 
+                        } else { 
+                            actualWrapperForMenu.dataset.userReaction = emoji; 
+                        }
+                        updateReactionInData(actualWrapperForMenu, newReactionForData);
+                        if (cuu && typeof cuu.updateDisplayedReactionOnBubble === 'function') {
+                            cuu.updateDisplayedReactionOnBubble(actualWrapperForMenu, newReactionForData);
+                        }
+
+
+
+                        requestHideUnifiedInteractionMenu(); 
+                        bubbleForMenu?.classList.remove('mobile-menu-trigger');
+                        return;
+                    }
+
+                    if (unifiedMenuActionButton) { // It's an action click
+                        e.preventDefault(); e.stopPropagation();
+                        const action = unifiedMenuActionButton.dataset.unifiedMenuAction;
+                        const textElement = actualWrapperForMenu.querySelector<HTMLElement>('.chat-message-text');
+                        console.log(`[RH] Unified Menu Action '${action}' clicked. Wrapper ID:`, actualWrapperForMenu.dataset.messageId);
+
+                       
+                        if (action === 'copy' && textElement) {
+                            navigator.clipboard.writeText(textElement.textContent || '');
+                            if (cuu && typeof cuu.showMenuActionFeedback === 'function') {
+                                cuu.showMenuActionFeedback(unifiedMenuActionButton, 'Copied!');
+                            }
+                        } // CORRECTED: 'if (action === 'copy')' block closes here
+                        else if (action === 'translate' && textElement && aiTranslationService) { // CORRECTED: 'else if' is now a sibling to the 'copy' block
+                            console.log("[RH_TRANSLATE_UNIFIED] Entered translate logic block."); // LOG 1
+                    
+                            const messageId = actualWrapperForMenu.dataset.messageId;
+                            const chatLogElementContext = actualWrapperForMenu.closest<HTMLElement>('.chat-log-area');
+                            let conversationId: string | undefined;
+                    
+                            if (chatLogElementContext?.id === 'group-chat-log') {
+                                if (groupDataManager && typeof groupDataManager.getCurrentGroupId === 'function') {
+                                    const groupIdFromManager = groupDataManager.getCurrentGroupId();
+                                    conversationId = (groupIdFromManager === null) ? undefined : groupIdFromManager;
+                                    console.log("[RH_TRANSLATE_UNIFIED] Group chat context. GroupID:", conversationId); // LOG 2a
+                                } else {
+                                    console.warn("[RH_TRANSLATE_UNIFIED] Group chat: groupDataManager or getCurrentGroupId not available."); // LOG 2b
+                                }
+                            } else {
+                                conversationId = actualWrapperForMenu.dataset.currentConnectorId ||
+                                                 actualWrapperForMenu.dataset.connectorId ||
+                                                 actualWrapperForMenu.closest<HTMLElement>('[data-current-connector-id]')?.dataset.currentConnectorId;
+                                console.log("[RH_TRANSLATE_UNIFIED] 1-on-1 chat context. ConnectorID:", conversationId); // LOG 2c
                             }
                             
-                            // CRITICAL: Stop the event here so it doesn't also try to open the reaction picker.
-                            e.stopPropagation();
-                            return;
-                        }
-                    }
+                            console.log("[RH_TRANSLATE_UNIFIED_IDS] Final check. messageId:", messageId, "conversationId:", conversationId); // LOG 3
                     
-                    // --- DESKTOP: OPEN REACTION PICKER (only runs if not mobile) ---
-                    openPickerForBubble(bubble);
+                            if (messageId && conversationId) {
+                                console.log("[RH_TRANSLATE_UNIFIED] IDs valid. Proceeding with translation call."); // LOG 4
+                                const currentTextContent = textElement.textContent || ''; 
+                    
+                                if (actualWrapperForMenu.dataset.isTranslated !== 'true') {
+                                    actualWrapperForMenu.dataset.originalText = currentTextContent;
+                                }
+                                const isTranslated = actualWrapperForMenu.dataset.isTranslated === 'true';
+                    
+                                if (isTranslated) {
+                                    console.log("[RH_TRANSLATE_UNIFIED] Reverting to original text."); // LOG 5a
+                                    textElement.textContent = actualWrapperForMenu.dataset.originalText || "";
+                                    actualWrapperForMenu.dataset.isTranslated = 'false';
+                        
+                                    if (cuu && typeof cuu.updateMenuTranslateButtonText === 'function') {
+                                        cuu.updateMenuTranslateButtonText(unifiedMenuActionButton, 'Translate');
+                                    } else { 
+                                        const span = unifiedMenuActionButton.querySelector('span');
+                                        if (span) span.textContent = 'Translate';
+                                    }
+                                } else {
+                                    console.log("[RH_TRANSLATE_UNIFIED] Attempting to translate to target language."); // LOG 5b
+                                    if (cuu && typeof cuu.showMenuActionInProgress === 'function') {
+                                        console.log("[RH_TRANSLATE_UNIFIED] Calling cuu.showMenuActionInProgress."); // LOG 6
+                                        cuu.showMenuActionInProgress(unifiedMenuActionButton, 'Translating...');
+                                    }
+                        
+                                    try {
+                                        console.log("[RH_TRANSLATE_UNIFIED] Calling aiTranslationService.generateTranslation..."); // LOG 7
+                                        const translatedText = await aiTranslationService.generateTranslation(messageId, conversationId);
+                                        console.log("[RH_TRANSLATE_UNIFIED] aiTranslationService returned:", translatedText); // LOG 8
+                                        if (translatedText) {
+                                            textElement.textContent = translatedText;
+                                            actualWrapperForMenu.dataset.isTranslated = 'true';
+                                        } else {
+                                             console.warn("[RH_TRANSLATE_UNIFIED] Translation returned null or empty.");
+                                        }
+                                    } catch (err) {
+                                        console.error(`[RH_TRANSLATE_UNIFIED] Error during translation:`, err);
+                                    } finally {
+                                        const buttonTextAfterAction = actualWrapperForMenu.dataset.isTranslated === 'true' ? 'Original' : 'Translate';
+                                        console.log("[RH_TRANSLATE_UNIFIED] In finally block. Button text should be:", buttonTextAfterAction); // LOG 9
+                                        if (cuu && typeof cuu.resetMenuActionInProgress === 'function') {
+                                            cuu.resetMenuActionInProgress(unifiedMenuActionButton, buttonTextAfterAction);
+                                        } else { 
+                                            const span = unifiedMenuActionButton.querySelector('span');
+                                            if (span) span.textContent = buttonTextAfterAction;
+                                            (unifiedMenuActionButton as HTMLButtonElement).disabled = false;
+                                        }
+                                    }
+                                }
+                            } else {
+                                console.warn("[RH_TRANSLATE_UNIFIED] ID check FAILED. Missing messageId or conversationId. Button will be reset."); // LOG 10
+                                if (cuu && typeof cuu.resetMenuActionInProgress === 'function') {
+                                    cuu.resetMenuActionInProgress(unifiedMenuActionButton, 'Translate');
+                                } else { 
+                                    const span = unifiedMenuActionButton.querySelector('span');
+                                    if (span) span.textContent = 'Translate';
+                                    (unifiedMenuActionButton as HTMLButtonElement).disabled = false;
+                                }
+                            }
+                        } // End of 'else if (action === 'translate' ...)' - CORRECTLY POSITIONED
+                        requestHideUnifiedInteractionMenu();
+                        bubbleForMenu?.classList.remove('mobile-menu-trigger');
+                        return;
+                    }
+                 // End if (eventIsInsideActiveUnifiedMenu)
+                
+                // <<< The next part of your click listener (clickIsEndOfLongPress check, mobile timestamp, etc.) starts here >>>
+                // Your log showed: "if (clickIsEndOfLongPress && bubble) { ..."
+                // Ensure the `bubble` and `wrapper` variables used from this point onwards are the ones defined 
+                // at the very top of the click listener (from target.closest()), NOT `actualWrapperForMenu` or `bubbleForMenu`.
+                                // If clickIsEndOfLongPress is true, it means the menu was just opened by this gesture.
+                                // We don't want THIS specific click (the one that lifted the finger from the long press)
+                                // to also trigger the timestamp display if it landed on the bubble itself.
+                                                         // If clickIsEndOfLongPress is true, it means the menu was just opened by this gesture.
+                                                         if (clickIsEndOfLongPress && bubble) {
+                                                            console.log("[RH_CLICK_HANDLER] Entered clickIsEndOfLongPress block."); // <<< NEW LOG
+                                                            // The unifiedMenuEmojiButton and unifiedMenuActionButton were defined earlier in this click handler.
+                                                            const clickedOnMenuButtonDirectly = unifiedMenuEmojiButton || unifiedMenuActionButton;
+                        
+                                                            if (clickedOnMenuButtonDirectly) {
+                                                                // The long press ended WITH THE FINGER ALREADY ON a menu button.
+                                                                // Let the menu button handlers (which are earlier in this click function) do their job.
+                                                                // This console log is just for clarity; the actual processing happens above.
+                                                                console.log("[RH_DEBUG] Click was end of long press, AND it landed DIRECTLY on a menu button. Letting menu button handlers proceed.");
+                                                                // DO NOT call e.stopPropagation() or return here, as the menu button handlers need the event.
+                                                            } else {
+                                                                // The long press ended with the finger on the BUBBLE (but not a menu button).
+                                                                // We want the menu to REMAIN OPEN.
+                                                                // Prevent this specific click from triggering other bubble actions (like timestamp).
+                                                                console.log("[RH_DEBUG] Click was end of long press, landed on BUBBLE (not a menu item). Menu STAYS OPEN. Preventing other bubble actions for THIS click.");
+                                                                e.stopPropagation(); // Stop this click from, e.g., showing timestamp
+                                                                return;              // Prevent further processing OF THIS BUBBLE CLICK
+                                                            }
+                                                        }
+                                                        console.log("[RH_CLICK_HANDLER] Past clickIsEndOfLongPress block. Checking mobile single tap on bubble..."); // <<< NEW LOG
+                                // B: MOBILE - Single Tap on Bubble (for Timestamp or closing its own menu)
+                                if (isMobile && bubble) { // bubble check is redundant if wrapper is guaranteed, but good for clarity
+                                    console.log("[RH_CLICK_HANDLER] Checking mobile single tap on bubble scenarios..."); // <<< NEW LOG
+                                    if (cuu?.isUnifiedInteractionMenuVisibleForBubble?.(bubble)) {
+                                        console.log("[RH_DEBUG] Mobile tap on BUBBLE while its own unified menu is visible. Closing menu.");
+                                        e.stopPropagation();
+                                        requestHideUnifiedInteractionMenu();
+                                        // The 'mobile-menu-trigger' class should be removed by hideUnifiedInteractionMenu or its callback
+                                        return;
+                                    }
+                                    
+                                    const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+                                    const parentOfOldTimestamp = existingTempTimestamp?.parentElement;
+                                    if (existingTempTimestamp) existingTempTimestamp.remove();
+                                    if (parentOfOldTimestamp === wrapper) { e.stopPropagation(); return; }
+            
+                                    if (!wrapper) return; // Exit if no wrapper was found for the tap
+                                    const timestampStringFromTitle = wrapper.title;
+                                    if (timestampStringFromTitle && window.polyglotHelpers) {
+                                        const date = new Date(timestampStringFromTitle); let formattedText = "Time unavailable";
+                                        if (!isNaN(date.getTime())) { 
+                                            const now = new Date(); const timePart = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                                            if (date.toDateString() === now.toDateString()) formattedText = `Today, ${timePart}`;
+                                            else { const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+                                                if (date.toDateString() === yesterday.toDateString()) formattedText = `Yesterday, ${timePart}`;
+                                                else formattedText = date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ` at ${timePart}`;
+                                            }
+                                        } else { 
+                                            const numericTs = wrapper.dataset.timestamp; 
+                                            if (numericTs && !isNaN(Number(numericTs))) { 
+                                                const fallbackDate = new Date(Number(numericTs));
+                                                if(!isNaN(fallbackDate.getTime())) {
+                                                    const timePart = fallbackDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                                                    const now = new Date();
+                                                    if (fallbackDate.toDateString() === now.toDateString()) formattedText = `Today, ${timePart}`;
+                                                    else { const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+                                                        if (fallbackDate.toDateString() === yesterday.toDateString()) formattedText = `Yesterday, ${timePart}`;
+                                                        else formattedText = fallbackDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ` at ${timePart}`;
+                                                    }
+                                                }
+                                            }
+                                            if (formattedText === "Time unavailable") console.error(`[RH] Mobile Timestamp: Invalid date from title: "${timestampStringFromTitle}" and no valid numeric fallback.`);
+                                        }
+                                        const timestampDiv = document.createElement('div'); timestampDiv.id = 'temp-chat-timestamp';
+                                        timestampDiv.className = 'chat-session-timestamp'; timestampDiv.textContent = formattedText;
+                                        wrapper.before(timestampDiv);
+                                    }
+                                    e.stopPropagation(); 
+                                    return;
+                                }
+                                console.log("[RH_CLICK_HANDLER] Past mobile single tap. Checking desktop bubble click..."); // <<< NEW LOG
 
-                } else if (activePicker) {
-                    // Clicked on empty space, close any active picker and remove temp timestamp.
-                    const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
-                    if (existingTempTimestamp) existingTempTimestamp.remove();
-                    closeActivePicker();
-                } else {
-                    // Also handle clicks on empty space when picker is not active
-                    const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
-                    if (existingTempTimestamp) existingTempTimestamp.remove();
-                }
-            });
-// ============================================================================================
-// ===================================================================================
-            });
-        };
+                                // C: DESKTOP - Click on bubble (not a picker/menu item already handled)
+                                // This also serves as a fallback if something was missed above.
+                                if (!isMobile && bubble) {
+                                    // This is for desktop clicks directly on a bubble that weren't specific desktop menu items.
+                                    // Usually closes any open desktop popups.
+                                    console.log("[RH_DEBUG] Desktop click on BUBBLE (not a handled desktop menu/picker item). Closing DESKTOP popups.");
+                                    requestHideUnifiedInteractionMenu(); // Close unified menu if somehow open on desktop
+                                    closeDesktopPopups();
+                                    // Clean up any trigger classes
+                                    bubble.classList.remove('mobile-menu-trigger', 'desktop-popup-trigger');
+                            
+                                    const reactionBadge = target.closest<HTMLElement>('.reaction-item');
+                                    if (reactionBadge) {
+                                        console.log("[RH_DEBUG] Desktop click on a REACTION BADGE. Re-opening desktop reaction picker.");
+                                        openDesktopReactionPicker(bubble); // Assuming this is for desktop hover picker
+                                        e.stopPropagation();
+                                        return;
+                                    }
+                                    return;
+                                }
+            
+                                // D. Clicked on empty space in chat log (fallback, should mostly be handled by document click)
+                              if (!target.closest('.chat-message-wrapper')) {
+        console.log("[RH_DEBUG] Click on EMPTY CHAT LOG SPACE.");
+        requestHideUnifiedInteractionMenu();
+        closeDesktopPopups();
+        const existingTempTimestamp = document.getElementById('temp-chat-timestamp');
+        if (existingTempTimestamp) existingTempTimestamp.remove();
+        document.querySelectorAll('.mobile-menu-trigger, .desktop-popup-trigger').forEach(el => el.classList.remove('mobile-menu-trigger', 'desktop-popup-trigger'));
+    }
+             } }); // End main click listener for addSafeListener(log, 'click', ...)
+            }); // End chatLogs.forEach
+        }; // End initialize function
 
         return { initialize };
-    })();
+    // This is where the IIFE for reactionHandlerMethods ends  // <<< My comment, NOT actual code
+    })(); // <<< THIS CLOSES THE reactionHandlerMethods IIFE
 
     // Populate the window object and dispatch the ready event
       // Populate the window object and dispatch the ready event
@@ -556,4 +886,4 @@ if (pickerButton) {
     }
     document.dispatchEvent(new CustomEvent('reactionHandlerReady'));
     console.log('reaction_handler.ts: Ready event dispatched.');
-})();
+})(); // <<< THIS CLOSES THE OUTERMOST (function () { ... })();

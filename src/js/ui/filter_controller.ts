@@ -24,7 +24,9 @@ interface FilterControllerModule {
     populateFilterDropdowns: () => void;
     applyFindConnectorsFilters: () => void;
     applyGroupSearchFilters: () => void;
-    resetToDefaultFriendsView: () => void; // <<< ADD THIS LINE
+    resetToDefaultFriendsView: () => void; // <<< ADD THIS 
+    switchFriendsViewTab: (targetView: 'my-friends' | 'discover') => void; // <<< MAKE SURE THIS IS PRESENT
+    switchGroupViewTab: (targetView: 'my-groups' | 'discover') => void;   // <<< MAKE SURE THIS IS PRESENT
 }
 
 function initializeActualFilterController(): void {
@@ -157,36 +159,55 @@ function setupFilterEventListeners(): void {
 // ==================================================================
 // =======================================================================================
 
-        function switchGroupViewTab(targetView: 'my-groups' | 'discover') {
-            if (activeGroupView === targetView) return; // Do nothing if already on the active tab
+function switchGroupViewTab(targetView: 'my-groups' | 'discover', forceRefresh: boolean = false) {
+    console.log(`%c[FC] switchGroupViewTab CALLED. Target: ${targetView}, Current Active: ${activeGroupView}, ForceRefresh: ${forceRefresh}`, "color: blue; font-weight: bold;");
+    
+    // If it's not a forced refresh and the view is already the target, do nothing.
+    if (!forceRefresh && activeGroupView === targetView) {
+        console.log(`%c[FC] switchGroupViewTab: Already on target '${targetView}' and not forced. No full switch, but will still apply filters.`, "color: blue;");
+        // Even if we don't change activeGroupView, we still want to ensure filters run,
+        // especially if this call is programmatic (e.g., from shell_controller on initial load).
+        // However, the original issue was that applyGroupSearchFilters was *skipped*.
+        // Let's ensure it runs if forced or if the view actually changes.
+    } else {
+         // If the view is different, or if a refresh is forced, update the active view and UI
+        activeGroupView = targetView;
+        console.log(`%c[FC] switchGroupViewTab: Setting activeGroupView to '${targetView}'.`, "color: blue;");
 
-            activeGroupView = targetView;
-            console.log(`FC: Switched group view tab to: ${activeGroupView}`);
+        const myGroupsBtn = document.getElementById('my-groups-tab-btn');
+        const discoverBtn = document.getElementById('discover-groups-tab-btn');
 
-            const myGroupsBtn = document.getElementById('my-groups-tab-btn');
-            const discoverBtn = document.getElementById('discover-groups-tab-btn');
+        if(myGroupsBtn) myGroupsBtn.classList.toggle('active', activeGroupView === 'my-groups');
+        if(discoverBtn) discoverBtn.classList.toggle('active', activeGroupView === 'discover');
+    }
 
-            myGroupsBtn?.classList.toggle('active', activeGroupView === 'my-groups');
-            discoverBtn?.classList.toggle('active', activeGroupView === 'discover');
-
-            // Trigger a filter refresh for the new view
-            applyGroupSearchFilters();
-        }
+    // Always apply filters when this function is called,
+    // especially if called programmatically by shell_controller.
+    console.log(`%c[FC] switchGroupViewTab: Proceeding to call applyGroupSearchFilters() for view '${activeGroupView}'.`, "color: blue;");
+    applyGroupSearchFilters();
+}
 
 // Add this entire new function
-function switchFriendsViewTab(targetView: 'my-friends' | 'discover') {
-    if (activeFriendsView === targetView) return; // Do nothing if already active
+function switchFriendsViewTab(targetView: 'my-friends' | 'discover', forceRefresh: boolean = false) {
+    console.log(`%c[FC] switchFriendsViewTab CALLED. Target: ${targetView}, Current Active: ${activeFriendsView}, ForceRefresh: ${forceRefresh}`, "color: orange; font-weight: bold;");
 
-    activeFriendsView = targetView;
-    console.log(`FC: Switched friends view tab to: ${activeFriendsView}`);
+    if (!forceRefresh && activeFriendsView === targetView) {
+        console.log(`%c[FC] switchFriendsViewTab: Already on target '${targetView}' and not forced. No full switch.`, "color: orange;");
+        // If called from a UI click and already active, we might not need to re-apply filters unless content can change.
+        // But if called programmatically (like from shell_controller), we often DO want filters to apply.
+        // For now, to solve the refresh issue, we'll ensure applyFindConnectorsFilters is called.
+    } else {
+        activeFriendsView = targetView;
+        console.log(`%c[FC] switchFriendsViewTab: Setting activeFriendsView to '${targetView}'.`, "color: orange;");
 
-    const myFriendsBtn = document.getElementById('my-friends-tab-btn');
-    const discoverFriendsBtn = document.getElementById('discover-friends-tab-btn');
+        const myFriendsBtn = document.getElementById('my-friends-tab-btn');
+        const discoverFriendsBtn = document.getElementById('discover-friends-tab-btn');
 
-    myFriendsBtn?.classList.toggle('active', activeFriendsView === 'my-friends');
-    discoverFriendsBtn?.classList.toggle('active', activeFriendsView === 'discover');
-
-    // This is the key: Re-run the filter/display logic for the new tab
+        if(myFriendsBtn) myFriendsBtn.classList.toggle('active', activeFriendsView === 'my-friends');
+        if(discoverFriendsBtn) discoverFriendsBtn.classList.toggle('active', activeFriendsView === 'discover');
+    }
+    
+    console.log(`%c[FC] switchFriendsViewTab: Proceeding to call applyFindConnectorsFilters() for view '${activeFriendsView}'.`, "color: orange;");
     applyFindConnectorsFilters();
 }
        function populateFilterDropdowns(): void {
@@ -528,7 +549,7 @@ function resetToDefaultFriendsView(): void {
     // This will handle both the UI class toggling and calling the filter function.
     if (activeFriendsView !== defaultView) {
         console.log(`[FC] Currently on '${activeFriendsView}', switching to '${defaultView}'.`);
-        switchFriendsViewTab(defaultView);
+        switchFriendsViewTab(defaultView, true); 
     } else {
         // If we are already on the correct default tab, just re-apply the filters
         // to ensure the list is fresh for the current state.
@@ -549,9 +570,10 @@ function applyGroupSearchFilters(): void {
 
     // ===== START: REPLACE THE REST OF THE FUNCTION WITH THIS =====
     console.log(`FC_DEBUG: applyGroupSearchFilters - View: ${activeGroupView}, Lang: ${langFilter}, Cat: ${categoryFilter}, Name: ${nameSearchTerm}`);
-
-    if (!groupManager?.loadAvailableGroups) {
-        console.error("FilterController: groupManager.loadAvailableGroups is not available.");
+    console.error(`%c[FC_GM_CHECK] In applyGroupSearchFilters: window.groupManager exists: ${!!window.groupManager}, window.groupManager.loadAvailableGroups exists: ${!!window.groupManager?.loadAvailableGroups}`, "color: white; background: red;");
+    // The existing check will then run:
+    if (!groupManager?.loadAvailableGroups) { 
+        console.error("FilterController: groupManager.loadAvailableGroups is not available. GroupManager object:", window.groupManager); // Log the object itself
         return;
     }
 
@@ -570,36 +592,48 @@ function applyGroupSearchFilters(): void {
             populateFilterDropdowns,
             applyFindConnectorsFilters,
             applyGroupSearchFilters,
-            resetToDefaultFriendsView // <<< ADD THIS LINE
+            resetToDefaultFriendsView, // <<< ADD THIS LINE
+            switchFriendsViewTab,      // <<< MAKE SURE THIS IS RETURNED
+            switchGroupViewTab         // <<< MAKE SURE THIS IS RETURNED
         };
     })(); // End of IIFE
+    if (window.filterController && 
+        typeof window.filterController.initializeFilters === 'function' &&
+        typeof window.filterController.populateFilterDropdowns === 'function' &&
+        typeof window.filterController.applyFindConnectorsFilters === 'function' &&
+        typeof window.filterController.applyGroupSearchFilters === 'function' &&
+        typeof window.filterController.resetToDefaultFriendsView === 'function' &&
+        typeof window.filterController.switchFriendsViewTab === 'function' &&    // <<< VERIFY THIS
+        typeof window.filterController.switchGroupViewTab === 'function') {      // <<< VERIFY THIS
+        
+        console.log("filter_controller.ts: SUCCESSFULLY assigned to window.filterController with ALL key methods verified.");
+        
+        console.log("FilterController: About to call self window.filterController.initializeFilters().");
+        window.filterController.initializeFilters(); 
+        console.log("FilterController: Returned from self window.filterController.initializeFilters().");
 
-if (window.filterController && 
-    typeof window.filterController.initializeFilters === 'function' &&
-    typeof window.filterController.applyFindConnectorsFilters === 'function') { 
-    console.log("filter_controller.ts: SUCCESSFULLY assigned to window.filterController with all key methods verified.");
-    
-    console.log("FilterController: About to call self window.filterController.initializeFilters().");
-    window.filterController.initializeFilters(); // <<< THIS CALL IS CRUCIAL
-    console.log("FilterController: Returned from self window.filterController.initializeFilters().");
-
-    document.dispatchEvent(new CustomEvent('filterControllerReady'));
-    console.log('filter_controller.ts: "filterControllerReady" event dispatched (after self-initialization and all key methods verified).');
-} else {
-    console.error("filter_controller.ts: CRITICAL ERROR - window.filterController assignment FAILED or key methods (initializeFilters, applyFindConnectorsFilters) missing.");
-    if (window.filterController) { 
-        console.error(`FC_DEBUG: typeof window.filterController.initializeFilters: ${typeof (window.filterController as any).initializeFilters}`);
-        console.error(`FC_DEBUG: typeof window.filterController.applyFindConnectorsFilters: ${typeof (window.filterController as any).applyFindConnectorsFilters}`);
+        document.dispatchEvent(new CustomEvent('filterControllerReady'));
+        console.log('filter_controller.ts: "filterControllerReady" event dispatched (SUCCESS - all methods verified).');
+    } else {
+        console.error("filter_controller.ts: CRITICAL ERROR - window.filterController assignment FAILED or ONE OR MORE key methods missing.");
+        // Log exactly what's missing or their types
+        if (window.filterController) { 
+            const fc = window.filterController as any; // Cast to any for easier property checking
+            console.error(`  - initializeFilters: ${typeof fc.initializeFilters}`);
+            console.error(`  - populateFilterDropdowns: ${typeof fc.populateFilterDropdowns}`);
+            console.error(`  - applyFindConnectorsFilters: ${typeof fc.applyFindConnectorsFilters}`);
+            console.error(`  - applyGroupSearchFilters: ${typeof fc.applyGroupSearchFilters}`);
+            console.error(`  - resetToDefaultFriendsView: ${typeof fc.resetToDefaultFriendsView}`);
+            console.error(`  - switchFriendsViewTab: ${typeof fc.switchFriendsViewTab}`);
+            console.error(`  - switchGroupViewTab: ${typeof fc.switchGroupViewTab}`);
+        } else {
+            console.error("  - window.filterController itself is null or undefined.");
+        }
+        // Still dispatch 'filterControllerReady' but signal failure.
+        // Other modules waiting for it need to know it's "done" (even if broken).
+        document.dispatchEvent(new CustomEvent('filterControllerReady'));
+        console.warn('filter_controller.ts: "filterControllerReady" event dispatched (FAILURE - methods missing/assignment issue).');
     }
-    // Dispatch ready anyway so app.ts doesn't hang, but it will have a non-functional (or partially functional) filterController.
-    // This case is already handled by the dummy assignment if functionalChecks failed earlier.
-    // If it fails here, it means the IIFE didn't return the expected methods.
-     document.dispatchEvent(new CustomEvent('filterControllerReady'));
-     console.warn('filter_controller.ts: "filterControllerReady" dispatched, BUT INITIALIZATION OR METHOD ASSIGNMENT HAD ISSUES.');
-}
-    
-    document.dispatchEvent(new CustomEvent('filterControllerReady'));
-    console.log('filter_controller.ts: "filterControllerReady" event dispatched.');
 
 } // End of initializeActualFilterController
 // --- Event listening logic & Initialization ---

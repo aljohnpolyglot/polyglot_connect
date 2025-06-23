@@ -359,20 +359,19 @@ const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.lengt
                 let shouldIncludeThisGroupInList = false;
 
                 // If this group is the currently active one, use the in-memory `groupChatHistoryInternal`
-                if (groupDef.id === currentGroupIdInternal) {
-                    historyToUse = groupChatHistoryInternal; // Use the already loaded history
-                    shouldIncludeThisGroupInList = true; // Always include the current group if it exists
-                } else {
-                    // Otherwise, check if there's any stored history for it
-                    historyToUse = allStoredHistories[groupDef.id];
-                    if (historyToUse && historyToUse.length > 0) {
-                        shouldIncludeThisGroupInList = true;
-                    }
-                }
+                const thisGroupIsActuallyJoined = !!(allStoredHistories[groupDef.id] && allStoredHistories[groupDef.id].length > 0);
+
+                // A group should be included in the "Active Chats" (sidebar) list if:
+                // 1. It's the *currently selected* group (even if its history is somehow momentarily empty in memory).
+                // 2. Or, it is *actually joined* (has persisted history).
+                shouldIncludeThisGroupInList = (groupDef.id === currentGroupIdInternal) || thisGroupIsActuallyJoined;
 
                 if (shouldIncludeThisGroupInList) {
                     let lastMessageForPreview: GroupChatHistoryItem;
                     let lastActivityTimestamp: number;
+
+                    // Use in-memory history if it's the current group, otherwise use stored.
+                    historyToUse = (groupDef.id === currentGroupIdInternal) ? groupChatHistoryInternal : allStoredHistories[groupDef.id];
 
                     if (historyToUse && historyToUse.length > 0) {
                         const lastMsgCandidate = historyToUse[historyToUse.length - 1];
@@ -380,19 +379,16 @@ const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.lengt
                             lastMessageForPreview = lastMsgCandidate;
                             lastActivityTimestamp = lastMsgCandidate.timestamp;
                         } else {
-                            // Fallback if last message or its timestamp is invalid
-                            lastActivityTimestamp = groupDef.creationTime || (Date.now() - 7 * 24 * 60 * 60 * 1000); // Default to 7 days ago or creation time
+                            lastActivityTimestamp = groupDef.creationTime || (Date.now() - 7 * 24 * 60 * 60 * 1000);
                             lastMessageForPreview = { text: "[No valid messages]", speakerId: "system", timestamp: lastActivityTimestamp, speakerName: "System" };
                         }
                     } else {
-                        // No history, use creation time or now as last activity
                         lastActivityTimestamp = groupDef.creationTime || Date.now();
                         lastMessageForPreview = { text: "New group chat!", speakerId: "system", timestamp: lastActivityTimestamp, speakerName: "System" };
                     }
 
-                    // Resolve speaker name for preview
                     let speakerNameDisplay = lastMessageForPreview.speakerName || "";
-                    if (!speakerNameDisplay) { // If speakerName wasn't in the history item
+                    if (!speakerNameDisplay) {
                         if (lastMessageForPreview.speakerId === "user_player") {
                             speakerNameDisplay = "You";
                         } else if (lastMessageForPreview.speakerId && lastMessageForPreview.speakerId !== "system") {
@@ -402,7 +398,6 @@ const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.lengt
                             speakerNameDisplay = "System";
                         }
                     }
-                    // Ensure the final preview message has the resolved speaker name
                     const finalPreviewMessage: GroupChatHistoryItem = { ...lastMessageForPreview, speakerName: speakerNameDisplay };
 
                     const listItem: ActiveGroupListItem = {
@@ -411,10 +406,10 @@ const isOldMessage = (historyToSave.length > 20) && (index < historyToSave.lengt
                         language: groupDef.language,
                         groupPhotoUrl: groupDef.groupPhotoUrl,
                         lastActivity: lastActivityTimestamp,
-                        messages: [finalPreviewMessage], // Pass only the single last message for preview
+                        messages: [finalPreviewMessage],
                         isGroup: true,
-                        description: groupDef.description, // Include other relevant fields from Group
-                        isJoined: groupDef.id === currentGroupIdInternal || (historyToUse && historyToUse.length > 0) // More robust isJoined check
+                        description: groupDef.description,
+                        isJoined: thisGroupIsActuallyJoined // <<< Use the explicitly checked value
                     };
                     activeGroupChatItems.push(listItem);
                 }

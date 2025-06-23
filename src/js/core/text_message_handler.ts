@@ -373,6 +373,7 @@ async function playAiResponseScene(
     connector: Connector,
     context: 'embedded' | 'modal'
 ): Promise<void> {
+
     const { uiUpdater, conversationManager } = getSafeDeps("playAiResponseScene")!;
     const appendToLog = context === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal;
 
@@ -712,36 +713,31 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                 if (imageFile) { // User sent an image (with or without caption)
                     const userProvidedTextWithImage = captionText || textFromInput?.trim() || "";
                     const simplifiedPersonaContext = `You are ${currentConnector.profileName}.
-                    You are a native of the Philippines. Your primary language is Tagalog.
-                    Your interests include: ${currentConnector.interests?.join(', ') || 'NBA, online games, basketball'}.
-                    Your personality traits are: ${currentConnector.personalityTraits?.join(', ') || 'chill, sarcastic, direct'}.
+                   
+                    Your interests include: ${currentConnector.interests?.join(', ') || ''}.
+                    Your personality traits are: ${currentConnector.personalityTraits?.join(', ') || ''}.
                     You are currently interacting with a user who sent an image.`;
                     
                                         promptForAI = `${simplifiedPersonaContext}
                     
-                    The user has shared an image with the caption: "${userProvidedTextWithImage || 'none'}".
+                   The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
                     
-                    Your response MUST have two distinct parts, spoken ONLY in Tagalog.
-                    
-                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
-                    - React to this image based on YOUR specific personality and interests as defined above.
-                    - AVOID generic phrases like "That's a cool picture."
-                    - INSTEAD, try one of these persona-driven approaches:
-                        - Make a creative observation that reflects your personality.
-                        - Ask a question driven by your curiosity and interests.
-                        - Share a brief, relevant memory or thought from your own life experiences.
-                    - If the user wrote a caption ("${userProvidedTextWithImage || 'none'}"), weave it into your comment naturally.
+                    Your Conversational Comment (as ${currentConnector.profileName}):
+                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
+                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
+                    - AVOID generic phrases like "What's this?" or "Nice photo."
+                    - Your goal is to start a conversation. Try one of these persona-driven approaches:
+                      - Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
+                      - Ask an open-ended question driven by your curiosity and interests.
+                      - Share a brief, relevant memory or thought from your own life experiences that the image sparks.
                     
                     Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
                     [IMAGE_DESCRIPTION_START]
                     A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
                     [IMAGE_DESCRIPTION_END]
                     
-                    Example of your full response structure:
-                    "Ayos to ah! Mukhang masarap yang laro niyo. [IMAGE_DESCRIPTION_START]Isang larawan ng mga taong naglalaro ng basketball sa isang outdoor court.[IMAGE_DESCRIPTION_END]"
-                    
-                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag. Do not add any text after the [IMAGE_DESCRIPTION_END] tag.
-                    `;
+                    Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
+                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
                     // =================================== END OF STRIKE 1 =================================== 
                     
                     if (imagePartsForGemini && imagePartsForGemini[0]?.inlineData?.data) {
@@ -1049,7 +1045,7 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                     
                     The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
                     
-                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
+                    Your Conversational Comment (as ${currentConnector.profileName}):
                     - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
                     - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
                     - AVOID generic phrases like "What's this?" or "Nice photo."
@@ -1058,7 +1054,7 @@ const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrche
                       - Ask an open-ended question driven by your curiosity and interests.
                       - Share a brief, relevant memory or thought from your own life experiences that the image sparks.
                     
-                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+                     CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
                     [IMAGE_DESCRIPTION_START]
                     A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
                     [IMAGE_DESCRIPTION_END]
@@ -1173,7 +1169,8 @@ const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
                 captionText?: string | null;
             } = {}
         ): Promise<void> {
-
+  const uniqueTmhCallId = Math.random().toString(36).substring(7);
+    console.log(`TMH: sendModalTextMessage INVOKED (ID: ${uniqueTmhCallId}). Text: "${textFromInput}", Options:`, JSON.parse(JSON.stringify(options)));
 
           const { checkAndIncrementUsage } = await import('./usageManager');
 const { openUpgradeModal } = await import('../ui/modalUtils');

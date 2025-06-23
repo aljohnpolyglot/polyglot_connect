@@ -17,14 +17,19 @@ console.log('view_action_coordinator.ts: Script loaded, waiting for core depende
 
 interface ViewActionCoordinatorModule {
     initialize: () => void;
-    displaySessionSummaryInMainView: (sessionData: SessionData | null) => void; // <<< ADD THIS
+    displaySessionSummaryInMainView: (sessionData: SessionData | null) => void;
+    // If updateEmptyListMessages is meant to be public, add it here:
+    // updateEmptyListMessages: () => void; 
 }
 
 // Placeholder
-window.viewActionCoordinator = {} as ViewActionCoordinatorModule;
+window.viewActionCoordinator = {
+    initialize: () => { throw new Error('VAC placeholder: initialize not implemented.'); },
+    displaySessionSummaryInMainView: () => { throw new Error('VAC placeholder: displaySessionSummaryInMainView not implemented.'); }
+} as ViewActionCoordinatorModule;
 console.log('view_action_coordinator.ts: Placeholder window.viewActionCoordinator assigned.');
-document.dispatchEvent(new CustomEvent('viewActionCoordinatorPlaceholderReady')); // <<< ADD THIS
-console.log('view_action_coordinator.ts: "viewActionCoordinatorPlaceholderReady" event dispatched.'); // <<< ADD THIS
+document.dispatchEvent(new CustomEvent('viewActionCoordinatorPlaceholderReady'));
+console.log('view_action_coordinator.ts: "viewActionCoordinatorPlaceholderReady" event dispatched.');
 
 function initializeActualViewActionCoordinator(): void {
     console.log("view_action_coordinator.ts: initializeActualViewActionCoordinator() called.");
@@ -32,14 +37,13 @@ function initializeActualViewActionCoordinator(): void {
     type VerifiedDeps = {
         domElements: YourDomElements;
         polyglotHelpers: PolyglotHelpersOnWindow;
-        uiUpdater?: UiUpdater; // Optional if only displaySummaryInView uses it heavily
+        uiUpdater?: UiUpdater;
         chatOrchestrator?: ChatOrchestrator;
         groupManager?: GroupManager;
         sessionHistoryManager?: SessionHistoryManager;
         filterController?: FilterController;
         chatUiManager?: ChatUiManager;
         polyglotSharedContent?: SharedContent;
-        // No direct dependency on TabManager needed if we just listen to its event
     };
 
     const getSafeDeps = (): VerifiedDeps | null => {
@@ -57,107 +61,100 @@ function initializeActualViewActionCoordinator(): void {
         const missing: string[] = [];
         if (!deps.domElements) missing.push("domElements");
         if (!deps.polyglotHelpers) missing.push("polyglotHelpers");
-        // For tab-specific actions, we check dependencies within the handler,
-        // but core ones like domElements and polyglotHelpers are essential for VAC itself.
         
-        // Check for existence of modules that will be called.
-        // If a module is missing, its specific tab action might fail silently or log an error there.
         if (!deps.filterController?.applyFindConnectorsFilters) console.warn("VAC: filterController.applyFindConnectorsFilters missing, 'find' tab action affected.");
         if (!deps.groupManager?.loadAvailableGroups) console.warn("VAC: groupManager.loadAvailableGroups missing, 'groups' tab action affected.");
         if (!deps.chatOrchestrator?.handleMessagesTabActive) console.warn("VAC: chatOrchestrator.handleMessagesTabActive missing, 'messages' tab action affected.");
         if (!deps.sessionHistoryManager?.updateSummaryListUI) console.warn("VAC: sessionHistoryManager.updateSummaryListUI missing, 'summary' tab action affected.");
         if (!deps.chatUiManager?.showGroupChatView) console.warn("VAC: chatUiManager.showGroupChatView missing, 'groups' tab action affected.");
 
-
-        if (missing.length > 0) { // Should only be domElements or polyglotHelpers
+        if (missing.length > 0) {
             console.error(`ViewActionCoordinator: getSafeDeps - MISSING CRITICAL: ${missing.join(', ')}.`);
             return null;
         }
         return deps as VerifiedDeps;
     };
 
-    const resolvedDeps = getSafeDeps();
-    if (!resolvedDeps) {
+    const resolvedDepsNullable = getSafeDeps(); // Step 1: Get potentially null deps
+
+    if (!resolvedDepsNullable) { // Step 2: Guard against null
         console.error("view_action_coordinator.ts: CRITICAL - domElements/polyglotHelpers not met. Placeholder remains.");
         document.dispatchEvent(new CustomEvent('viewActionCoordinatorReady'));
         console.warn('view_action_coordinator.ts: "viewActionCoordinatorReady" event dispatched (initialization FAILED).');
         return;
     }
-    console.log('view_action_coordinator.ts: Core dependencies appear ready for IIFE.');
+    
+    // Step 3: Assign to a new const. TypeScript now knows `finalDeps` is of type `VerifiedDeps` (non-null).
+    const finalDeps: VerifiedDeps = resolvedDepsNullable; 
 
-    window.viewActionCoordinator = ((): ViewActionCoordinatorModule => {
-        'use strict';
-        const { 
-            domElements, polyglotHelpers, uiUpdater, chatOrchestrator, 
-            groupManager, sessionHistoryManager, filterController, 
-            chatUiManager, polyglotSharedContent 
-        } = resolvedDeps;
+    console.log('view_action_coordinator.ts: Core dependencies appear ready. `finalDeps` is confirmed non-null.');
+   
+    // --- Define the actual implementation functions in this scope ---
+    // These functions will close over `finalDeps`, which TypeScript knows is not null.
 
+    function displaySessionSummaryInMainViewImpl(sessionData: SessionData | null): void {
+        console.log("VAC: displaySessionSummaryInMainViewImpl called with sessionData:", sessionData ? sessionData.sessionId : null);
+        
+        // Access properties from the non-null 'finalDeps'
+        const localUiUpdater = finalDeps.uiUpdater; 
+        const localDomElements = finalDeps.domElements;
 
-
-        function displaySessionSummaryInMainView(sessionData: SessionData | null): void {
-    console.log("VAC: displaySessionSummaryInMainView called with sessionData:", sessionData ? sessionData.sessionId : null);
-    if (uiUpdater?.displaySummaryInView) { // Check if uiUpdater and its method exist
-        uiUpdater.displaySummaryInView(sessionData);
-    } else {
-        console.error("VAC: uiUpdater.displaySummaryInView is not available to display summary in main view.");
-        // Fallback: clear the summary view or show an error directly manipulating DOM
-        if (domElements.summaryViewContent) {
-            domElements.summaryViewContent.innerHTML = sessionData 
-                ? `<p>Error: UI Updater could not display summary for ${sessionData.sessionId}.</p>`
-                : '<p>Error: UI Updater unavailable and no session data to display.</p>';
+        if (localUiUpdater?.displaySummaryInView) {
+            localUiUpdater.displaySummaryInView(sessionData);
+        } else {
+            console.error("VAC: uiUpdater.displaySummaryInView is not available to display summary in main view.");
+            if (localDomElements.summaryViewContent) { 
+                localDomElements.summaryViewContent.innerHTML = sessionData 
+                    ? `<p class="error-message">Error: UI Updater could not display summary for session ${sessionData.sessionId}.</p>`
+                    : '<p class="error-message">Error: UI Updater unavailable and no session data to display.</p>';
+            }
         }
     }
-    // This function assumes uiUpdater.displaySummaryInView handles the actual DOM manipulation
-    // for the main #summary-view .view-content area.
-    }
 
+    function updateEmptyListMessagesImpl(): void {
+        // console.log("VAC: updateEmptyListMessagesImpl() called.");
+        const localDomElements = finalDeps.domElements; // Use finalDeps
 
-        // --- Copied and adapted from old view_manager.ts ---
-      
-
-        function updateEmptyListMessages(): void {
-            // console.log("VAC: updateEmptyListMessages() called.");
-            if (!domElements) return;
-            const updateList = (ul: HTMLElement | null, msgEl: HTMLElement | null, defaultMsg: string, filterCheck?: () => boolean, filterMsg?: string) => {
-                if (ul && msgEl) {
-                    const hasItems = ul.children.length > 0;
-                    msgEl.style.display = hasItems ? 'none' : 'block';
-                    if (!hasItems) msgEl.textContent = (filterCheck?.() && filterMsg) ? filterMsg : defaultMsg;
-                }
-            };
-            updateList(domElements.chatListUl, domElements.emptyChatListMsg, "No active chats.");
-            updateList(domElements.summaryListUl, domElements.emptySummaryListMsg, "No session history.");
-            updateList(domElements.availableGroupsUl, domElements.groupLoadingMessage, "No groups available.",
-                () => !!(domElements.filterGroupLanguageSelect?.value && domElements.filterGroupLanguageSelect.value !== 'all'),
-                "No groups match your current filter."
-            );
-            if (domElements.connectorHubGrid) {
-                const loadingMsgEl = domElements.connectorHubGrid.querySelector('.loading-message') as HTMLElement | null;
-                if (loadingMsgEl) {
-                    const hasCards = domElements.connectorHubGrid.querySelectorAll('.connector-card').length > 0;
-                    loadingMsgEl.style.display = hasCards ? 'none' : 'block';
-                    if (!hasCards) {
-                        loadingMsgEl.textContent = 'No connectors available. Try adjusting filters.';
-                    }
+        const updateList = (ul: HTMLElement | null, msgEl: HTMLElement | null, defaultMsg: string, filterCheck?: () => boolean, filterMsg?: string) => {
+            if (ul && msgEl) {
+                const hasItems = ul.children.length > 0;
+                msgEl.style.display = hasItems ? 'none' : 'block';
+                if (!hasItems) msgEl.textContent = (filterCheck?.() && filterMsg) ? filterMsg : defaultMsg;
+            }
+        };
+        updateList(localDomElements.chatListUl, localDomElements.emptyChatListMsg, "No active chats.");
+        updateList(localDomElements.summaryListUl, localDomElements.emptySummaryListMsg, "No session history.");
+        updateList(localDomElements.availableGroupsUl, localDomElements.groupLoadingMessage, "No groups available.",
+            () => !!(localDomElements.filterGroupLanguageSelect?.value && localDomElements.filterGroupLanguageSelect.value !== 'all'),
+            "No groups match your current filter."
+        );
+        if (localDomElements.connectorHubGrid) {
+            const loadingMsgEl = localDomElements.connectorHubGrid.querySelector('.loading-message') as HTMLElement | null;
+            if (loadingMsgEl) {
+                const hasCards = localDomElements.connectorHubGrid.querySelectorAll('.connector-card').length > 0;
+                loadingMsgEl.style.display = hasCards ? 'none' : 'block';
+                if (!hasCards) {
+                    loadingMsgEl.textContent = 'No connectors available. Try adjusting filters.';
                 }
             }
         }
-        // --- End of copied functions ---
-
-              // ----- REPLACE THIS ENTIRE FUNCTION -----
-          
-      
-
-            return {
-    initialize: function (): void {
-        throw new Error('Function not implemented.');
-    },
-    displaySessionSummaryInMainView: function (sessionData: SessionData | null): void {
-        throw new Error('Function not implemented.');
     }
-};
-        })();
+        
+    function initializeVacImpl(): void {
+        console.log("ViewActionCoordinator: initialize() called by VAC itself.");
+        // ...
+    }
+
+    // Assign to window.viewActionCoordinator using an IIFE that just returns references
+    window.viewActionCoordinator = ((): ViewActionCoordinatorModule => {
+        'use strict';
+        return {
+            initialize: initializeVacImpl,
+            displaySessionSummaryInMainView: displaySessionSummaryInMainViewImpl
+            // updateEmptyListMessages: updateEmptyListMessagesImpl 
+        };
+    })();
+    // ... (rest of the file: if (window.viewActionCoordinator...) etc.)
 
     
 // REMOVE THE FOLLOWING LINE IF IT EXISTS - IT'S THE SOURCE OF THE ERROR

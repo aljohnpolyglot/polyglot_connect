@@ -318,6 +318,8 @@ function createSendHandler(
     previewContainer: HTMLElement | null
 ) {
     return async () => { // Made async for potential await later if needed
+        const uniqueSendId = Math.random().toString(36).substring(7); // Generate a unique ID for this specific handler invocation
+        console.log(`CEL: MODAL SEND HANDLER INVOKED (ID: ${uniqueSendId}). Context: ${context}`);
         if (!mainTextInputElement || !captionInputElement || !previewContainer) {
             console.error(`CEL: Missing critical elements for send handler in ${context} context.`);
             return;
@@ -414,6 +416,7 @@ function createSendHandler(
         } else if (context === 'modal') {
             const targetConnector = chatActiveTargetManager.getModalMessageTargetConnector();
             if (targetConnector) {
+                console.log(`CEL: Calling textMessageHandler.sendModalTextMessage for MODAL (Handler ID: ${uniqueSendId}) with text: "${textFromActiveInput}"`);
                 textMessageHandler.sendModalTextMessage(textFromActiveInput, targetConnector, sendOptions);
             }
         } else if (context === 'group') {
@@ -726,7 +729,7 @@ addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
                  
                 addSafeListener(domElements.messageSendBtn, 'click', sendModalHandler);
                 addSafeListener(domElements.messageSendBtn, 'mousedown', (e: Event) => e.preventDefault());
-                addSafeListener(domElements.messageSendBtn, 'click', sendModalHandler);
+              
                 addSafeListener(domElements.messageTextInput, 'keydown', (e: Event) => {
                     if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
                         e.preventDefault();

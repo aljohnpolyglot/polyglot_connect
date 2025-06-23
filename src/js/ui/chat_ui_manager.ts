@@ -182,36 +182,36 @@ console.log('chat_ui_manager.ts: Core functional dependencies (methods) appear r
     
 
             // --- Message Modal Listeners ---
-            if (domElements.messageSendBtn && domElements.messageTextInput) {
-                const doSendModalText = () => {
-                    const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
-                    const textValue = (domElements.messageTextInput as HTMLInputElement).value;
-                    if (textMessageHandler?.sendModalTextMessage && targetConnector && textValue.trim() !== "") {
-                        (textMessageHandler.sendModalTextMessage as Function)(textValue, targetConnector);
-                    }
-                };
-                (domElements.messageSendBtn as HTMLButtonElement).addEventListener('click', doSendModalText);
-                (domElements.messageTextInput as HTMLInputElement).addEventListener('keypress', (e: KeyboardEvent) => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSendModalText(); }
-                });
-            }
-            if (domElements.messageModalAttachBtn && domElements.messageModalImageUpload) {
-                 (domElements.messageModalAttachBtn as HTMLButtonElement).addEventListener('click', () => {
-                    const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
-                     if (targetConnector) {
-                        (domElements.messageModalImageUpload as HTMLInputElement).value = '';
-                        (domElements.messageModalImageUpload as HTMLInputElement).click();
-                     } else { alert("Please open a message modal to send an image."); }
-                });
-            }
-            if (domElements.messageModalMicBtn) {
-                 (domElements.messageModalMicBtn as HTMLButtonElement).addEventListener('click', () => {
-                    const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
-                    if (voiceMemoHandler?.handleNewVoiceMemoInteraction && targetConnector?.id) {
-                        voiceMemoHandler.handleNewVoiceMemoInteraction('modal', domElements.messageModalMicBtn as HTMLButtonElement, targetConnector.id);
-                    }
-                });
-            }
+            // if (domElements.messageSendBtn && domElements.messageTextInput) {
+            //     const doSendModalText = () => {
+            //         const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
+            //         const textValue = (domElements.messageTextInput as HTMLInputElement).value;
+            //         if (textMessageHandler?.sendModalTextMessage && targetConnector && textValue.trim() !== "") {
+            //             (textMessageHandler.sendModalTextMessage as Function)(textValue, targetConnector);
+            //         }
+            //     };
+            //     (domElements.messageSendBtn as HTMLButtonElement).addEventListener('click', doSendModalText);
+            //     (domElements.messageTextInput as HTMLInputElement).addEventListener('keypress', (e: KeyboardEvent) => {
+            //         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSendModalText(); }
+            //     });
+            // }
+            // if (domElements.messageModalAttachBtn && domElements.messageModalImageUpload) {
+            //      (domElements.messageModalAttachBtn as HTMLButtonElement).addEventListener('click', () => {
+            //         const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
+            //          if (targetConnector) {
+            //             (domElements.messageModalImageUpload as HTMLInputElement).value = '';
+            //             (domElements.messageModalImageUpload as HTMLInputElement).click();
+            //          } else { alert("Please open a message modal to send an image."); }
+            //     });
+            // }
+            // if (domElements.messageModalMicBtn) {
+            //      (domElements.messageModalMicBtn as HTMLButtonElement).addEventListener('click', () => {
+            //         const targetConnector = chatOrchestrator.getCurrentModalMessageTarget?.();
+            //         if (voiceMemoHandler?.handleNewVoiceMemoInteraction && targetConnector?.id) {
+            //             voiceMemoHandler.handleNewVoiceMemoInteraction('modal', domElements.messageModalMicBtn as HTMLButtonElement, targetConnector.id);
+            //         }
+            //     });
+            // }
 
             // --- Group Chat Listeners ---
             if (domElements.sendGroupMessageBtn && domElements.groupChatInput) {

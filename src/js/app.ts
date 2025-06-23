@@ -443,16 +443,25 @@ if (jumpButtonManager && tabManager) {
 
         console.log("APP_DEBUG: setupGlobalModalButtonListeners - dom.closeRecapBtn:", dom.closeRecapBtn);
         dom.closeRecapBtn?.addEventListener('click', () => {
-            console.log("APP_DEBUG: Close Recap Button CLICKED.");
+            console.log("APP_DEBUG: Close Recap Button CLICKED. (No redirect expected)"); // Updated log
 
-            // --- THIS IS THE FIX ---
-            const tabManager = window.tabManager as TabManagerModule | undefined;
-            if (dom.sessionRecapScreen) {
+            // const tabManager = window.tabManager as TabManagerModule | undefined; // Not needed for the fix
+            if (dom.sessionRecapScreen && mh) { // Ensure mh is available
                 mh.close(dom.sessionRecapScreen);
             }
-            // After closing the modal, force a switch to the messages tab.
-            // This will trigger the chat view to re-render with the latest history.
-            tabManager?.switchToTab('messages');
+            
+            // DO NOT SWITCH TABS. The user should remain on the 'summary' tab
+            // if they opened the recap modal from there.
+            // tabManager?.switchToTab('messages'); // <<< REMOVED THIS LINE
+
+            // Optional: If closing the recap modal should clear the main view summary display
+            // when on the summary tab, you might add logic here.
+            // For now, the request is just to prevent the redirect.
+            // Example of optional clear:
+            // const currentTab = window.tabManager?.getCurrentActiveTab();
+            // if (currentTab === 'summary' && window.viewActionCoordinator?.displaySessionSummaryInMainView) {
+            //     window.viewActionCoordinator.displaySessionSummaryInMainView(null);
+            // }
         });
 
         console.log("APP_DEBUG: setupGlobalModalButtonListeners - dom.downloadTranscriptBtn:", dom.downloadTranscriptBtn);

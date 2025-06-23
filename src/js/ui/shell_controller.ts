@@ -56,7 +56,10 @@ function initializeActualShellController(): void {
             chatActiveTargetManager: window.chatActiveTargetManager as import('../types/global').ChatActiveTargetManager | undefined,
             sidebarPanelManager: window.sidebarPanelManager as import('../types/global').SidebarPanelManagerModule | undefined,
             filterController: window.filterController as import('../types/global').FilterController | undefined,
-            personaModalManager: window.personaModalManager as import('../types/global').PersonaModalManager | undefined
+            personaModalManager: window.personaModalManager as import('../types/global').PersonaModalManager | undefined,
+            conversationManager: window.conversationManager as import('../types/global').ConversationManager | undefined,
+            groupDataManager: window.groupDataManager as import('../types/global').GroupDataManager | undefined 
+      
         });
         let currentActiveTab = 'home'; // This was also in view_manager. Consider consolidating.
 
@@ -324,34 +327,76 @@ function setupMasterViewCoordinator(initialTab: string) {
     console.log('[Shell Coordinator] Setting up master event listener.');
 
     // This is the function that will run every time a tab is switched.
-    const handleViewChange = (tabName: string) => {
+      // This is the function that will run every time a tab is switched.
+      const handleViewChange = (tabName: string) => {
         console.log(`%c[Shell Coordinator] Coordinating view for tab: '${tabName}'`, 'color: #198754; font-weight: bold;');
 
         // Get fresh dependencies every time
-        const { filterController, groupManager, chatManager, chatOrchestrator, sessionHistoryManager, uiUpdater, sidebarPanelManager } = getDeps();
-        // Step 1: Tell ShellController to handle the basic UI switch
+        const { 
+            filterController, 
+            // groupManager, // groupDataManager is more direct for checking joined groups
+            chatManager, 
+            chatOrchestrator, 
+            sessionHistoryManager, 
+            uiUpdater, 
+            sidebarPanelManager,
+            conversationManager, // <<< Ensure this is available from getDeps()
+            groupDataManager     // <<< Ensure this is available from getDeps()
+        } = getDeps();
+
+        // Step 1: Tell ShellController to handle the basic UI switch (updates main view and nav item styles)
         switchView(tabName);
 
         // Step 2: Tell the Sidebar to update its panel for the new tab
         sidebarPanelManager?.updatePanelForCurrentTab(tabName);
 
-        // Step 3: Call the specific content-loading function for the new tab
+        // Step 3: Call the specific content-loading function for the new tab, with auto-redirect logic
         if (tabName === 'friends') {
-            // This tells the filter controller to reset its state to the default "Discover" view.
-            // This will, in turn, trigger applyFindConnectorsFilters with the correct state.
-            console.log("[Shell Coordinator] Friends tab activated. Resetting filters to default view.");
-            filterController?.resetToDefaultFriendsView(); 
+            if (!filterController) {
+                console.error("[Shell Coordinator] FilterController not available for 'friends' tab.");
+                return;
+            }
+            const myFriends = conversationManager?.getActiveConversations().filter(c => !c.isGroup && c.connector) || [];
+            
+            if (myFriends.length === 0) {
+                console.log("[Shell Coordinator] Friends tab: 'My Friends' is empty. Auto-switching to 'Discover Friends' sub-tab.");
+                filterController.switchFriendsViewTab('discover', true); // <<< Add true// This will also trigger filters
+            } else {
+                console.log("[Shell Coordinator] Friends tab: 'My Friends' has content. Defaulting to 'My Friends' sub-tab.");
+                filterController.switchFriendsViewTab('my-friends', true); // <<< Add true // This defaults to 'my-friends' and applies filters
+            }
         } else if (tabName === 'groups') {
-            // The groups flow is already correct.
-            chatOrchestrator?.handleGroupsTabActive();
+            if (!filterController || !groupDataManager) { 
+                console.error("[Shell Coordinator] FilterController or GroupDataManager not available for 'groups' tab.");
+                return;
+            }
+            
+            // Use getAllGroupDataWithLastActivity as it computes an isJoined status for sidebar population
+            // This list is generally more "settled" regarding join status on refresh.
+            const activeAndJoinedGroupsForSidebar = groupDataManager.getAllGroupDataWithLastActivity() || [];
+            
+            // Filter this list further to specifically count groups marked as joined by its internal logic
+            const trulyJoinedGroups = activeAndJoinedGroupsForSidebar.filter(g => g.isJoined);
+
+            console.log(`[Shell Coordinator] Groups tab processing: Found ${trulyJoinedGroups.length} 'trulyJoinedGroups' (via GDM.getAllGroupDataWithLastActivity).`);
+            console.error(`%c[SHELL_DEBUG] At initial 'groups' tab load: trulyJoinedGroups IDs: ${JSON.stringify(trulyJoinedGroups.map(g => g.id))}`, "color: white; background: blue;");
+            if (trulyJoinedGroups.length === 0) {
+                console.log("[Shell Coordinator] Groups tab: 'My Groups' determined to be empty. Auto-switching to 'Discover Groups' sub-tab.");
+                filterController.switchGroupViewTab('discover', true); // <<< Add true
+            } else {
+                console.log("[Shell Coordinator] Groups tab: 'My Groups' has content. Defaulting to 'My Groups' sub-tab.");
+                filterController.switchGroupViewTab('my-groups', true); // <<< Add true
+            }
         } else if (tabName === 'messages') {
             chatManager?.handleMessagesTabActive();
         } else if (tabName === 'summary') {
             sessionHistoryManager?.updateSummaryListUI();
             uiUpdater?.displaySummaryInView(null);
+        } else if (tabName === 'home') {
+            // Handle home tab if necessary, or let it be managed by switchView only
+            console.log("[Shell Coordinator] Home tab activated.");
         }
     };
-
     // Listen for all future tab switches
     document.addEventListener('tabSwitched', (e: Event) => {
         const newTab = (e as CustomEvent).detail?.newTab;
@@ -638,6 +683,16 @@ const SC_DEPENDENCIES: { eventName: string, windowObjectKey: keyof Window, keyFu
         eventName: 'filterControllerReady',                 // <<<< IMPORTANT
         windowObjectKey: 'filterController',
         keyFunction: 'applyFindConnectorsFilters'           // <<<< IMPORTANT
+    },
+    { 
+        eventName: 'conversationManagerReady', 
+        windowObjectKey: 'conversationManager', 
+        keyFunction: 'initialize' // Or another key method to verify
+    },
+    { 
+        eventName: 'groupDataManagerReady', 
+        windowObjectKey: 'groupDataManager', 
+        keyFunction: 'initialize' // Or another key method to verify
     },
     { eventName: 'polyglotDataReady', windowObjectKey: 'polyglotFilterLanguages' } , // For populateFilterDropdowns (polyglotFilterLanguages is from polyglotDataReady)
 

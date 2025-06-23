@@ -153,9 +153,18 @@ function loadAvailableGroups(
     let groupsToDisplay: Group[];
 
     if (options.viewType === 'my-groups') {
-        groupsToDisplay = allGroups.filter(g => g.isJoined);
+        // --- THIS IS THE ORIGINAL FILTERING LOGIC ---
+        const joinedGroupIdsFromIsJoinedCheck = allGroups
+            .filter(g => groupDataManager.isGroupJoined(g.id))
+            .map(g => g.id);
+        
+        groupsToDisplay = allGroups.filter(g => groupDataManager.isGroupJoined(g.id)); 
+        
+        console.error(`%c[GM_DEBUG] In 'my-groups' view. Initial allGroups count: ${allGroups.length}. After filtering with groupDataManager.isGroupJoined(), groupsToDisplay count: ${groupsToDisplay.length}. IDs: ${JSON.stringify(joinedGroupIdsFromIsJoinedCheck)}`, "color: white; background: purple;");
+        
     } else { 
-        groupsToDisplay = allGroups.filter(g => !g.isJoined);
+        groupsToDisplay = allGroups.filter(g => !groupDataManager.isGroupJoined(g.id));
+        console.error(`%c[GM_DEBUG] In 'discover' view. Initial allGroups count: ${allGroups.length}. After filtering for NOT groupDataManager.isGroupJoined(), groupsToDisplay count: ${groupsToDisplay.length}.`, "color: white; background: teal;");
     }
 
     // Call the UI handler to render the list

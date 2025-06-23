@@ -1444,16 +1444,81 @@ export interface SessionStateManager {
   isSessionActive: () => boolean;
   recordFailedCallAttempt: (connector: Connector, reason?: string) => void; // CORRECTED: Made required
 }
-// PASTE ENDS HERE
+// PASTE ENDS 
+
+
+// Inside src/js/types/global.d.ts
+
+// Make sure YourDomElements, PolyglotHelpers, and ChatMessageOptions are imported or defined above
+// import type { YourDomElements, PolyglotHelpersOnWindow as PolyglotHelpers, ChatMessageOptions } from './your-other-types-path';
+
 export interface ChatUiUpdaterModule {
   initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }): void;
-  appendSystemMessage(logEl: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean): HTMLElement | null;
-  appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options?: ChatMessageOptions): HTMLElement | null;
+  
+  appendSystemMessage(
+    logEl: HTMLElement | null, 
+    text: string, 
+    isError?: boolean, 
+    isTimestamp?: boolean
+  ): HTMLElement | null;
+  
+  appendChatMessage(
+    logElement: HTMLElement | null, 
+    text: string, 
+    senderClass: string, 
+    options?: ChatMessageOptions // This already handles images, voice memos, reactions for display
+  ): HTMLElement | null;
+  
   scrollChatLogToBottom(chatLogElement: HTMLElement | null): void;
+  
   clearLogCache(logElement: HTMLElement): void;
+
+  // --- NEW METHODS NEEDED BY REACTION_HANDLER ---
+  showUnifiedInteractionMenu: (
+      triggerBubbleElement: HTMLElement, 
+      currentUserReaction?: string // Optional: to pre-select an emoji in the menu
+  ) => void;
+
+  hideUnifiedInteractionMenu: () => void;
+
+  // This method updates the small reaction badge (e.g., "👍 1") that appears on/below the message bubble
+  updateDisplayedReactionOnBubble: (
+      messageWrapperElement: HTMLElement, 
+      newEmoji: string | null // null to clear the displayed reaction badge
+  ) => void;
+
+  // Helper to determine if a click event originated from within the unified menu
+  isEventInsideUnifiedInteractionMenu: (event: Event) => boolean;
+
+  // Optional but highly recommended: Checks if the unified menu is visible FOR A SPECIFIC BUBBLE
+  isUnifiedInteractionMenuVisibleForBubble?: (triggerBubbleElement: HTMLElement) => boolean; 
+  
+  // Optional: A more general check if ANY unified menu is currently visible
+  isUnifiedInteractionMenuVisible?: () => boolean; 
+
+  // Optional helpers for updating the state of buttons WITHIN the unified menu
+  // (if ChatUiUpdater is responsible for their visual state changes during/after actions)
+  showMenuActionFeedback?: (
+      menuButtonElement: HTMLElement, 
+      feedbackText: string // e.g., "Copied!"
+  ) => void;
+
+  updateMenuTranslateButtonText?: (
+      menuButtonElement: HTMLElement, 
+      newButtonText: string // e.g., "Translate" or "Original"
+  ) => void;
+
+  showMenuActionInProgress?: (
+      menuButtonElement: HTMLElement, 
+      progressText: string // e.g., "Translating..."
+  ) => void;
+
+  resetMenuActionInProgress?: (
+      menuButtonElement: HTMLElement, 
+      defaultTextAfterProgress: string // e.g., "Translate" or "Original"
+  ) => void;
+  getWrapperForActiveUnifiedMenu?: () => HTMLElement | null; // <<< ADD THIS LINE
 }
-
-
 export interface LiveCallHandler {
   startLiveCall: (connector: Connector, sessionTypeWithContext: string) => Promise<boolean>; // More specific
   endLiveCall: (generateRecap?: boolean) => void; // <<< ADD THIS LINE
