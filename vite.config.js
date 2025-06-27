@@ -25,7 +25,11 @@ export default defineConfig({
         main: 'index.html',
         app: 'app.html',
         pricing: 'pricing.html',
-        dossier: 'dossier.html'
+        dossier: 'dossier.html',
+        terms: 'terms.html',
+        privacy: 'privacy.html',
+        updates: 'updates.html',
+        join_us: 'join-us.html',
       },
     }
   },
