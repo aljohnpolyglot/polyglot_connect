@@ -166,24 +166,39 @@ const uiConfig: firebaseui.auth.Config = {
 };
 
 // This part runs when the page is loaded
-document.addEventListener('DOMContentLoaded', function() {
-  initializeLandingPageNavbar(); // <<< ADD THIS LINE FIRST // Initialize the FirebaseUI Widget and render it
-    const ui = new firebaseui.auth.AuthUI(auth);
-    
-    const authContainer = document.getElementById('firebaseui-auth-container');
-    if (authContainer) {
-        ui.start('#firebaseui-auth-container', uiConfig);
-    }
+document.addEventListener('DOMContentLoaded', async function() {
+  // STEP 1: Await the navbar initialization.
+  // The rest of the code will NOT run until the navbar is fully loaded and interactive.
+  // This is the critical fix that solves the race condition.
+  await initializeLandingPageNavbar(); 
+  console.log("Navbar initialization complete. Proceeding with page logic.");
 
-    const finalCtaButton = document.getElementById('final-cta-btn');
-    const heroSection = document.querySelector('.hero-section');
+  // STEP 2: Now that the navbar is guaranteed to be on the page, initialize other parts.
+  // Initialize the FirebaseUI Widget.
+  const ui = new firebaseui.auth.AuthUI(auth);
+  
+  const authContainer = document.getElementById('firebaseui-auth-container');
+  if (authContainer) {
+      ui.start('#firebaseui-auth-container', uiConfig);
+  } else {
+      console.warn("FirebaseUI auth container not found on this page.");
+  }
 
-    if (finalCtaButton && heroSection) {
-        finalCtaButton.addEventListener('click', function(e) {
-            e.preventDefault();
-            (heroSection as HTMLElement).scrollIntoView({ behavior: 'smooth' });
-        });
-    }
+  // Initialize other interactive elements like buttons.
+  const finalCtaButton = document.getElementById('final-cta-btn');
+  const heroSection = document.querySelector('.hero-section');
+
+  if (finalCtaButton && heroSection) {
+      finalCtaButton.addEventListener('click', function(e) {
+          e.preventDefault();
+          // This is a cleaner way to scroll
+          heroSection.scrollIntoView({ behavior: 'smooth' });
+      });
+  }
+
+  // You can now be sure any other logic here runs AFTER the navbar is ready.
+  // For example, if you have a "roster_renderer.ts" that needs to run,
+  // you would call its initialization function here.
 });
 
 // NOTE: The separate navbar logic is no longer needed here because
