@@ -10,6 +10,8 @@ import type {
     MemoryBank,
     MessageInStore // <<< ADD THIS LINE
 } from '../types/global.d.ts';
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from '../firebase-config';
 // ===================  END: REPLACEMENT  ===================
 
 console.log("memory_service.ts: Script execution STARTED (Cerebrum v1.0).");
@@ -17,7 +19,8 @@ console.log("memory_service.ts: Script execution STARTED (Cerebrum v1.0).");
 // --- CONSTANTS ---
 const REINFORCEMENT_BOOST = 0.05; // Boost confidence by 5% on each recall
 const CORE_PROMOTION_THRESHOLD = 0.98; // Promote to CORE when confidence exceeds this
-const MEMORY_STORAGE_KEY = "polyglotCerebrum_user_default";
+
+
 const FACT_EXTRACTOR_PROVIDER = "groq"; // Use a fast provider for extraction
 // ADD THESE NEW LINES:
 // =================== START: ADD NEW CONSTANTS ===================
@@ -45,43 +48,74 @@ function initializeActualMemoryService(): void {
         'use strict';
 
         let memoryLedger: CerebrumMemoryLedger | null = null;
-        const currentUserId = "user_default"; // Placeholder for now
+        let isLedgerInitialized = false;
 
         // --- PRIVATE HELPER FUNCTIONS ---
-        const _getLedger = (): CerebrumMemoryLedger => {
-            if (memoryLedger) return memoryLedger;
-        
-            try {
-                const storedData = localStorage.getItem(MEMORY_STORAGE_KEY);
-                if (storedData) {
-                    const parsed = JSON.parse(storedData) as CerebrumMemoryLedger;
-                    // Basic validation
-                    if (parsed.user_memory && parsed.ai_memory) {
-                        memoryLedger = parsed;
-                        return memoryLedger;
-                    }
-                }
-            } catch (e) {
-                console.error("[CEREBRUM_ERROR] Failed to parse memory ledger from localStorage.", e);
+        const _getLedger = async (): Promise<CerebrumMemoryLedger> => {
+            const user = auth.currentUser;
+            if (!user) {
+                console.error("[CEREBRUM_ERROR] Cannot get ledger, no authenticated user.");
+                // Return a temporary, empty ledger to prevent crashes
+                return { userId: 'guest', user_memory: { core: [], episodic: [], fragile: [] }, ai_memory: {}, last_updated: 0 };
             }
         
-            // Create a new, correctly structured ledger
-            memoryLedger = {
-                userId: currentUserId,
-                user_memory: { core: [], episodic: [], fragile: [] },
-                ai_memory: {},
-                last_updated: Date.now()
-            };
+            // If we have a cached, initialized ledger, return it to avoid unnecessary reads.
+            if (memoryLedger && isLedgerInitialized) return memoryLedger;
+        
+            const memoryDocRef = doc(db, "users", user.uid, "memory", "main_ledger");
+            
+            try {
+                const docSnap = await getDoc(memoryDocRef);
+                if (docSnap.exists()) {
+                    memoryLedger = docSnap.data() as CerebrumMemoryLedger;
+                    console.log("[CEREBRUM] Successfully loaded memory ledger from Firestore.");
+                } else {
+                    console.log("[CEREBRUM] No memory ledger found in Firestore. Creating new one.");
+                    memoryLedger = {
+                        userId: user.uid,
+                        user_memory: { core: [], episodic: [], fragile: [] },
+                        ai_memory: {},
+                        last_updated: Date.now()
+                    };
+                }
+            } catch (e) {
+                console.error("[CEREBRUM_ERROR] Failed to fetch memory ledger from Firestore.", e);
+                // Create a fallback ledger on error
+                memoryLedger = {
+                    userId: user.uid,
+                    user_memory: { core: [], episodic: [], fragile: [] },
+                    ai_memory: {},
+                    last_updated: Date.now()
+                };
+            }
+            
+            isLedgerInitialized = true;
             return memoryLedger;
         };
 
-        const _saveLedger = (): void => {
-            if (!memoryLedger) return;
+        const _saveLedger = async (): Promise<void> => {
+            const user = auth.currentUser;
+            if (!user) {
+                console.error("[CEREBRUM_ERROR] Cannot save ledger, no authenticated user.");
+                return;
+            }
+            if (!memoryLedger) {
+                console.error("[CEREBRUM_ERROR] Cannot save, memoryLedger is null.");
+                return;
+            }
+        
+            const memoryDocRef = doc(db, "users", user.uid, "memory", "main_ledger");
+            
             try {
-                memoryLedger.last_updated = Date.now();
-                localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(memoryLedger));
+                // Use 'any' here for the serverTimestamp, which is a sentinel value
+                const dataToSave: any = {
+                    ...memoryLedger,
+                    last_updated_server: serverTimestamp() // Use server-side timestamp for accuracy
+                };
+                await setDoc(memoryDocRef, dataToSave, { merge: true });
+                console.log("[CEREBRUM] Successfully saved memory ledger to Firestore.");
             } catch (e) {
-                console.error("[CEREBRUM_ERROR] Failed to save memory ledger to localStorage.", e);
+                console.error("[CEREBRUM_ERROR] Failed to save memory ledger to Firestore.", e);
             }
         };
 
@@ -99,8 +133,8 @@ function initializeActualMemoryService(): void {
  * Version 3.0 uses precise whole-word and pattern matching to avoid false positives.
  */
 
-function _collectGarbage(): void {
-    const ledger = _getLedger();
+async function _collectGarbage(): Promise<void> {
+    const ledger = await _getLedger();
     if (!ledger) return;
 
     // JUNK KEYWORDS: More aggressive list based on the new data
@@ -170,7 +204,7 @@ function _collectGarbage(): void {
 
     if (factsRemoved > 0 || factsMerged > 0) {
         console.log(`%c[GARBAGE COLLECTOR v5] 🗑️ Removed: ${factsRemoved}, Merged: ${factsMerged}. Saving clean ledger.`, 'color: #fd7e14; font-weight: bold;');
-        _saveLedger();
+        await _saveLedger();
     } else {
         console.log(`[GARBAGE COLLECTOR v5] 🗑️ Scan complete. No junk or duplicates found.`);
     }
@@ -181,12 +215,10 @@ function _collectGarbage(): void {
 
         
         // --- PUBLIC SERVICE FUNCTIONS ---
-        async function initialize(): Promise<void> {
-            const ledger = _getLedger();
-            _collectGarbage();
-            console.log(
-                `[CEREBRUM_INIT] 🧠 Memory service initialized. Found ${ledger.user_memory.core.length} user core, ${Object.keys(ledger.ai_memory).length} personas with AI memories.`
-            );
+        async function initialize(): Promise<void> { // <<< CHANGE: Added async keyword
+            await _getLedger();
+            await _collectGarbage(); // <<< CHANGE: Added await
+            console.log(`[CEREBRUM_INIT] 🧠 Memory service initialized for Firestore.`);
         }
 
   // PASTE THIS NEW FUNCTION IN PLACE OF THE OLD _extractFactsFromSource
@@ -241,11 +273,19 @@ Now, generate the JSON array. If no facts about the User are found, return an em
             ? "This text is from the AI persona themselves. Analyze it for facts ABOUT THE AI's own identity."
             : "This text is from the user. Analyze it for facts ABOUT THE USER.";
 
-        extractionPrompt = `You are a highly efficient cognitive analysis AI called "The Scribe".
+            extractionPrompt = `You are a highly efficient cognitive analysis AI called "The Scribe". Your goal is to extract concrete facts from a user's message, even if it's colloquial.
 
-CONTEXT: ${sourceTextDescription}
-Analyze the following single line of text:
-${textSource}
+            CONTEXT: ${sourceTextDescription}
+            Analyze the following single line of text:
+            ${textSource}
+            
+            --- FACT REINFORCEMENT & EXAMPLES ---
+            You MUST interpret the user's intent, not just their literal words.
+            - If the user says "idol ko si lebron eh", they are stating their favorite player. You MUST extract: {"key": "userFavoritePlayer", "value": "LeBron James", "type": "CORE"}
+            - If the user says "Warriors for life!", they are stating their favorite team. You MUST extract: {"key": "userFavoriteTeam", "value": "Golden State Warriors", "type": "CORE"}
+            - If the user says "I work as a code monkey", they are stating their profession. You MUST extract: {"key": "userProfession", "value": "Software Developer", "type": "EPISODIC"}
+            - If the user says "Haha that's funny", it is NOT a fact. Return an empty array.
+            
 
 Categorize any found facts into one of three tiers:
 - CORE: Foundational, identity-defining facts (name, profession, a "favorite" thing).
@@ -277,35 +317,73 @@ Your response MUST be ONLY a valid JSON array of fact objects, each with a "key"
         };
 
         const response = await (window as any)._geminiInternalApiCaller(payload, modelToUse, "generateContent");
+        
+        // =================== FORENSIC INTERCEPTOR v1.0 START ===================
+        // We're treating the AI's response as a crime scene.
+        // It's supposed to be a clean JSON array, but it might be contaminated.
+        
+    
+        // =================== FORENSIC INTERCEPTOR v3.0 - THE DEEP EXTRACTOR ===================
+        console.log(`%c[Scribe Forensics v3.0] 🕵️‍♂️ Raw API Response Object:`, 'color: #fd7e14; font-weight: bold;', response);
 
-        let parsedJson: any[] = [];
-        if (typeof response.response === 'string' && response.response.trim().startsWith('[')) {
-            try {
-                parsedJson = JSON.parse(response.response);
-                console.log(`[Scribe] AI Response (Parsed JSON):`, parsedJson);
-            } catch (jsonError) {
-                console.error(`[Scribe] Failed to parse JSON response:`, jsonError, "Raw response:", response.response);
+        let extractedJsonString: string | null = null;
+        
+        // Step 1: Check the most likely path for Gemini API responses.
+        if (response?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            extractedJsonString = response.response.candidates[0].content.parts[0].text;
+            console.log(`%c[Scribe Forensics v3.0] ✅ SUCCESS: Extracted text from deep within the Gemini response object.`, 'color: #20c997; font-weight: bold;');
+        } else {
+            // Step 2: Fallback to the previous check if the deep path fails.
+            if (response && response.response && typeof response.response === 'string') {
+                extractedJsonString = response.response.trim();
+                console.log(`%c[Scribe Forensics v3.0] ✅ Fallback Success: Extracted text from the top-level 'response' property.`, 'color: #198754;');
+            } else {
+                console.error(`%c[Scribe Forensics v3.0] ❌ CRITICAL FAILURE: Could not find a processable text string in the response object.`, 'color: #dc3545; font-weight: bold;');
                 console.groupEnd();
                 return [];
             }
-        } else {
-            console.log(`%c[Scribe Reasoning] The AI did not return a valid JSON array.`, 'color: #dc3545; font-weight: bold;');
-            console.log(`[Scribe Reasoning] Raw AI Response Object:`, response);
-            console.warn(`[Scribe] AI did not return a valid JSON array string. Response:`, response);
-            console.groupEnd();
-            return [];
         }
 
-        if (Array.isArray(parsedJson)) {
-            const newFacts: MemoryFact[] = parsedJson.map((fact: any) => ({
+        console.log(`%c[Scribe Forensics v3.0] 🕵️‍♂️ FINAL EVIDENCE STRING:`, 'color: #0d6efd; font-weight: bold;', `"${extractedJsonString}"`);
+
+        let findings: any[] = [];
+        // <<<--- JSON PARSER GUARD v1.0 --- START --->>>
+        if (extractedJsonString && typeof extractedJsonString === 'string') {
+            try {
+                // Step 3: Attempt to process the primary evidence.
+                findings = JSON.parse(extractedJsonString);
+            } catch (e) {
+                console.error(`%c[Scribe Forensics v3.0] ❌ PARSE FAILED: The extracted string was not valid JSON.`, 'color: #dc3545; font-weight: bold;', e);
+                // No need to return here, 'findings' will remain an empty array.
+            }
+        } else {
+            console.warn(`%c[Scribe Forensics v3.0] 🧐 SKIPPING PARSE: No valid string was extracted to be parsed.`, 'color: #ffc107; font-weight: bold;');
+        }
+        // <<<--- JSON PARSER GUARD v1.0 --- END --->>>
+        // =================== FORENSIC INTERCEPTOR v3.0 END ===================
+
+        if (Array.isArray(findings)) {
+            const newFacts: MemoryFact[] = findings.map((fact: any) => ({
                 ...fact,
                 timestamp: Date.now(),
                 initialConfidence: fact.type === 'CORE' ? 1.0 : (fact.type === 'EPISODIC' ? 0.90 : 0.75),
+                // <<<--- EVIDENCE TAGGER v1.0 --- START --->>>
+                // This ensures every fact is stamped with where it was learned.
                 source_context: source_context as 'one_on_one' | 'group' | 'live_call' | 'ai_invention',
                 source_persona_id: source_persona_id
+                // <<<--- EVIDENCE TAGGER v1.0 ---  END  --->>>
             }));
-            console.log(`[Scribe] Successfully extracted ${newFacts.length} new fact(s).`);
-            console.groupEnd();
+            console.groupEnd(); 
+            
+            // <<<--- THE REVEAL v1.0 --- START --->>>
+            // This is the important part. Log it outside the collapsed group.
+            if (newFacts.length > 0) {
+                console.log(`%c[Scribe] ✅ TREASURE UNCOVERED! Extracted ${newFacts.length} fact(s). Saving to memory.`, 'color: white; background: #20c997; padding: 2px 5px; border-radius: 3px;', newFacts);
+            } else {
+                console.log(`%c[Scribe] 🧐 The treasure chest was empty. No new facts extracted.`, 'color: #6c757d; font-style: italic;');
+            }
+            // <<<--- THE REVEAL v1.0 ---  END  --->>>
+
             return newFacts;
         }
 
@@ -342,22 +420,23 @@ function simpleFuzzyMatch(str1: any, str2: any): number {
     return (longer.length - distance) / longer.length;
 }
 
-// =================== START: REPLACEMENT ===================
 async function processNewUserMessage(
     text: string,
-    personaIds: string | string[], // Can be a single ID or an array of audience IDs
+    personaIds: string | string[],
     context: 'one_on_one' | 'group' | 'live_call' | 'ai_invention',
     history: MessageInStore[] = []
-): Promise<void> {
+): Promise<boolean> { // <<< FIX #1: Return type is now boolean
     const mainPersonaId = Array.isArray(personaIds) ? personaIds[0] : personaIds;
     console.log(`%c[Hippocampus] Received text for analysis. Context: ${context}. Persona(s): ${Array.isArray(personaIds) ? personaIds.join(', ') : personaIds}`, 'color: #6610f2; font-weight: bold;');
 
-    // 1. The Scribe extracts facts. It only needs one persona ID for context during extraction.
     const newFacts = await _extractFactsFromSource(text, history, context, mainPersonaId);
-    if (newFacts.length === 0) return;
+    if (newFacts.length === 0) {
+        return false; // <<< FIX #2: Return false if no facts
+    }
 
-    const ledger = _getLedger();
+    const ledger = await _getLedger();
     const audience = Array.isArray(personaIds) ? personaIds : [personaIds];
+
 
     // 2. Loop through each new fact found by The Scribe
     for (const newFact of newFacts) {
@@ -386,7 +465,7 @@ async function processNewUserMessage(
                         simpleFuzzyMatch(String(existingFact.value), String(newFact.value)) > 0.9) {
                         
                         existingFact.timestamp = Date.now();
-                        existingFact.initialConfidence = Math.min(1.0, (existingFact.initialConfidence || 0.75) + (newFact.confidenceBoost || REINFORCEMENT_BOOST));
+                        existingFact.initialConfidence = Math.min(1.0, (existingFact.initialConfidence || 0.75) + REINFORCEMENT_BOOST);
                         console.log(`[CEREBRUM_REINFORCE] 💪 Reinforced fact in [${targetId}]'s memory: "${existingFact.key}".`);
                         reinforced = true;
                         break;
@@ -409,7 +488,8 @@ async function processNewUserMessage(
             }
         }
     }
-    _saveLedger();
+    await _saveLedger(); // <<< CHANGE: await the save operation
+    return true; // <<< FIX #3: Return true because we saved something
 }
 // ===================  END: REPLACEMENT  ===================
 // ===================  END: REPLACEMENT  ===================
@@ -430,7 +510,7 @@ async function processNewUserMessage(
 // REPLACE THE ENTIRE getMemoryForPrompt FUNCTION WITH THIS v5.2 VERSION:
 // =================== START: REPLACEMENT v5.2 ===================
 async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, facts: MemoryFact[]}> {
-    const ledger = _getLedger();
+    const ledger = await _getLedger(); // <<< CHANGE: await the ledger
     if (!ledger) {
         return {
             prompt: "// Memory ledger not available.",
@@ -526,7 +606,7 @@ async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, f
         
         if (memoryWasModified) {
             console.log("[Thalamus] Saving updated memory ledger after reinforcement/promotion.");
-            _saveLedger();
+            await _saveLedger(); // <<< CHANGE: await the save operation
         }
 
         console.groupEnd();
@@ -543,6 +623,49 @@ async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, f
         };
     }
 }
+
+// ADD THIS NEW FUNCTION HERE
+async function seedInitialUserFact(
+    personaIdForContext: string, // The ID of the persona interacting with the user
+    factKey: string,             // e.g., "user.registeredUsername"
+    factValue: string            // The actual username
+): Promise<void> {
+    const ledger = await _getLedger();
+    if (!factValue || !factKey) {
+        console.warn("[CEREBRUM_SEED] Attempted to seed an empty fact. Aborting.");
+        return;
+    }
+
+    const userMemory = ledger.user_memory;
+
+    // Check if this exact fact already exists in core to avoid duplicates from multiple initializations
+    const alreadyExists = userMemory.core.some(
+        fact => fact.key === factKey && fact.value === factValue
+    );
+
+    if (alreadyExists) {
+        console.log(`[CEREBRUM_SEED] Fact "${factKey}: ${factValue}" already exists in user core memory. No action taken.`);
+        return;
+    }
+    const newCoreFact: MemoryFact = {
+        key: factKey,
+        value: factValue,
+        type: 'CORE',
+        timestamp: Date.now(),
+        initialConfidence: 1.0,
+        source_context: 'system_init',
+        source_persona_id: personaIdForContext,
+        // <<< THIS IS THE FIX >>>
+        known_by_personas: [personaIdForContext] // A new fact is known by the persona in the current context
+    };
+
+    userMemory.core.push(newCoreFact);
+    console.log(`%c[CEREBRUM_SEED] 🌱 Successfully seeded initial user fact to CORE: "${factKey}: ${factValue}" for persona context ${personaIdForContext}`, 'color: #17a2b8; font-weight: bold;');
+    await _saveLedger();
+}
+
+
+
 // ===================  END: REPLACEMENT v5.2  ===================
 // ===================  END: REPLACEMENT WITH THALAMUS LOGGING  ===================
 // ===================  END: REPLACEMENT v4.1  ===================
@@ -554,6 +677,7 @@ async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, f
             initialize,
             processNewUserMessage,
             getMemoryForPrompt,
+            seedInitialUserFact,
             // Deprecated functions from old service for compatibility if needed, but we aim to remove them
             hasInteractedBefore: async () => false,
             markInteraction: async () => {},
@@ -565,7 +689,7 @@ async function getMemoryForPrompt(personaId: string): Promise<{prompt: string, f
 
     if (window.memoryService && typeof window.memoryService.initialize === 'function') {
         console.log("memory_service.ts: SUCCESSFULLY assigned and populated window.memoryService (Cerebrum).");
-        window.memoryService.initialize().catch(err => console.error("Error during Cerebrum self-initialization:", err));
+        // DO NOT auto-initialize. The main app.ts will call .initialize() after auth is ready.
     } else {
         console.error("memory_service.ts: CRITICAL ERROR - window.memoryService population FAILED.");
     }

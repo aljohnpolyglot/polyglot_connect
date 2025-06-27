@@ -83,7 +83,9 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
     if (!deps.chatSessionHandler?.endActiveModalMessagingSession) missing.push("chatSessionHandler or its .endActiveModalMessagingSession method");
     if (!deps.chatActiveTargetManager?.getEmbeddedChatTargetId) missing.push("chatActiveTargetManager or its .getEmbeddedChatTargetId method");
     if (!deps.voiceMemoHandler?.handleNewVoiceMemoInteraction) missing.push("voiceMemoHandler or its .handleNewVoiceMemoInteraction method");
-    if (!deps.textMessageHandler?.sendEmbeddedTextMessage) missing.push("textMessageHandler or its .sendEmbeddedTextMessage method");
+    if (!deps.textMessageHandler?.sendEmbeddedTextMessage) {
+        missing.push("textMessageHandler or its .sendEmbeddedTextMessage method");
+    }
     if (!deps.groupManager?.handleUserMessageInGroup) missing.push("groupManager or its .handleUserMessageInGroup method");
     if (!deps.sessionHistoryManager?.getSessionById) missing.push("sessionHistoryManager or its .getSessionById method");
     if (!deps.uiUpdater?.populateRecapModal) missing.push("uiUpdater or its .populateRecapModal method");
@@ -102,6 +104,9 @@ const getSafeDeps = (): VerifiedDepsForCelInit | null => {
     
     return deps as VerifiedDepsForCelInit;
 };
+
+
+
 function initializeActualChatEventListeners(): void {
     console.log("chat_event_listeners.ts: initializeActualChatEventListeners() called.");
     console.log("CEL_TS_DEBUG_FLOW: ENTERING initializeActualChatEventListeners(). Attempting to get safe dependencies.");
@@ -310,16 +315,27 @@ function handlePasteEvent(
         displayImagePreviews(imageFiles, previewContainer, captionInputElement, mainTextInputElement);
     }
 }
-
 function createSendHandler(
     context: 'embedded' | 'modal' | 'group',
     mainTextInputElement: HTMLInputElement | null,
     captionInputElement: HTMLInputElement | null,
     previewContainer: HTMLElement | null
 ) {
-    return async () => { // Made async for potential await later if needed
-        const uniqueSendId = Math.random().toString(36).substring(7); // Generate a unique ID for this specific handler invocation
-        console.log(`CEL: MODAL SEND HANDLER INVOKED (ID: ${uniqueSendId}). Context: ${context}`);
+    return async () => {
+        // <<< FIX: Fetch the potentially problematic handlers "just-in-time" >>>
+        const textMessageHandler = window.textMessageHandler;
+        const groupManager = window.groupManager;
+        
+        // <<< FIX: Add a guard clause to ensure they are ready >>>
+        if ((context !== 'group' && !textMessageHandler) || (context === 'group' && !groupManager)) {
+            console.error(`CEL: Send failed. The required handler for context '${context}' is not available on the window object.`);
+            alert("Chat system is still initializing, please try again in a moment.");
+            return;
+        }
+
+        const uniqueSendId = Math.random().toString(36).substring(7);
+        console.log(`CEL: SEND HANDLER INVOKED (ID: ${uniqueSendId}). Context: ${context}`);
+        
         if (!mainTextInputElement || !captionInputElement || !previewContainer) {
             console.error(`CEL: Missing critical elements for send handler in ${context} context.`);
             return;
@@ -333,13 +349,13 @@ function createSendHandler(
 
         if (imageFileToSend) {
             textFromActiveInput = captionInputElement.value.trim();
-            captionForImage = textFromActiveInput; // Caption is the text from caption input
+            captionForImage = textFromActiveInput;
         } else {
             textFromActiveInput = mainTextInputElement.value.trim();
         }
 
         if (!textFromActiveInput && !imageFileToSend) {
-            console.log(`CEL: Nothing to send (no text in active input, and no image) from ${context}.`);
+            console.log(`CEL: Nothing to send from ${context}.`);
             return;
         }
 
@@ -347,92 +363,95 @@ function createSendHandler(
         if (imageFileToSend) console.log(`  Image: ${imageFileToSend.name}`);
         console.log(`  Text from active input: "${textFromActiveInput}"`);
 
-
         const sendOptions: {
-            skipUiAppend?: boolean;
+            skipUiAppend?: boolean; // This will always be true after this block
             imageFile?: File | null;
             captionText?: string | null;
-            messageId?: string;    // <<< ADD THIS
-            timestamp?: number;    // <<< ADD THIS
+            messageId?: string;     // Will always be set
+            timestamp?: number;     // Will always be set
         } = {
-            skipUiAppend: false,
+            // Properties will be set explicitly below.
+            // skipUiAppend is intentionally not defaulted here, as it's always set to true.
         };
 
+        // --- REVISED UI APPEND AND SENDOPTIONS LOGIC ---
+        const tempUserMessageId = resolvedDeps?.polyglotHelpers?.generateUUID() || `fallback-uuid-${Date.now()}`;
+        const tempTimestamp = Date.now();
+        
+        // Options for uiUpdater.appendChatMessage
+        const uiAppendMessageOptions: ChatMessageOptions = {
+            messageId: tempUserMessageId,
+            timestamp: tempTimestamp,
+        };
+
+        // textFromActiveInput already holds the correct text:
+        // - For text-only: value of mainTextInputElement.
+        // - For image: value of captionInputElement.
+        let messageTextForUiAppend = textFromActiveInput; 
+
         if (imageFileToSend) {
+            // messageTextForUiAppend is already the caption.
+            uiAppendMessageOptions.imageUrl = URL.createObjectURL(imageFileToSend); // Local URL for optimistic display
+            
             sendOptions.imageFile = imageFileToSend;
-            sendOptions.captionText = captionForImage;
-
-            // --- INSTANT UI APPEND FOR IMAGE ---
-            const tempUserMessageId = resolvedDeps?.polyglotHelpers?.generateUUID() || Date.now().toString();
-            const tempTimestamp = Date.now();
-            const tempImageUrl = URL.createObjectURL(imageFileToSend);
-
-            const uiAppendOptions: ChatMessageOptions = {
-                messageId: tempUserMessageId,
-                timestamp: tempTimestamp,
-                imageUrl: tempImageUrl,
-            };
-
-            if (context === 'embedded') {
-                resolvedDeps?.uiUpdater?.appendToEmbeddedChatLog?.(captionForImage || "", 'user', uiAppendOptions);
-            } else if (context === 'modal') {
-                resolvedDeps?.uiUpdater?.appendToMessageLogModal?.(captionForImage || "", 'user', uiAppendOptions);
-            } 
-            sendOptions.skipUiAppend = true;
-            sendOptions.messageId = tempUserMessageId;
-            sendOptions.timestamp = tempTimestamp;
-        } else { 
-            // --- INSTANT UI APPEND FOR TEXT (MODAL/EMBEDDED ONLY) ---
-            const tempUserMessageId = resolvedDeps?.polyglotHelpers?.generateUUID() || Date.now().toString();
-            const tempTimestamp = Date.now();
-            
-            const uiAppendOptions: ChatMessageOptions = {
-                messageId: tempUserMessageId,
-                timestamp: tempTimestamp,
-            };
-
-            // Only handle instant append for non-group contexts here.
-            // The groupManager will handle its own UI appending.
-            if (context === 'embedded') {
-                resolvedDeps?.uiUpdater?.appendToEmbeddedChatLog?.(textFromActiveInput, 'user', uiAppendOptions);
-                sendOptions.skipUiAppend = true; // Prevent TextMessageHandler from re-appending
-            } else if (context === 'modal') {
-                resolvedDeps?.uiUpdater?.appendToMessageLogModal?.(textFromActiveInput, 'user', uiAppendOptions);
-                sendOptions.skipUiAppend = true; // Prevent TextMessageHandler from re-appending
-            }
-            
-            // Pass the generated ID and timestamp so they are stored correctly in history.
-            sendOptions.messageId = tempUserMessageId;
-            sendOptions.timestamp = tempTimestamp;
+            sendOptions.captionText = messageTextForUiAppend; // Pass caption to message handler
         }
-        // If it's just text, TextMessageHandler will handle UI append as normal unless skipUiAppend is true from voice memo etc.
+        // Note: This generic send handler is for text or image+caption.
+        // Voice memos are typically initiated via voiceMemoHandler, which then calls textMessageHandler
+        // with specific options like isVoiceMemo and audioSrc. If this handler needed to
+        // also directly manage voice memo UI append, uiAppendMessageOptions would need those.
 
-        // Call the appropriate message sending function
+        // Perform optimistic UI append for the user's message.
+        // This MUST happen BEFORE textMessageHandler or groupManager is called.
+        if (context !== 'group') { // For 'embedded' and 'modal' contexts
+            const appendFn = context === 'embedded' 
+                ? resolvedDeps?.uiUpdater?.appendToEmbeddedChatLog
+                : resolvedDeps?.uiUpdater?.appendToMessageLogModal;
+            
+            // The text to display, 'user' as senderClass, and the options
+            appendFn?.(messageTextForUiAppend, 'user', uiAppendMessageOptions);
+        }
+        // For 'group' context, groupManager.handleUserMessageInGroup is responsible for calling
+        // groupUiHandler.appendMessageToGroupLog. It will use messageId and timestamp from sendOptions.
+
+        // ALWAYS set skipUiAppend to true because this module (CEL) or groupManager
+        // handles the UI append for the user's own message.
+        sendOptions.skipUiAppend = true;
+        sendOptions.messageId = tempUserMessageId;
+        sendOptions.timestamp = tempTimestamp;
+
+        // --- Call the appropriate message sending function ---
+        // The textFromActiveInput passed to these handlers is correct (main text or caption text)
         if (context === 'embedded') {
-            const targetId = chatActiveTargetManager.getEmbeddedChatTargetId();
-            if (targetId) {
-                textMessageHandler.sendEmbeddedTextMessage(textFromActiveInput, targetId, sendOptions);
+            const targetConnectorId = chatActiveTargetManager.getEmbeddedChatTargetId();
+            if (targetConnectorId) {
+                const connector = polyglotConnectors.find(c => c.id === targetConnectorId);
+                if (connector) {
+                    const conversationId = await conversationManager.ensureConversationRecord(connector);
+                    if (conversationId) {
+                        textMessageHandler?.sendEmbeddedTextMessage(textFromActiveInput, conversationId, sendOptions);
+                    } else {
+                        console.error("CEL: Failed to get/create conversation ID for embedded chat.");
+                    }
+                }
             }
         } else if (context === 'modal') {
             const targetConnector = chatActiveTargetManager.getModalMessageTargetConnector();
             if (targetConnector) {
-                console.log(`CEL: Calling textMessageHandler.sendModalTextMessage for MODAL (Handler ID: ${uniqueSendId}) with text: "${textFromActiveInput}"`);
-                textMessageHandler.sendModalTextMessage(textFromActiveInput, targetConnector, sendOptions);
+                textMessageHandler?.sendModalTextMessage(textFromActiveInput, targetConnector, sendOptions);
             }
         } else if (context === 'group') {
             const currentGroup = groupManager?.getCurrentGroupData?.();
             if (currentGroup) {
-                groupManager.handleUserMessageInGroup(textFromActiveInput, sendOptions);
+                groupManager?.handleUserMessageInGroup(textFromActiveInput, sendOptions);
             }
         }
-
         // Clear inputs and reset UI state
         if (imageFileToSend) {
-            activeImageFilesByInput.set(mainTextInputElement, []); // Clear stored file
-            // captionInputElement.value = ''; // Already read, will be cleared by updateChatInputUIState
+            activeImageFilesByInput.set(mainTextInputElement, []);
             updateChatInputUIState(previewContainer, captionInputElement, mainTextInputElement, false);
         } else {
-            mainTextInputElement.value = ''; // Clear main text input if only text was sent
+            mainTextInputElement.value = '';
         }
     };
 }
@@ -500,6 +519,8 @@ function createSendHandler(
                 _clearPendingCallEventAction(false);
             }
         }
+
+
 
         function handleCallEventButtonClick(event: Event): void {
             console.log("CEL_TS_DEBUG: RAW CLICK EVENT CAUGHT BY handleCallEventButtonClick. Target:", event.target);
@@ -577,6 +598,7 @@ function createSendHandler(
                             sessionId: sessionId
                         };
                     }
+                    console.log("[CEL_DEBUG_SUMMARY_VIEW] recapDataToPass to populateRecapModal:", JSON.parse(JSON.stringify(recapDataToPass)));
                     uiUpdater?.populateRecapModal?.(recapDataToPass);
                     if (domElements.sessionRecapScreen) modalHandler?.open?.(domElements.sessionRecapScreen);
                 }
@@ -854,7 +876,74 @@ addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
                 // So, this simple 'input' listener is fine as is for general typing.
                 groupManager?.userIsTyping?.();
             });
-            addSafeListener(domElements.leaveGroupBtn, 'click', () => groupManager?.leaveCurrentGroup?.());
+// In chat_event_listeners.ts (or equivalent file where you have the "intelligent" listener)
+
+if (domElements.leaveGroupBtn) { // Check if the button exists
+    addSafeListener(domElements.leaveGroupBtn, 'click', async () => {
+        console.log("CEL: 'Back to Groups' (leaveGroupBtn) clicked. [INTELLIGENT HANDLER v2]");
+        const currentGroupManager = window.groupManager;
+        const currentGroupUiHandler = window.groupUiHandler;
+        const currentGroupDataManager = window.groupDataManager;
+        const currentGroupInteractionLogic = window.groupInteractionLogic;
+        const currentTabManager = window.tabManager;
+        const currentChatOrchestrator = window.chatOrchestrator;
+        const currentSidebarPanelManager = window.sidebarPanelManager; // <<< ADD THIS
+
+        if (!currentGroupManager || !currentGroupUiHandler || !currentGroupDataManager || !currentGroupInteractionLogic || !currentTabManager || !currentChatOrchestrator || !currentSidebarPanelManager) { // <<< ADD CHECK
+            console.error("CEL: Missing core dependencies for 'Back to Groups' button. Cannot proceed.");
+            alert("Error: Could not navigate back properly. Core components missing.");
+            return;
+        }
+
+        // 1. Stop and reset GroupInteractionLogic
+        console.log("CEL: Stopping and resetting GroupInteractionLogic.");
+        currentGroupInteractionLogic.stopConversationFlow?.();
+        currentGroupInteractionLogic.reset?.();
+
+        // 2. Hide group chat UI, show list (UI only)
+        console.log("CEL: Hiding group chat view and showing list (UI only).");
+        currentGroupUiHandler.hideGroupChatViewAndShowList();
+
+        // 3. Clear GDM context (does NOT delete Firestore membership)
+        console.log("CEL: Clearing current group context in GroupDataManager.");
+        currentGroupDataManager.setCurrentGroupContext(null, null);
+
+        // 4. Remove 'polyglotLastActiveGroupId' from LocalStorage
+        console.log("CEL: Removing 'polyglotLastActiveGroupId' from LocalStorage.");
+        localStorage.removeItem('polyglotLastActiveGroupId');
+
+        // 5. Switch to 'groups' tab
+        console.log("CEL: Switching to 'groups' tab.");
+        currentTabManager.switchToTab('groups'); // This will trigger shell_controller's handleViewChange for 'groups'
+
+        // 6. IMPORTANT: Update the Right Sidebar Panel
+        //    Since we've switched to the 'groups' tab, ensure the correct sidebar panel (group filters) is shown.
+        //    The shell_controller.handleViewChange should ideally handle this when 'tabSwitched' event fires,
+        //    but calling it explicitly here ensures it happens if the event propagation has quirks.
+        console.log("CEL: Explicitly updating sidebar panel for 'groups' tab.");
+        currentSidebarPanelManager.updatePanelForCurrentTab('groups');
+
+        // 7. Reload "My Groups" view (this should now find the non-deleted membership)
+        //    This is still important to refresh the list content itself.
+        console.log("CEL: Loading 'my-groups' view.");
+        await currentGroupManager.loadAvailableGroups(null, null, null, { viewType: 'my-groups' });
+
+        // 8. Refresh Active Chats List in sidebar (ChatOrchestrator's responsibility)
+        //    Even though we switched to group filters, the underlying data for active chats might need a refresh
+        //    if the group we just left was showing up there.
+        console.log("CEL: Requesting sidebar active chats list refresh (CO).");
+        currentChatOrchestrator.renderCombinedActiveChatsList();
+
+        console.log("CEL: 'Back to Groups' action completed successfully (UI navigation, no Firestore delete, sidebar panel updated).");
+    });
+    console.log("CEL: [INTELLIGENT v2] Event listener for 'leaveGroupBtn' attached.");
+} else {
+    console.warn("CEL: domElements.leaveGroupBtn not found, intelligent listener not attached.");
+}
+
+
+
+
             addSafeListener(domElements.groupChatMicBtn, 'click', () => {
                 const currentGroup = groupManager?.getCurrentGroupData?.();
                 const currentVoiceMemoHandler = window.voiceMemoHandler;
@@ -944,7 +1033,7 @@ addSafeListener(domElements.upgradeModalCtaBtn, 'click', () => {
         
             setupAllChatInteractionListeners();
             setupChatAvatarClickListeners();
-        
+            
         // in chat_event_listeners.ts
 
 // =================== REPLACE WITH THIS BLOCK ===================
@@ -989,9 +1078,17 @@ addSafeListener(domElements.closeRecapBtn, 'click', () => {
     const currentTab = tabManager.getCurrentActiveTab();
     if (currentTab !== 'summary') {
         const lastSession = sessionHistoryManager?.getLastSession?.();
-        if (lastSession?.connector) {
-            chatOrchestrator?.openConversation(lastSession.connector);
+        
+        // --- THIS IS THE FIX (Type Guard) ---
+        // Before passing the connector, we check that it exists AND that it has an 'id'.
+        // This simple check proves to TypeScript that it's a "sufficiently complete"
+        // connector object.
+        if (lastSession?.connector && lastSession.connector.id) {
+            // Because of the check above, TypeScript now allows us to treat this
+            // as a full Connector for this function call.
+            chatOrchestrator?.openConversation(lastSession.connector as Connector);
         }
+        // --- END OF FIX ---
     }
 });
 // ==========================================================
@@ -1124,7 +1221,8 @@ setupInputFocusListeners();
             });
             console.log('CEL_TS: Chat Avatar click listeners setup complete.');
         }
-      
+
+        
       
       // REPLACE WITH THIS
         // Pass the dependencies from the main IIFE scope into the initializer

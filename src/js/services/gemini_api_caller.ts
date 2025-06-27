@@ -155,37 +155,56 @@ async function callWithRetry<T>(
                 body: JSON.stringify(finalPayload),
                 signal: abortSignal
             });
-            const responseData = await response.json();
-    
+
+            // --- THIS IS THE CORRECTED BLOCK ---
+            let responseDataForReturn: any = null; // Use a different name for the variable we'll build and return
+            const responseText = await response.text(); // Get body as text first
+
             if (!response.ok) {
-                const errorDetails = responseData.error || { message: `API request failed with status ${response.status}` };
+                // Try to parse error from responseText if it's not OK
+                let parsedErrorBody: any;
+                try {
+                    parsedErrorBody = JSON.parse(responseText);
+                } catch (e) {
+                    // If parsing error JSON fails, use the raw text
+                    parsedErrorBody = { error: { message: `API request failed with status ${response.status}. Body: ${responseText}` }};
+                }
+                const errorDetails = parsedErrorBody.error || { message: `API request failed with status ${response.status}` };
                 const errorMessage = `Status ${response.status}: ${errorDetails.message || 'Unknown Gemini Error'}`;
                 healthTracker?.reportStatus(nickname, 'Gemini', 'failure', errorMessage);
                 const err = new Error(errorMessage) as any;
                 err.status = response.status;
+                err.responseBody = parsedErrorBody; // Attach parsed/raw body to error
                 throw err;
             }
-            
-            console.log(`%c...and the score from: ${nickname}!`, 'color: #34A853; font-weight: bold;');
-            healthTracker?.reportStatus(nickname, 'Gemini', 'success');
 
-            if (requestType === "generateContent") {
-                const candidate = responseData.candidates?.[0];
-                let textPart = "";
-                if (!candidate) {
-                    textPart = `(My response was blocked: ${responseData.promptFeedback?.blockReason || 'Unknown Reason'})`;
-                } else {
-                    textPart = candidate.content?.parts?.find((part: any) => part.text !== undefined)?.text || "";
-                }
-                return { response: textPart, nickname: nickname };
+            // If response.ok (e.g., 200)
+            if (responseText.trim() === "") {
+                console.warn(`[GeminiAPICaller] Gemini API (Player: ${nickname}, Model: ${modelIdentifier}, Type: ${requestType}) returned HTTP ${response.status} OK but with an EMPTY BODY.`);
+                responseDataForReturn = { isEmptyResponse: true, message: "Gemini API returned an empty response body." }; 
             } else {
-                 return { response: responseData, nickname: nickname };
+                try {
+                    responseDataForReturn = JSON.parse(responseText); // Parse if not empty
+                } catch (parseError: any) {
+                    console.error(`[GeminiAPICaller] Failed to parse JSON response from Gemini (Player: ${nickname}, Model: ${modelIdentifier}). Body was:`, responseText);
+                    const err = new Error(`Failed to parse JSON response from Gemini. Status: ${response.status}. Error: ${parseError.message}`) as any;
+                    err.status = response.status; 
+                    err.isParseError = true;
+                    err.responseBodyText = responseText; 
+                    throw err;
+                }
             }
+            // --- END OF CORRECTED BLOCK ---
+            
+            console.log(`%c...and the score from: ${nickname}! (Gemini API HTTP status: ${response.status})`, 'color: #34A853; font-weight: bold;');
+            healthTracker?.reportStatus(nickname, 'Gemini', 'success'); 
+
+            return { response: responseDataForReturn, nickname: nickname }; // Return the correctly built responseDataForReturn
     
         } catch (error: any) {
-            console.error(`Catch Block in _geminiInternalApiCaller (Player: ${nickname})`, error.message);
-            // Report failure for network errors too
-            if (!error.status) { // If status isn't set, it's likely a network/fetch error
+            // ... (rest of the catch block remains the same)
+            console.error(`Catch Block in _geminiInternalApiCaller (Player: ${nickname}, Model: ${modelIdentifier})`, error.message);
+            if (!error.status || error.status >= 400) { 
                  healthTracker?.reportStatus(nickname, 'Gemini', 'failure', error.message);
             }
             throw error; 

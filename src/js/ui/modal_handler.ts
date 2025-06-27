@@ -17,8 +17,8 @@ interface ModalHandlerModule {
     close: (modalElement: HTMLElement | null) => void;
     isVisible: (modalElement: HTMLElement | null) => boolean;
     renderLanguageSection: (connector: Connector) => void;
+    openUpgradeModal: (modalType: 'text' | 'call' | 'image', daysUntilReset?: number) => void; // <<< ADD THIS
 }
-
 function initializeActualModalHandler(): void {
     console.log('modal_handler.ts: initializeActualModalHandler() called.');
 
@@ -28,7 +28,8 @@ function initializeActualModalHandler(): void {
             open: () => console.error("ModalHandler not initialized."),
             close: () => console.error("ModalHandler not initialized."),
             isVisible: () => { console.error("ModalHandler not initialized."); return false; },
-            renderLanguageSection: () => console.error("ModalHandler not initialized.")
+            renderLanguageSection: () => console.error("ModalHandler not initialized."),
+            openUpgradeModal: () => console.error("ModalHandler.openUpgradeModal not initialized.") // <<< ADD THIS 
         };
         document.dispatchEvent(new CustomEvent('modalHandlerReady')); // Dispatch ready even on failure
         console.warn('modal_handler.ts: "modalHandlerReady" event dispatched (initialization failed).');
@@ -44,6 +45,41 @@ function initializeActualModalHandler(): void {
             polyglotHelpers: window.polyglotHelpers as PolyglotHelpers,
             flagLoader: window.flagLoader as FlagLoader
         });
+
+        function openUpgradeModal(modalType: 'text' | 'call' | 'image', daysUntilReset?: number): void {
+            const { domElements } = getDeps();
+            console.log(`ModalHandler: openUpgradeModal called for type: ${modalType}, days: ${daysUntilReset}`);
+
+            let modalToShow: HTMLElement | null = null;
+            let titleElement: HTMLElement | null = null; // e.g., domElements.upgradeModalTitle
+            let messageElement: HTMLElement | null = null; // e.g., domElements.upgradeModalMessage
+
+            // You'll need to add specific DOM elements for these modals in YourDomElements
+            // and then select them here. For example:
+            // domElements.upgradeLimitModal, domElements.upgradeCallLimitModal, etc.
+
+            if (modalType === 'text' || modalType === 'image') {
+                modalToShow = domElements.upgradeLimitModal; // General limit modal
+                // Example: if (domElements.upgradeModalTitle) domElements.upgradeModalTitle.textContent = "Message Limit Reached";
+                // Example: if (domElements.upgradeModalMessage) domElements.upgradeModalMessage.textContent = "You've reached your free message limit for today.";
+            } else if (modalType === 'call') {
+                modalToShow = domElements.upgradeCallLimitModal; // Specific call limit modal
+                // Example: if (domElements.upgradeCallModalTitle) domElements.upgradeCallModalTitle.textContent = "Call Limit Reached";
+            }
+
+            if (daysUntilReset && messageElement) {
+                // Example: messageElement.textContent += ` Your limits will reset in ${daysUntilReset} day(s).`;
+            }
+
+            if (modalToShow) {
+                // Use your existing 'open' function to show the selected modal
+                open(modalToShow);
+            } else {
+                console.error(`ModalHandler: No specific upgrade modal found for type: ${modalType}`);
+            }
+        }
+
+
 
         const getModalElements = (): (HTMLElement | null)[] => {
             const { domElements } = getDeps();
@@ -198,7 +234,8 @@ function initializeActualModalHandler(): void {
             open,
             close,
             isVisible,
-            renderLanguageSection
+            renderLanguageSection,
+            openUpgradeModal
         };
     })(); // End of IIFE
 

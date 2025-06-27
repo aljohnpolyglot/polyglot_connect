@@ -16,10 +16,6 @@ export interface UsageCheckResult {
  */
 
 
-// src/js/core/usageManager.ts
-// ... (imports are fine) ...
-
-// ... (UsageCheckResult interface is fine) ...
 // The new, smarter usageManager function
 export interface UsageCheckResult {
     allowed: boolean;
@@ -27,7 +23,7 @@ export interface UsageCheckResult {
     daysUntilReset?: number; // <<< NEW: Add this optional property
 }
 
-export async function checkAndIncrementUsage(actionType: 'textMessages' | 'voiceCalls'): Promise<UsageCheckResult> {
+export async function checkAndIncrementUsage(actionType: 'textMessages' | 'voiceCalls' | 'imageMessages'): Promise<UsageCheckResult> {
     const user = auth.currentUser;
     if (!user) {
         return { allowed: false, plan: 'none' };
@@ -61,14 +57,24 @@ export async function checkAndIncrementUsage(actionType: 'textMessages' | 'voice
             return { allowed: true, plan: plan, daysUntilReset: 30 };
         }
         
-        const limit = USAGE_LIMITS[plan]?.[actionType];
-        const currentCount = actionType === 'textMessages'
-            ? (userData.monthlyTextCount || 0)
-            : (userData.monthlyCallCount || 0);
+        const limitActionTypeKey = (actionType === 'imageMessages') ? 'textMessages' : actionType; // Map imageMessages to textMessages for limit lookup
+        const limit = USAGE_LIMITS[plan]?.[limitActionTypeKey];
+        
+        let currentCount: number;
+        if (actionType === 'textMessages' || actionType === 'imageMessages') {
+            currentCount = userData.monthlyTextCount || 0;
+        } else { // voiceCalls
+            currentCount = userData.monthlyCallCount || 0;
+        }
 
         if (currentCount < limit) {
             // ALLOWED: Increment and return success
-            const fieldToIncrement = actionType === 'textMessages' ? 'monthlyTextCount' : 'monthlyCallCount';
+            let fieldToIncrement: string;
+            if (actionType === 'textMessages' || actionType === 'imageMessages') { // Image messages count towards text for now
+                fieldToIncrement = 'monthlyTextCount';
+            } else { // 'voiceCalls'
+                fieldToIncrement = 'monthlyCallCount';
+            }
             await updateDoc(userRef, { [fieldToIncrement]: increment(1) });
             return { allowed: true, plan: plan };
         } else {

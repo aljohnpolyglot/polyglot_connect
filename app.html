@@ -352,7 +352,10 @@
         <input type="text" id="search-active-chats-input" class="styled-input" placeholder="Search chats...">
     </div>
     <ul id="chat-list-ul" class="sidebar-list"></ul>
-    <p class="empty-list-msg" id="empty-chat-list-msg" style="display:none;">No active chats.</p>
+    <p class="empty-list-msg" id="empty-chat-list-msg">
+        <i class="fas fa-spinner fa-spin"></i> Loading your chats...
+    </p>
+    
 </div>
         <!-- Summary List -->
         <div id="summaryChatListPanel" class="sidebar-panel">
@@ -619,7 +622,7 @@
                <div class="persona-section">
     <h4><i class="fas fa-language"></i> Languages</h4>
     <div class="language-items-container">
-        <!-- Replace list with grid layout divs -->
+        <!-- Replace list with grid layout divs -->p
         <div id="persona-modal-languages">
             <!-- Languages will be dynamically inserted here by JS -->
         </div>
@@ -707,7 +710,8 @@
     <!-- AI Service Facade (depends on all specialized services above) -->
     
     <script type="module" src="/src/js/services/ai_service.ts"></script> <!-- You just converted this -->
- 
+    <script type="module" src="/src/js/services/imgur_service.ts"></script>
+    <script type="module" src="/src/js/services/supabaseService.ts"></script>
     <!-- ===================================================================== -->
     <!-- PHASE 4: Core Logic Modules (Many depend on AI services or UI foundation) -->
     <!-- ===================================================================== -->

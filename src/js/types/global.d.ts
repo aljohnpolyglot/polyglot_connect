@@ -5,6 +5,64 @@ import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_ser
 import type { IdentityServiceModule } from '../services/identity_service';
 import { GroupInteractionLogicModule } from '../core/group_interaction_logic';// --- SUB-INTERFACES for Persona/Connector ---
 // IN global.d.ts - ADD THIS NEW INTERFACE
+import type { Auth } from 'firebase/auth';
+// D:\polyglot_connect\src\js\types\global.d.ts
+
+// --- START: ADDED FIRESTORE TYPES ---
+import type { Timestamp } from 'firebase/firestore';
+export interface ChatSessionHandlerModule {
+  initialize: () => void;
+  openConversationInEmbeddedView: (
+      connectorOrId: Connector | string,
+      registeredUserNameForPrompt?: string // <<< MAKE SURE THIS IS PRESENT AND OPTIONAL
+  ) => Promise<void>;
+  handleMessagesTabBecameActive: () => Promise<void>;
+  openMessageModalForConnector: (connector: Connector) => Promise<void>;
+  endActiveModalMessagingSession: () => void;
+}
+// Represents the main document in the /conversations/{conversationId} collection
+export interface ConversationDocument {
+    participants: string[]; // Array of user UIDs
+    participantDetails: {
+        [uid: string]: {
+            displayName: string;
+            avatarUrl: string;
+        }
+    };
+    lastActivity: Timestamp; // Firestore Server Timestamp
+    lastMessage: {
+        text: string;
+        senderId: string;
+    };
+    isGroup: boolean; // false for 1-on-1 chats
+    // Any other metadata for the conversation as a whole
+    [key: string]: any;
+}
+
+// Represents a document in the /conversations/{conversationId}/messages sub-collection
+export interface MessageDocument {
+  messageId: string; // Your app's UUID
+  senderId: string;  // Firebase UID or AI Connector ID
+  senderName?: string; // <<< ADD/ENSURE THIS for group messages
+  text: string | null; 
+  type: 'text' | 'image' | 'voice_memo' | 'system_event' | 'call_event';
+  timestamp: Timestamp; 
+imageUrl?: string | null; // <<< MODIFIED
+  imageSemanticDescription?: string; // <<< ADD THIS LINE if not present
+  content_url?: string | null; // <<< ENSURE THIS IS PRESENT AND OPTIONAL
+  eventType?: string;
+  duration?: string;
+  callSessionId?: string;
+  connectorIdForButton?: string;
+  reactions?: {
+    [emoji: string]: string[]; 
+  };
+}
+
+// --- END: ADDED FIRESTORE TYPES ---
+
+
+
 export interface JumpButtonManagerModule {
   initialize: (initialTab: string) => void;
 }
@@ -12,7 +70,7 @@ export interface Connector {
     id: string;
   liveApiModelName?: string;
     // Properties that might be added dynamically for active chats:
-    messages?: Array<{ text?: string; sender?: string; timestamp?: number | string; [key: string]: any }>;
+    messages?: Array<{ text?: string | null | undefined; sender?: string; timestamp?: number | string; [key: string]: any }>;
     lastActivity?: number | string;
 
 }
@@ -108,13 +166,66 @@ export interface DevPanelModule {
   toggle: () => void; // <<< ADD THIS LINE
 }
 export interface AIService {
-  // ... other methods ...
-  cleanAndReconstructTranscriptLLM?: ( // Make it optional for now during integration
+  initialize: (deps: { // Assuming initialize exists and has its own deps
+        aiTextGenerationService: AiTextGenerationServiceModule;
+        geminiMultimodalService?: GeminiMultimodalServiceModule;
+        // ... other dependencies AIService needs ...
+    }) => void;
+
+  cleanAndReconstructTranscriptLLM?: (
       rawTranscript: TranscriptTurn[],
-      connector: Connector,
+      connector: Connector | null, // <<< FIX: Allow null
       userName?: string
   ) => Promise<string>;
-  // ...
+
+  generateTextMessage: (
+      promptOrText: string,
+      connector: Connector | null, // <<< FIX: Allow null
+      history?: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null,
+      preferredProvider?: string,
+      expectJson?: boolean,
+      context?: 'group-chat' | 'one-on-one',
+      abortSignal?: AbortSignal,
+      options?: { isTranslation?: boolean; [key: string]: any }
+  ) => Promise<string | null | object>;
+
+  generateTextFromImageAndText: (
+      base64Data: string,
+      mimeType: string,
+      connector: Connector | null, // <<< FIX: Allow null
+      history?: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null, // Use consistent history type
+      prompt?: string,
+      preferredProvider?: string,
+      abortSignal?: AbortSignal
+  ) => Promise<string | null | object>;
+
+  getTTSAudio: (
+      textToSpeak: string,
+      languageCode?: string,
+      voiceName?: string,
+      stylePrompt?: string | null
+  ) => Promise<{ audioBase64: string; mimeType: string } | null >;
+
+  generateTextForCallModal?: (
+      userText: string,
+      connector: Connector | null, // <<< FIX: Allow null
+      modalCallHistory?: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null // Use consistent history type
+  ) => Promise<string | null>;
+
+  generateSessionRecap: (
+    cleanedTranscriptText: string,
+    connector: Connector | null // <<< FIX: Allow null (if a recap could ever be generated without a specific partner)
+                                 // Or keep as Connector if it's always required for recap context.
+) => Promise<RecapData>;
+
+  transcribeAudioToText?: (
+      base64Audio: string,
+      mimeType: string,
+      langHint?: string,
+      preferredProvider?: string
+  ) => Promise<string | null>;
+
+  [key: string]: any;
 }
 // D:\polyglot_connect\js\types\global.d.ts
 export interface AiRecapService { // This is for the OpenAI-compatible one
@@ -232,6 +343,8 @@ export interface Connector extends PersonaDataSourceItem { // EXPORTED
   liveApiModelName?: string;
   // liveApiVoiceName is already here, which is fine for the resolved primary voice
 }
+
+
 export interface Group { // EXPORTED
   id: string;
   name: string;
@@ -250,6 +363,14 @@ export interface Group { // EXPORTED
   memberSelectionCriteria?: GroupMemberCriteria; // This will guide member selection
   type?: 'Language Learning' | 'Community Hangout' | 'Sports Fan Club' | string; // ADD THIS
   topic?: string; // ADD THIS (e.g., "La Liga", "French Culture")
+  lastMessage?: {
+    text: string | null;
+    senderId: string;
+    senderName?: string; // <-- FIX: Made optional
+    timestamp?: Timestamp | number; // <-- FIX: Made optional
+    type?: 'text' | 'image' | 'voice_memo' | 'system_event'; // <-- FIX: Made optional
+    imageUrl?: string;
+};
 }
 export interface GroupMemberCriteria {
   // Language-based (can still be a primary filter)
@@ -275,55 +396,103 @@ export interface GroupMemberCriteria {
   // profession?: string | string[];
 }
 // --- NEW/REVISED Interfaces for GroupManager and its specific sub-dependencies ---
+
 export interface GroupChatHistoryItem {
-  speakerId: string;
-  text: string | null; // <<< MODIFIED // For text messages, or a placeholder like "[User sent an image]", or the transcript
+  speakerId: string; // User ID, AI Connector ID
+  text: string | null;
   timestamp: number;
   speakerName?: string;
-  imageUrl?: string;
+imageUrl?: string | null; // <<< MODIFIED
+audioBlobDataUrl?: string | null;
+  imageSemanticDescription?: string; // <<< ENSURE THIS IS PRESENT
   imageMimeType?: string;
   imagePromptText?: string;
   isImageMessage?: boolean;
   base64ImageDataForAI?: string;
-
-  // --- ADD/ENSURE THESE ARE PRESENT ---
   isVoiceMemo?: boolean;
-  audioBlobDataUrl?: string | null; // Store the Data URL (can be null if not available)
-  messageId?: string; // Optional: if you want to link it to the UI element
-  // --- END ADDITIONS ---
-  imageSemanticDescription?: string; // <<< ADD THIS LINE (AI-generated description of image content)
-  reactions?: {
-    [emoji: string]: string[]; // e.g., { "👍": ["user_player", "some_other_id"] }
+  audioBlobDataUrl?: string | null | undefined; // <<< Explicitly add undefined// <<< This seems to be what you use, ensure it's present
+  messageId?: string; // App's UUID, ensure this is consistently used
+  type?: 'text' | 'image' | 'voice_memo' | 'system_event' | 'call_event'; // <<< Corrected
+  firestoreDocId?: string; // <<< ADD THIS: To store Firestore document ID for easy updates (e.g., reactions)
+  imageSemanticDescription?: string;
+  reactions?: { 
+    [emoji: string]: string[]; 
   };
-
 }
+
 export interface GroupDataManager {
-  initialize: () => void;
+  addMessageToGroup: (
+    groupId: string,
+    senderId: string,
+    text: string | null,
+    type: GroupChatHistoryItem['type'],
+    options: {
+        appMessageId: string;
+        timestamp: Date;
+        senderName: string;
+        imageUrl?: string | null;
+        content_url?: string | null; // <<< ENSURE THIS IS PRESENT
+        imageSemanticDescription?: string | null;
+    }
+) => Promise<string | null>;
+
+
+
+  saveCurrentGroupChatHistory: (triggerListUpdate?: boolean) => void; // <<< THIS IS THE CORRECTION
+
+  initialize: () => Promise<void>; // <<< MUST return Promise<void>
   getGroupDefinitionById: (groupId: string) => Group | null | undefined;
-  getAllGroupDefinitions: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null) => Array<Group & { isJoined?: boolean }>; // <<< ADD nameSearch
+  getAllGroupDefinitions: (
+    languageFilter?: string | null, 
+    categoryFilter?: string | null, 
+    nameSearch?: string | null
+  ) => Array<Group & { isJoined?: boolean }>;
   isGroupJoined: (groupId: string) => boolean;
-  loadGroupChatHistory: (groupId: string) => GroupChatHistoryItem[];
-  getLoadedChatHistory: () => GroupChatHistoryItem[];
-  addMessageToCurrentGroupHistory: (message: GroupChatHistoryItem, notify?: boolean) => void;
-  saveCurrentGroupChatHistory: (triggerListUpdate?: boolean) => void;
+
+  // Firestore methods
+  // REMOVE: listenToGroupMessages: (groupId: string) => void; // This moves to group_manager.ts
+  addMessageToFirestoreGroupChat: (
+    groupId: string,
+    messageData: {
+        appMessageId: string;
+        senderId: string;
+        senderName: string;
+        text: string | null;
+        imageUrl?: string;
+        content_url?: string;
+        imageSemanticDescription?: string; // <<< ENSURE THIS IS PRESENT
+        type: 'text' | 'image' | 'voice_memo' | 'system_event';
+        reactions?: { [key: string]: string[] };
+    }
+) => Promise<string | null>;
+
+  getLoadedChatHistory: () => GroupChatHistoryItem[]; // For local cache access
+
   setCurrentGroupContext: (groupId: string | null, groupData: Group | null) => void;
   getCurrentGroupId: () => string | null | undefined;
   getCurrentGroupData: () => Group | null | undefined;
-  // Define a more specific return type for the items in this array if possible
-  // This is for the sidebar active chat list
- getAllGroupDataWithLastActivity: () => ActiveGroupListItem[]; // Use ActiveGroupListItem
- 
+  getAllGroupDataWithLastActivity: () => ActiveGroupListItem[];
+
+  _updateUserJoinedGroupState?: (groupId: string, isJoining: boolean) => void;
+  addMessageToInternalCacheOnly: (message: GroupChatHistoryItem) => void;
+
+  // Keep for local cache persistence if still desired by your implementation
+  saveCurrentGroupChatHistory?: (triggerListUpdate?: boolean) => void; 
+  
+  // REMOVE or ensure it's not present:
+  // loadGroupChatHistory?: (groupId: string) => GroupChatHistoryItem[];
+  // addMessageToCurrentGroupHistory?: (message: GroupChatHistoryItem, options?: { triggerListUpdate?: boolean }) => void;
 }
+
 
 // D:\polyglot_connect\src\js\types\global.d.ts
 // ... (Ensure YourDomElements, UiUpdater, ChatUiManager, ListRenderer, ViewManager,
 //      GroupDataManager, Connector, Group, GroupChatHistoryItem are EXPORTED) ...
-
 export interface GroupUiHandler {
   initialize: () => void;
   displayAvailableGroups: (groupsToDisplay: Group[], joinGroupCallback: (groupOrId: string | Group) => void) => void;
   showGroupChatView: (
-    groupData: Group, // Assuming Group type
+    groupData: Group,
     groupMembers: Connector[],
     groupHistory: GroupChatHistoryItem[]
   ) => void;
@@ -334,12 +503,13 @@ export interface GroupUiHandler {
     message: string,
     senderLabel: string,
     isUser: boolean,
-    userType: string,
+    userType: string, // Consider renaming to speakerId for clarity
     options?: ChatMessageOptions
-  ) => void;
+  ) => HTMLElement | null; // Consistent return type
   clearGroupChatLog: () => void;
-  openGroupMembersModal: () => void; // New method
-  openGroupInfoModal: (group: Group) => void; // ===== ADD THIS LINE =====
+  openGroupMembersModal: () => void;
+  openGroupInfoModal: (group: Group) => void;
+  updateMessageStatus?: (messageId: string, statusKey: string, newUrl?: string | null) => void; // <<< ADD THIS LINE
 }
 // In global.d.ts
 export interface GeminiTtsService {
@@ -355,24 +525,25 @@ export interface GeminiTtsService {
 export interface GeminiTextGenerationService {
   generateTextMessage: (
       userText: string,
-      connector: Connector, 
+      connector: Connector | null, // <<< ENSURE THIS IS Connector | null
       existingGeminiHistory: GeminiChatItem[],
       preferredProvider?: string, 
       expectJson?: boolean,
       context?: 'group-chat' | 'one-on-one', // <<< ADDED
-      abortSignal?: AbortSignal              // <<< ADDED
+      abortSignal?: AbortSignal,              // <<< ADDED
+      options?: { isTranslation?: boolean; [key: string]: any } // <<< ADD THIS
   ) => Promise<string | null | object>;
 
   generateTextForCallModal?: (
       userText: string,
-      connector: Connector,
+      connector: Connector | null, // <<< ENSURE THIS IS Connector | null
       modalCallHistory: GeminiChatItem[]
   ) => Promise<string | null>;
 
   generateTextFromImageAndTextOpenAI?: (
       base64ImageString: string,
       mimeType: string,
-      connector: Connector,
+      connector: Connector | null, // <<< ENSURE THIS IS Connector | null
       existingConversationHistory: GeminiChatItem[],
       userTextQuery?: string,
       provider?: string,
@@ -411,18 +582,29 @@ export interface GeminiRecapService { // Or GeminiRecapServiceModule
   ) => Promise<RecapData>;
 }
 export interface GroupInteractionLogic {
-    initialize: (members: Connector[], tutor: Connector) => void;
-    startConversationFlow: (forceImmediateGeneration?: boolean) => void; // <<< This is the fix
-    stopConversationFlow: () => void; // This is the missing piece
-    setUserTypingStatus: (isTyping: boolean) => void;
-    handleUserMessage: (text: string | undefined, options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }) => Promise<void>;
-    simulateAiMessageInGroup: (isReplyToUser?: boolean, userMessageText?: string, imageContextForReply?: any) => Promise<void>;
-    setAwaitingUserFirstIntroduction: (isAwaiting: boolean) => void;
-    
-    reset?: () => void; // Optional
-    [key: string]: any;
+  initialize: (members: Connector[], tutor: Connector) => void;
+  startConversationFlow: (forceImmediateGeneration?: boolean) => void;
+  stopConversationFlow: () => void;
+  setUserTypingStatus: (isTyping: boolean) => void; // This might be deprecated if GIL's logic changes
+  handleUserMessage: (
+      text: string | undefined,
+      options?: { userSentImage?: boolean; imageBase64Data?: string; imageMimeType?: string; }
+  ) => Promise<{
+      aiMessagesToPersist: Array<{
+          speakerId: string;
+          speakerName: string;
+          text: string | null; // Text can be null if it's purely an image response part
+          type: 'text' | 'image'; // Define what types AI can generate
+          messageId: string; // App UUID generated by GIL
+          imageSemanticDescription?: string; // If AI provides a description for an image it "sends"
+          // Add any other fields you expect AI to provide for a message to be persisted
+      }>
+  } | null>; // Can be null if GIL decides not to send AI messages or an error/abort occurs
+  simulateAiMessageInGroup: (isReplyToUser?: boolean, userMessageText?: string, imageContextForReply?: any) => Promise<void>; // Review if this needs to change based on new flow
+  setAwaitingUserFirstIntroduction: (isAwaiting: boolean) => void;
+  reset?: () => void;
+  [key: string]: any;
 }
-
 export interface GroupManager {
     initialize: () => void;
     loadAvailableGroups: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null, options?: { viewType: 'my-groups' | 'discover' }) => void;
@@ -491,7 +673,7 @@ export interface SessionData extends RecapData {
                       // Let's assume RecapData might not always have sessionId, so make it explicit.
     connectorId?: string; // ID of the connector involved
     connectorName?: string; // Name of the connector
-    connector?: Connector;  // The full connector object involved in the session
+    connector: Partial<Connector>; // <<< The key change is adding Partial<>
 
     startTimeISO: string | null; // Can be null if session didn't formally start
     endTimeISO?: string;         // When the session was finalized
@@ -512,24 +694,35 @@ export interface SessionData extends RecapData {
     // [key: string]: any; // from RecapData to allow other properties
 }
 // --- END OF REPLACEMENT (GLOBAL.UPDATE_SESSIONDATA.1) ---
-export interface ConvoStoreModule { // << MAKE SURE THIS IS EXPORTED
-    initializeStore: () => void;
-    saveAllConversationsToStorage: () => void;
-    getConversationById: (connectorId: string) => ConversationRecordInStore | null;
-    getAllConversationsAsArray: () => ConversationRecordInStore[];
-    createNewConversationRecord: (connectorId: string, connectorData: Connector) => ConversationRecordInStore | null;
-    updateConversationProperty: ( // <<< THIS SIGNATURE MUST MATCH
-        connectorId: string, 
-        propertyName: keyof ConversationRecordInStore, // Use keyof
-        value: any
-    ) => ConversationRecordInStore | null;
-    addMessageToConversationStore: (connectorId: string, messageObject: MessageInStore) => boolean;
-    getGeminiHistoryFromStore: (connectorId: string) => GeminiChatItem[];
-    updateGeminiHistoryInStore: (connectorId: string, newHistoryArray: GeminiChatItem[]) => boolean;
-    getGlobalUserProfile: (userId?: string) => string; // <<< ADD THIS
-    updateGlobalUserProfile: (newSummary: string, userId?: string) => void; // <<< ADD THIS
-    updateUserProfileSummary(groupId: string, summary: string): void;
-    
+export interface ConvoStoreModule {
+  // Initializes the cache (can be empty)
+  initializeStore: () => void;
+
+  // Gets a single conversation from the in-memory cache
+  getConversationById: (conversationId: string) => ConversationRecordInStore | null;
+  getAllConversationsAsArray: () => ConversationRecordInStore[];
+
+  // Adds or updates a conversation in the cache (called by Firestore listener)
+  cacheConversation: (conversationId: string, data: Partial<ConversationRecordInStore>) => void;
+
+  // Adds a new message to a cached conversation (called by Firestore listener)
+  cacheMessage: (conversationId: string, message: MessageInStore) => void;
+
+  // Removes a conversation from the cache (e.g., if user is removed)
+  removeConversationFromCache: (conversationId: string) => void;
+
+  // Clears the entire cache on logout
+  clearCache: () => void;
+
+  // These methods for local-only data can remain
+  getGeminiHistoryFromStore: (conversationId: string) => GeminiChatItem[];
+  updateGeminiHistoryInStore: (conversationId: string, newHistoryArray: GeminiChatItem[]) => boolean;
+  getGlobalUserProfile: (userId?: string) => string;
+  updateGlobalUserProfile: (newSummary: string, userId?: string) => void;
+  updateUserProfileSummary(conversationId: string, summary: string): void;
+  addOptimisticMessage: (conversationId: string, message: MessageInStore) => void;
+  // OBSOLETE METHOD: This will be removed from the implementation.
+  saveAllConversationsToStorage: () => void;
 }
 // --- INTERFACE for DomElements (based on dom_elements.js and index.html) ---
 export interface YourDomElements { // Ensure EXPORT
@@ -808,6 +1001,7 @@ export interface ModalHandler {
   close: (modalElement: HTMLElement | null) => void;
   isVisible: (modalElement: HTMLElement | null) => boolean;
   renderLanguageSection: (connector: Connector) => void; // Assuming Connector type
+  openUpgradeModal(modalType: 'text' | 'call' | 'image', daysUntilReset?: number): void;
   // Add setupGenericModalOverlayClicks if it were part of the public API, but it's internal.
 }
 export interface SharedContent {
@@ -866,29 +1060,31 @@ export interface LiveApiTextCoordinator {
 export interface PersonaModalManager {
  openDetailedPersonaModal: (connector: Connector) => void; // Connector type should already be exported
   [key: string]: any; // Allow other properties for now
+}export interface MessageInStore {
+  id?: string; // This is the Firestore document ID of the message
+  messageId?: string; // This is your app's internal message UUID
+  sender: string; // 'user', 'connector', 'system'
+  text?: string;
+  type: string;
+  timestamp: number;
+  content_url?: string;
+  imageUrl?: string;
+  eventType?: string;
+  duration?: string;
+  callSessionId?: string;
+  connectorIdForButton?: string;
+  connectorNameForDisplay?: string;
+  isVoiceMemo?: boolean;
+  audioBlobDataUrl?: string | null;
+  transcriptText?: string;
+  imageSemanticDescription?: string;
+  imageInitialDescription?: string;
+  reactions?: { // <<< ADD THIS
+      [emoji: string]: string[];
+  };
+  [key: string]: any;
 }
 
-export interface MessageInStore { // Ensure this is also defined and exported if used by ConversationRecordInStore
-    id?: string;
-    sender: string;
-    text: string;
-    type: string; // e.g., 'text', 'call_event'
-    timestamp: number;
-    content_url?: string;
-    imagePartsForGemini?: Array<{ inlineData: { mimeType: string; data: string; } }>;
-    // Fields for call events, mirroring TranscriptTurn and ChatMessageOptions
-    eventType?: string;
-    connectorIdForButton?: string; // << ENSURE THIS IS PRESENT AND OPTIONAL
-    connectorNameForDisplay?: string; // << ENSURE THIS IS PRESENT AND OPTIONAL
-    duration?: string;
-    callSessionId?: string;
-    [key: string]: any;
-    imageSemanticDescription?: string; // <<< ADD THIS LINE (AI-generated description of image content)
-    imageInitialDescription?: string; // <--- NEW: AI's first-pass, quick description
-  
-    reactions?: {
-      [emoji: string]: string[]; // e.g., { "👍": ["user_player"], "❤️": ["some_other_user_id"] }
-  };  }
 export interface ActiveConversationsStore {
     [connectorId: string]: ConversationRecordInStore;
 
@@ -935,8 +1131,10 @@ export interface UiUpdater {
   removeProcessingSpinner: (logElement: HTMLElement, messageId?: string | null) => void;
   appendSystemMessage: (logElement: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean) => HTMLElement | null;
   // Add scroll functions if they need to be part of the public API of uiUpdater
-  scrollEmbeddedChatToBottom?: () => void;
+  scrollEmbeddedChatToBottom?: (chatLogElement: HTMLElement | null) => void; // <<< ADD ARGUMENT
   scrollMessageModalToBottom?: () => void;
+  showLoadingInEmbeddedChatLog: () => void;
+  showErrorInEmbeddedChatLog: (errorMessage: string) => void;
 }
 export interface ShellController {
   initializeAppShell: () => void;
@@ -962,12 +1160,12 @@ export interface ChatMessageOptions {
   duration?: string;
   timestamp?: number | string; 
   senderName?: string;
-  imageUrl?: string;
+  imageUrl?: string | null; // <<< MODIFIED
   isThinking?: boolean;
   isError?: boolean;
   avatarUrl?: string;
   isVoiceMemo?: boolean;      // New: Indicates this is a user's voice memo
-  audioSrc?: string;          // New: Data URL for the audio blob to be played
+  audioSrc?: string | null | undefined; // Allow null     // New: Data URL for the audio blob to be played
   messageId?: string;
   showSenderName?: boolean; 
   isSystemLikeMessage?: boolean;
@@ -997,7 +1195,14 @@ export type ListItemData = Partial<Connector & Group & SessionData> & {
     name?: string;
    isGroup?: boolean;
     connector?: Connector;
-    messages?: Array<{ text?: string; sender?: string; speakerId?: string; speakerName?: string; timestamp?: number | string }>;
+    messages?: Array<{ 
+      text?: string | null | undefined; // <<< FIX: Allow null
+      sender?: string | undefined;
+      speakerId?: string;
+      speakerName?: string;
+      timestamp?: number | string;
+      [key: string]: any;
+  }>;
     lastActivity?: number | string;
     sessionId?: string;
     connectorName?: string;
@@ -1009,6 +1214,7 @@ export type ListItemData = Partial<Connector & Group & SessionData> & {
     language?: string;
     description?: string;
     isJoined?: boolean;
+    
     // Add any other properties your list items might have
 };
 export interface ListRenderer {
@@ -1024,6 +1230,14 @@ export interface ListRenderer {
     groupsArray: Group[], 
     onGroupClick: (groupOrId: Group | string) => void
   ) => void;
+  renderGroupMembersList: ( // <<< ADD THIS METHOD
+    members: Connector[],
+    tutorId: string | null | undefined, // Allow tutorId to be potentially null/undefined
+    onMemberClick: (connector: Connector) => void,
+    listElement: HTMLUListElement | null,
+    searchTerm?: string
+  ) => void;
+  [key: string]: any;
   // Add any other methods listRenderer exposes
 }
 // D:\polyglot_connect\src\js\types\global.d.ts
@@ -1044,15 +1258,24 @@ export interface ActiveGroupListItem {
 
 // ... rest of global.d.ts ...
 
-export interface ActiveOneOnOneChatItem {
-    id: string; // Connector ID
-    isGroup: false;
-    connector: Connector; // The full connector object
-     messages: Array<{ text?: string; sender?: string; timestamp?: number | string; [key: string]: any }>; // <<<< USES THIS
-    lastActivity: number | string;
-    // Add any other properties specific to 1-on-1 chat list items
-}
+// PASTE THIS REPLACEMENT INTERFACE in global.d.ts
 
+export interface ActiveOneOnOneChatItem {
+  id: string; // Connector ID (used as conversation ID for 1-on-1 in some contexts)
+  isGroup: false;
+  connector: Connector;
+  messages: MessageInStore[]; // Array of messages in the conversation
+  lastActivity: number;
+  lastMessage?: {
+    text: string | null;
+    senderId: string;
+    senderName: string;            // <-- This is required
+    timestamp: Timestamp | number; // <-- This is required
+    type: 'text' | 'image' | 'voice_memo' | 'system_event'; // <-- This is required
+    imageUrl?: string;
+};
+  lastMessagePreview?: string; // Optimistic UI update
+}
 export type CombinedChatItem = ActiveOneOnOneChatItem | ActiveGroupListItem;
 
 export interface ListRenderer {
@@ -1086,42 +1309,62 @@ export interface ConversationItem { // <<< THIS IS THE NEW/COMPLETE DEFINITION
         [key: string]: any;
     }>;
     lastActivity: number | string; // Timestamp of the last message or interaction
+    lastMessagePreview?: string; // <<< FIX: Add the optional property
     isGroup: false; // Explicitly mark that this is not a group chat item
     geminiHistory?: GeminiChatItem[]; // Optional: The history formatted for Gemini API
     // Add any other properties that `conversationManager.getActiveConversations()` returns for each item.
 }
-
 export interface ConversationManager {
+  // This will now set up the Firestore listener
   initialize: () => Promise<void>;
+
+  // This now gets data from the local cache, so it stays synchronous
   getActiveConversations: () => ConversationItem[];
-  getConversationById: (connectorId: string) => ConversationRecordInStore | null;
+  getConversationById: (conversationId: string) => ConversationRecordInStore | null;
+
+  // This will now write to Firestore, so it's async and its parameters change
   addMessageToConversation: (
-      connectorId: string,
-      sender: string,
-      text: string,
-      type: string,
-      timestamp: number,
-      extraData: Partial<MessageInStore>
-  ) => Promise<MessageInStore | null>;
+    conversationId: string,
+    text: string,
+    type: 'text' | 'voice_memo' | 'image' | 'system_event' | 'call_event',
+    extraData?: Partial<MessageDocument> & { 
+        imageFile?: File | null; 
+        imageUrl?: string | null; 
+        messageIdToUse?: string; // <<< ADD THIS LINE
+        mime_type?: string | null; // <<< ADDED HERE
+    }
+  ) => Promise<string | null>;
+
+  // This now creates a new conversation document in Firestore
   ensureConversationRecord: (
-      connectorId: string,
-      connectorData?: Connector | null,
-      options?: { setLastActivity?: boolean }
-  ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
-  addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>;
-  markConversationActive: (connectorId: string) => boolean;
-  addModelResponseMessage: (
-      connectorId: string,
+      partnerConnector: Connector
+  ) => Promise<string | null>; // Returns the new conversation ID
+
+  // This will also write a special message to Firestore
+  addSystemMessageToConversation: (
+      conversationId: string,
       text: string,
-      messageId: string,
-      timestamp: number
-  ) => Promise<MessageInStore | null>;
-  getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>;
-  clearConversationHistory: (connectorId: string) => Promise<void>;
-  saveAllConversationsToStorage?: () => void;
+      eventType?: string
+  ) => Promise<string | null>;
+
+  // This is no longer needed as Firestore handles timestamps
+  // markConversationActive: (connectorId: string) => boolean;
+
+  // The AI response will also be written to Firestore
+  addModelResponseMessage: (
+      conversationId: string,
+      text: string
+  ) => Promise<string | null>;
+
+  // This remains the same, as Gemini history is a client-side concept for now
+  getGeminiHistoryForConnector: (conversationId: string) => Promise<GeminiChatItem[]>;
+
+  // This would need to be re-implemented to delete from Firestore
+  clearConversationHistory: (conversationId: string) => Promise<void>;
+
+  // This is the new method to set the active conversation and listen to its messages
+  setActiveConversationAndListen: (conversationId: string) => Promise<void>;
 }
-
-
 
 export interface ChatSessionHandler {
   initialize?: () => void; 
@@ -1140,16 +1383,17 @@ export interface IdentityServiceModule {
 // PASTE THIS INTO global.d.ts, REPLACING THE OLD MEMORY INTERFACES
 
 // --- NEW MEMORY SERVICE & CEREBRUM TYPES ---
+
 export interface MemoryFact {
   key: string;
   value: any;
   type: 'CORE' | 'EPISODIC' | 'FRAGILE';
   timestamp: number;
   initialConfidence: number;
-  source_context: 'one_on_one' | 'group' | 'live_call' | 'manual' | 'ai_invention';
-  source_persona_id: string;
-  participating_persona_ids?: string[];
-  confidenceBoost?: number; // For Scribe's contextual reinforcement
+  source_context: 'one_on_one' | 'group' | 'live_call' | 'ai_invention' | 'system_init'; // <<< ADDED 'system_init'
+  source_persona_id: string; // The AI who originally learned/created the fact
+  // <<< THIS IS THE ELEGANT FIX >>>
+  known_by_personas: string[]; // Array of AI IDs who know this fact
 }
 
 export interface MemoryBank {
@@ -1160,23 +1404,31 @@ export interface MemoryBank {
 
 export interface CerebrumMemoryLedger {
   userId: string;
-  user_memory: MemoryBank;
-  ai_memory: {
+  user_memory: MemoryBank; // A single bank for all facts ABOUT the user
+  ai_memory: { // A single place for all facts ABOUT the AIs
       [personaId: string]: MemoryBank;
   };
   last_updated: number;
 }
-
 export interface MemoryServiceModule {
   initialize: () => Promise<void>;
-  processNewUserMessage: (text: string, personaIds: string | string[], context: 'one_on_one' | 'group' | 'live_call' | 'ai_invention', history?: MessageInStore[]) => Promise<void>; // <<< 
-  getMemoryForPrompt: (personaId: string) => Promise<{prompt: string, facts: MemoryFact[]}>; // <<< THIS IS THE FIX
-  
-  // --- Deprecated functions for compatibility during transition ---
-  hasInteractedBefore: (personaId: string, userId: string) => Promise<boolean>;
-  markInteraction: (personaId: string, userId: string) => Promise<void>;
-  getMemory: (personaId: string, userId: string) => Promise<any | null>;
-  updateMemory: (personaId: string, userId: string, memoryData: any) => Promise<void>;
+  processNewUserMessage: (
+    text: string,
+    personaIds: string | string[],
+    context: 'one_on_one' | 'group' | 'live_call' | 'ai_invention',
+    history?: MessageInStore[]
+) => Promise<boolean>; // <<< THE FIX: Changed from void to boolean
+  getMemoryForPrompt: (personaId: string) => Promise<{ prompt: string, facts: MemoryFact[] }>;
+  seedInitialUserFact: ( // <<< ADD THIS WHOLE BLOCK
+      personaIdForContext: string,
+      factKey: string,
+      factValue: string
+  ) => Promise<void>;
+  // Deprecated
+  hasInteractedBefore: (userId: string, personaId: string) => Promise<boolean>;
+  markInteraction: (userId: string, personaId: string) => Promise<void>;
+  getMemory: (userId: string, personaId: string) => Promise<any>;
+  updateMemory: (userId: string, personaId: string, memoryData: any) => Promise<void>;
 }
 export interface ChatActiveTargetManager {
   getEmbeddedChatTargetId: () => string | null;
@@ -1239,6 +1491,10 @@ export interface TextMessageHandler {
 
 
 }
+
+export interface ImgurServiceModule {
+  uploadImageToImgur: (imageFile: File) => Promise<string | null>;
+}
 // === ADD THIS NEW INTERFACE DEFINITION ===
 export interface TextMessageHandlerDeps {
   uiUpdater: UiUpdater;
@@ -1250,6 +1506,7 @@ export interface TextMessageHandlerDeps {
   aiApiConstants: AIApiConstants;
   activityManager: ActivityManager;
   modalHandler: ModalHandler; // <<< THE CRITICAL FIX
+  getGroupPersonaSummary(connector: Connector, language: string): string;
 }
 
 
@@ -1313,7 +1570,8 @@ export interface AIService {
       preferredProvider?: string, 
       expectJson?: boolean,
       context?: 'group-chat' | 'one-on-one', // <<< ADDED
-      abortSignal?: AbortSignal              // <<< ADDED
+      abortSignal?: AbortSignal,              // <<< 
+      options?: { isTranslation?: boolean; [key: string]: any } // <<< ADD THIS
   ) => Promise<string | null | object>;
     
   generateTextFromImageAndText: ( 
@@ -1417,17 +1675,23 @@ export interface ConversationRecord {
 // Add these interfaces (or similar) if they are not already defined and exported
 
 export interface ConversationRecordInStore { // << MAKE SURE THIS IS EXPORTED
-    id: string;
-    connector?: Connector; 
-    messages: MessageInStore[];
-    lastActivity: number;
-    geminiHistory: GeminiChatItem[];
-    userProfileSummary?: string; // <<< ADD THIS LINE
+  id: string; // Conversation ID
+  connector?: Connector;
+  messages: MessageInStore[];
+  lastActivity: number;
+  lastMessage?: { // This should mirror ConversationDocument.lastMessage
+      text: string;
+      senderId: string; // UID of the sender or "system"
+      // Potentially add timestamp of this last message if useful for display
+  };
+  geminiHistory: GeminiChatItem[];
+  userProfileSummary?: string;
+  lastMessagePreview?: string; // For optimistic UI updates
 }
 // PASTE STARTS HERE
 export interface SessionStateManager {
   initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string, skipModalManagement?: boolean) => boolean; // CORRECTED: 4th arg, returns boolean
-  markSessionAsStarted: () => boolean; // Ensuring it's here and required
+  markSessionAsStarted: () => Promise<boolean>; // <<< Changed to return a Promise
   addTurnToTranscript: (turn: TranscriptTurn) => void;
   getRawTranscript: () => TranscriptTurn[]; // Ensuring it's here
   getCurrentTranscript: () => TranscriptTurn[]; // Ensuring it's here
@@ -1443,6 +1707,7 @@ export interface SessionStateManager {
   resetBaseSessionState: () => void; // CORRECTED: Made required
   isSessionActive: () => boolean;
   recordFailedCallAttempt: (connector: Connector, reason?: string) => void; // CORRECTED: Made required
+
 }
 // PASTE ENDS 
 
@@ -1453,6 +1718,7 @@ export interface SessionStateManager {
 // import type { YourDomElements, PolyglotHelpersOnWindow as PolyglotHelpers, ChatMessageOptions } from './your-other-types-path';
 
 export interface ChatUiUpdaterModule {
+ 
   initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }): void;
   
   appendSystemMessage(
@@ -1472,7 +1738,8 @@ export interface ChatUiUpdaterModule {
   scrollChatLogToBottom(chatLogElement: HTMLElement | null): void;
   
   clearLogCache(logElement: HTMLElement): void;
-
+  showLoadingInEmbeddedChatLog: () => void;
+  showErrorInEmbeddedChatLog: (errorMessage: string) => void;
   // --- NEW METHODS NEEDED BY REACTION_HANDLER ---
   showUnifiedInteractionMenu: (
       triggerBubbleElement: HTMLElement, 
@@ -1517,7 +1784,7 @@ export interface ChatUiUpdaterModule {
       menuButtonElement: HTMLElement, 
       defaultTextAfterProgress: string // e.g., "Translate" or "Original"
   ) => void;
-  getWrapperForActiveUnifiedMenu?: () => HTMLElement | null; // <<< ADD THIS LINE
+  getWrapperForActiveUnifiedMenu?: () => HTMLElement | null; // <<< ADD OR ENSURE THIS LINE
 }
 export interface LiveCallHandler {
   startLiveCall: (connector: Connector, sessionTypeWithContext: string) => Promise<boolean>; // More specific
@@ -1619,6 +1886,8 @@ export interface AiTranslationServiceModule {
   initialize: (deps: { 
       conversationManager: ConversationManager,
       aiService: AiServiceModule // It now depends on the main AI service.
+      groupDataManager: GroupDataManager; // <<< ADD 
+    
   }) => void;
   generateTranslation: (messageId: string, connectorId: string) => Promise<string | null>;
 }
@@ -1632,6 +1901,40 @@ export interface GeminiChatServiceModule {
   ) => Promise<string | null>;
   // Add any other methods your text chat service has
 }
+
+
+
+export interface ConversationManagerModule {
+  initialize: () => Promise<void>;
+  getActiveConversations: () => ConversationItem[];
+  getConversationById: (connectorId: string) => ConversationRecordInStore | null;
+  addMessageToConversation: (
+      connectorId: string,
+      sender: string,
+      text: string,
+      type?: string,
+      timestamp?: number,
+      extraData?: Record<string, any>
+  ) => Promise<MessageInStore | null>;
+  ensureConversationRecord: (
+      connectorId: string,
+      connectorData?: Connector | null,
+      options?: { setLastActivity?: boolean }
+  ) => Promise<{ conversation: ConversationRecordInStore | null; isNew: boolean }>;
+  addSystemMessageToConversation: (connectorId: string, systemMessageObject: Partial<MessageInStore>) => Promise<boolean>;
+  markConversationActive: (connectorId: string) => boolean;
+  addModelResponseMessage: (
+      connectorId: string,
+      text: string,
+      messageId: string,
+      timestamp: number
+  ) => Promise<MessageInStore | null>;
+  getGeminiHistoryForConnector: (connectorId: string) => Promise<GeminiChatItem[]>;
+  clearConversationHistory: (connectorId: string) => Promise<void>;
+  saveAllConversationsToStorage: () => void; // <<< ADD THIS LINE
+}
+
+
 interface PolyglotConversationUpdatedEventDetail {
   type: 'one-on-one' | 'group';
   id: string;
@@ -1657,6 +1960,8 @@ type OpenaiCompatibleApiCallerFn = (
 // --- GLOBAL WINDOW INTERFACE AUGMENTATION ---
 declare global {
   interface Window {
+    convoPromptBuilder?: ConvoPromptBuilderModule;
+    imgurService?: ImgurServiceModule; // <<< ADD THIS LINE
     apiKeyHealthTracker?: ApiKeyHealthTrackerModule;
     devPanel?: DevPanelModule;
     polyglotPersonasDataSource?: PersonaDataSourceItem[];
@@ -1686,6 +1991,7 @@ declare global {
     sessionHistoryManager?: SessionHistoryManager;
     sessionManager?: SessionManager;
     modalHandler?: ModalHandler;
+    auth?: Auth; // <<< ADD THIS LINE
     uiUpdater?: UiUpdater;
     reactionHandler?: ReactionHandlerModule;
 aiTranslationService?: AiTranslationServiceModule;
@@ -1696,7 +2002,7 @@ aiTranslationService?: AiTranslationServiceModule;
     groupManager?: GroupManager; // Uses the exported GroupManager
     listRenderer?: ListRenderer;
     shellSetup?: ShellSetup;
-
+    chatSessionHandler?: ChatSessionHandlerModule;
    liveApiMicInput?: LiveApiMicInput;
 liveApiAudioOutput?: LiveApiAudioOutput;
 liveApiTextCoordinator?: LiveApiTextCoordinator;
@@ -1745,6 +2051,11 @@ liveApiTextCoordinator?: LiveApiTextCoordinator;
       groupChatAttachBtn: HTMLButtonElement | null;
     groupChatImageUpload: HTMLInputElement | null;
     groupChatMicBtn: HTMLButtonElement | null;
+  
+    memoryBank: MemoryBank;
+    personaMemory: PersonaMemory;
+    cerebrumMemoryLedger: CerebrumMemoryLedger;
+    
   }
 }
 

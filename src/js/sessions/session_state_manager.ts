@@ -12,9 +12,10 @@ import type {
     TranscriptTurn,
     SessionData,
     RecapData,
-    MessageInStore
+    MessageInStore,
+    MessageDocument
 } from '../types/global.d.ts';// Corrected path assuming types are in 'js/types' relative to 'js/sessions'
-
+import { auth } from '../firebase-config'; // <<< ADD THIS LINE
 console.log('session_state_manager.ts: Script loaded (TS Version), waiting for PolyglotHelpers.');
 
 // Define the interface for the module that will be on the window
@@ -23,7 +24,7 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
 
 interface SessionStateManagerModule {
     initializeBaseSession: (connector: Connector, sessionType: string, callSessionId?: string, skipModalManagement?: boolean) => boolean;
-    markSessionAsStarted: () => boolean;
+    markSessionAsStarted: () => Promise<boolean>; // <<< Changed boolean to Promise<boolean>
     addTurnToTranscript: (turn: TranscriptTurn) => void;
     getRawTranscript: () => TranscriptTurn[]; // <<< ADD THIS LINE
     getCurrentTranscript: () => TranscriptTurn[];
@@ -105,7 +106,7 @@ function initializeActualSessionStateManager(): void {
 // =================== START: REPLACEMENT FOR dummyMethods ===================
 const dummyMethods: SessionStateManagerModule = {
     initializeBaseSession: () => { console.error(errorMsg); return false; },
-    markSessionAsStarted: () => { console.error(errorMsg); return false; },
+    markSessionAsStarted: async () => { console.error(errorMsg); return false; }, // <<< Added async
     addTurnToTranscript: () => console.error(errorMsg),
     getRawTranscript: () => { console.error(errorMsg); return []; }, // <<< ADD THIS LINE
     getCurrentTranscript: () => { console.error(errorMsg); return []; },
@@ -182,49 +183,69 @@ console.log('session_state_manager.ts: Script loaded (TS Version), waiting for P
 
 // ... (rest of the file up to _logCallEventToChat) ...
 
-        function _logCallEventToChat(
-            targetConnectorId: string,
-            eventType: string,
-            text: string,
-            duration: string | null = null,
-            callSessionId: string | null = null,
-            eventOriginConnectorId?: string,
-            eventOriginConnectorName?: string
-        ): void {
-            const { conversationManager } = getDynamicDeps();
-            if (!conversationManager?.addSystemMessageToConversation) {
-                console.warn(`SSM (TS): Cannot log call event - conversationManager or method missing for targetConnectorId: ${targetConnectorId}`);
-                return;
-            }
-            if (!targetConnectorId) {
-                console.warn("SSM (TS): Cannot log call event - targetConnectorId is missing.");
-                return;
-            }
+     // src/js/sessions/session_state_manager.ts
 
-            const callEventMessagePayload: Partial<MessageInStore> & { 
-                eventType: string; 
-                connectorIdForButton?: string;
-                connectorNameForDisplay?: string;
-            } = {
-                sender: 'system-call-event', 
-                type: 'call_event',          
-                text: text,
-                timestamp: Date.now(),
-                eventType: eventType,
-                callSessionId: callSessionId || currentSession.sessionId || undefined,
-                duration: duration || undefined,
-                connectorIdForButton: eventOriginConnectorId, // <<< Key property
-                connectorNameForDisplay: eventOriginConnectorName // <<< Key property
-            };
-            
-            // DEBUG LOG (as per your request)
-            console.log("SSM_DEBUG _logCallEventToChat: Payload:", JSON.parse(JSON.stringify(callEventMessagePayload)));
-            // Existing log (also good for debugging)
-            // console.log(`SSM (TS): Logging call event to chat for ${targetConnectorId}. EventType: ${eventType}. ButtonConnectorID: ${eventOriginConnectorId}. Payload:`, JSON.parse(JSON.stringify(callEventMessagePayload)));
-            
-            conversationManager.addSystemMessageToConversation(targetConnectorId, callEventMessagePayload);
-        }
+   // src/js/sessions/session_state_manager.ts
 
+ 
+   function _logCallEventToChat(
+    targetConnectorId: string,
+    eventType: string,
+    text: string,
+    duration: string | null = null,
+    callSessionId: string | null = null,
+    eventOriginConnectorId?: string,
+    eventOriginConnectorName?: string
+): void {
+    const { conversationManager } = getDynamicDeps();
+    if (!conversationManager?.addMessageToConversation) {
+        console.warn(`SSM (TS): Cannot log call event - conversationManager.addMessageToConversation is missing.`);
+        return;
+    }
+
+    // --- THIS IS THE FIX ---
+    // We must construct the full conversationId here, just like we do everywhere else.
+    const user = auth.currentUser;
+    if (!user) {
+        console.error("SSM: Cannot log call event, no user is logged in.");
+        return;
+    }
+    const conversationId = [user.uid, targetConnectorId].sort().join('_');
+    console.log(`%c[BRUTE FORCE] #1: _logCallEventToChat CREATING PAYLOAD`, 'color: #FFD700; font-weight: bold;', {
+        callSessionId: callSessionId,
+        connectorIdForButton: eventOriginConnectorId
+    });
+
+    const callEventPayload: Partial<MessageDocument> = {
+        senderId: 'system',
+        text: text,
+        type: 'call_event',
+        eventType: eventType,
+        duration: duration || undefined,
+        callSessionId: callSessionId || undefined,
+        connectorIdForButton: eventOriginConnectorId, // <<< THIS IS THE KEY
+    };
+    console.log(`%c[SSM | LOG #1] BORN: Creating call event payload.`, 'color: #fff; background: #00008B;', {
+        callSessionId: callSessionId,
+        connectorIdForButton: eventOriginConnectorId
+    });
+
+    console.log(
+        '%c[CALL_EVENT_TRACE #1] SSM: Creating initial call event payload.', 
+        'color: white; background-color: #8A2BE2; padding: 2px;',
+        JSON.parse(JSON.stringify(callEventPayload))
+    );
+
+
+    // Now we call the function with the *correct, full conversationId*.
+    conversationManager.addMessageToConversation(
+        conversationId, 
+        text, 
+        'call_event', 
+        callEventPayload
+    );
+}
+        
 // ... (rest of session_state_manager.ts) ...
 // Inside the IIFE of session_state_manager.ts
 // Replace the existing initializeBaseSession function with this:
@@ -291,31 +312,47 @@ function initializeBaseSession(connector: Connector, sessionType: string, callSe
     return true;
 }
 
-        function markSessionAsStarted(): boolean {
-            if (!currentSession.sessionId || !currentSession.connector?.id) { // Added check for connector.id
-                console.warn("SSM (TS): Cannot mark session as started, no active session or valid connector. CurrentSession:", JSON.parse(JSON.stringify(currentSession)));
-                return false;
-            }
-            if (currentSession.startTime) {
-                console.warn(`SSM (TS): Session '${currentSession.sessionId}' already started. Ignoring.`);
-                return true;
-            }
-            stopRingtone();
-            currentSession.startTime = new Date();
-            console.log(`SSM (TS): Session '${currentSession.sessionId}' marked STARTED at ${currentSession.startTime.toISOString()}`);
-            
-            const connectorName = currentSession.connector.profileName || currentSession.connector.name || "Partner";
-            _logCallEventToChat(
-                currentSession.connector.id, // Log to this connector's chat
-                'call_started',
-                `You started a call with ${connectorName}.`,
-                null,
-                currentSession.sessionId,
-                currentSession.connector.id,    // eventOriginConnectorId for CALL BACK
-                connectorName                   // eventOriginConnectorName
-            );
+     // src/js/sessions/session_state_manager.ts
+
+     async function markSessionAsStarted(): Promise<boolean> { // <<< Note: Now async
+        if (!currentSession.sessionId || !currentSession.connector?.id) {
+            console.warn("SSM (TS): Cannot mark session as started, no active session or valid connector.");
+            return false;
+        }
+        if (currentSession.startTime) {
+            console.warn(`SSM (TS): Session '${currentSession.sessionId}' already started. Ignoring.`);
             return true;
         }
+        
+        const { conversationManager } = getDynamicDeps();
+        if (!conversationManager) {
+            console.error("SSM: Cannot mark session started, conversationManager is missing!");
+            return false;
+        }
+
+        // --- THIS IS THE FIX ---
+        // Ensure the conversation document exists in Firestore BEFORE we try to write to its sub-collection.
+        console.log(`SSM: Ensuring conversation record exists for connector ${currentSession.connector.id}...`);
+        
+        await conversationManager.ensureConversationRecord(currentSession.connector);
+        // --- END OF FIX ---
+
+        stopRingtone();
+        currentSession.startTime = new Date();
+        console.log(`SSM (TS): Session '${currentSession.sessionId}' marked STARTED at ${currentSession.startTime.toISOString()}`);
+        
+        const connectorName = currentSession.connector.profileName || currentSession.connector.name || "Partner";
+        _logCallEventToChat(
+            currentSession.connector.id,
+            'call_started',
+            `You started a call with ${connectorName}.`,
+            null,
+            currentSession.sessionId,
+            currentSession.connector.id,
+            connectorName
+        );
+        return true;
+    }
 
         function addTurnToTranscript(turn: TranscriptTurn): void {
             if (!currentSession.sessionId) {
@@ -368,17 +405,33 @@ function initializeBaseSession(connector: Connector, sessionType: string, callSe
             const callEndTime = new Date();
         
             // Create a snapshot of the session data before we reset it
+            const cleanConnectorForStorage = {
+                id: currentSession.connector.id,
+                name: currentSession.connector.name,
+                profileName: currentSession.connector.profileName,
+                avatarModern: currentSession.connector.avatarModern,
+                language: currentSession.connector.language
+                // Add any other specific, non-optional fields you need to save.
+                // Explicitly DO NOT include `isActive` or other optional fields.
+            };
+            console.log("[SSM_DEBUG_FINALIZE] currentSession.startTime:", currentSession.startTime);
             const sessionToFinalize: SessionData = {
                 sessionId: currentSession.sessionId,
                 connectorId: currentSession.connector.id,
                 connectorName: currentSession.connector.profileName,
-                connector: { ...currentSession.connector },
-                date: currentSession.startTime ? new Date(currentSession.startTime).toLocaleDateString() : new Date().toLocaleDateString(),
+                connector: cleanConnectorForStorage, // Use the clean object
+                date: currentSession.startTime 
+                ? new Date(currentSession.startTime).toLocaleString([], { 
+                    year: 'numeric', month: 'numeric', day: 'numeric', 
+                    hour: 'numeric', minute: '2-digit' 
+                  }) 
+                : new Date().toLocaleDateString(), // Fallback if no startTime
+               
                 startTimeISO: currentSession.startTime ? currentSession.startTime.toISOString() : null,
                 endTimeISO: callEndTime.toISOString(),
                 duration: "N/A",
                 rawTranscript: transcriptOverride ? [...transcriptOverride] : [...currentSession.transcript],
-                sessionType: currentSession.sessionType || undefined, // <<< THIS IS THE FIX
+                sessionType: currentSession.sessionType || 'unknown', // Use a default string instead of undefined
                 conversationSummary: generateRecap ? "Generating summary..." : "Recap not generated for this session.",
             };
             
@@ -392,6 +445,7 @@ function initializeBaseSession(connector: Connector, sessionType: string, callSe
                 const minutes = Math.floor(durationMs / 60000);
                 const seconds = Math.round((durationMs % 60000) / 1000);
                 sessionToFinalize.duration = `${minutes}m ${seconds}s`;
+                console.log("[SSM_DEBUG_FINALIZE] sessionToFinalize immediately after creation:", JSON.parse(JSON.stringify(sessionToFinalize)));
             }
             
             // Log the end-of-call event to chat history
@@ -408,57 +462,72 @@ function initializeBaseSession(connector: Connector, sessionType: string, callSe
             // Check if we should and can generate a recap
            // REPLACE THE ENTIRE LANDMARK if/else BLOCK WITH THIS:
 // =================== START: THE DEFINITIVE REPLACEMENT ===================
+// src/js/sessions/session_state_manager.ts
+
 if (generateRecap && deps.aiService && deps.sessionHistoryManager && deps.uiUpdater && deps.modalHandler && deps.domElements) {
-    // This block runs if we intend to generate a recap and all systems are go.
     console.log(`${functionName}: Preparing recap for session '${sessionToFinalize.sessionId}'.`);
     
+    // Create a variable to hold the final data, whether it's successful or a fallback.
+    let finalDataForHistory: SessionData;
+
     try {
-        // Update the "Spectacle" modal to show the next step
         const stepEl = document.getElementById('processing-call-step');
         if (stepEl) stepEl.textContent = 'Generating your session debrief...';
 
-        // Use the pre-cleaned transcript if it was passed, otherwise format the raw one as a fallback.
         const textForRecap = cleanedTranscriptForRecap || polyglotHelpers.formatTranscriptForLLM(sessionToFinalize.rawTranscript || [], sessionToFinalize.connectorName, "User");
 
-        // Call the AI service with the correct arguments.
-        const aiGeneratedRecapObject = await deps.aiService.generateSessionRecap(
-            textForRecap,
-            sessionToFinalize.connector!
-        );
+        const aiGeneratedRecapObject = await deps.aiService.generateSessionRecap(textForRecap, sessionToFinalize.connector as Connector);
         
-        // Merge the AI's response with our session data.
-        const finalSessionDataWithRecap: SessionData = { ...sessionToFinalize, ...aiGeneratedRecapObject };
-        
-        // NOW, we close the "Spectacle" and show the final result.
-        if (deps.domElements?.processingCallModal) deps.modalHandler.close(deps.domElements.processingCallModal);
-        deps.sessionHistoryManager.addCompletedSession(finalSessionDataWithRecap);
-        deps.uiUpdater.populateRecapModal(finalSessionDataWithRecap);
-        deps.modalHandler.open(deps.domElements.sessionRecapScreen);
-        console.log(`${functionName}: Recap successfully generated and displayed for '${sessionToFinalize.sessionId}'.`);
+        const originalSessionId = sessionToFinalize.sessionId;
+        const originalDate = sessionToFinalize.date;         // <<< Store original
+        const originalDuration = sessionToFinalize.duration; // <<< Store original
+
+        finalDataForHistory = { 
+            ...sessionToFinalize,         // Spread original session data first
+            ...aiGeneratedRecapObject,    // Then spread AI recap
+            sessionId: originalSessionId, // Explicitly restore the original sessionId
+            date: originalDate,           // Explicitly restore the original date
+            duration: originalDuration,   // Explicitly restore the original duration
+        };
+        console.log(`[SSM_DEBUG_FINALIZE] finalDataForHistory after merging AI recap:`, JSON.parse(JSON.stringify(finalDataForHistory)));
+        console.log(`${functionName}: Recap successfully generated for '${finalDataForHistory.sessionId}'.`);
 
     } catch (recapError: any) { 
-        // This block runs if the AI call fails.
-        console.error(`${functionName}: Error during aiService.generateSessionRecap for '${sessionToFinalize.sessionId}':`, recapError);
-        const errorFallbackRecap: SessionData = {
-            ...sessionToFinalize,
+        console.error(`${functionName}: Error during aiService.generateSessionRecap:`, recapError);
+        // On failure, sessionToFinalize already has the correct sessionId, date, and duration.
+        finalDataForHistory = {
+            ...sessionToFinalize, 
             conversationSummary: "An error occurred while generating the detailed debrief.",
-            keyTopicsDiscussed: ["Details unavailable due to error"],
+            keyTopicsDiscussed: ["Details unavailable due to error."],
+            // Ensure other AI-specific fields are nulled or set to error indicators if needed
+            newVocabularyAndPhrases: [],
+            goodUsageHighlights: [],
+            areasForImprovement: [],
+            suggestedPracticeActivities: [],
+            overallEncouragement: "Recap generation failed."
         };
-        
-        // Close the "Spectacle" and show an error recap instead.
-        if (deps.domElements?.processingCallModal) deps.modalHandler.close(deps.domElements.processingCallModal);
-        // ===================  END: REPLACEMENT  ===================
-        deps.sessionHistoryManager.addCompletedSession(errorFallbackRecap);
-        deps.uiUpdater.populateRecapModal(errorFallbackRecap);
-        deps.modalHandler.open(deps.domElements.sessionRecapScreen);
+        console.log(`[SSM_DEBUG_FINALIZE] finalDataForHistory after AI recap ERROR:`, JSON.parse(JSON.stringify(finalDataForHistory)));
     }
+    
+    // --- THIS IS THE UNIFIED "SAVE AND DISPLAY" LOGIC ---
+    // No matter if the try block succeeded or failed, we now have data in finalDataForHistory.
+
+    // 1. ALWAYS save the result to Firestore.
+    deps.sessionHistoryManager.addCompletedSession(finalDataForHistory);
+
+    // 2. ALWAYS close the "processing" modal.
+    if (deps.domElements?.processingCallModal) deps.modalHandler.close(deps.domElements.processingCallModal);
+    
+    // 3. ALWAYS show the user the result in the recap modal.
+    deps.uiUpdater.populateRecapModal(finalDataForHistory);
+    deps.modalHandler.open(deps.domElements.sessionRecapScreen);
+
 } else { 
-    // This block runs if generateRecap was false.
+    // This 'else' block (for when generateRecap is false) is fine as is.
     if (deps.sessionHistoryManager) {
         console.log(`${functionName}: Recap generation was SKIPPED. Saving base session data.`);
         deps.sessionHistoryManager.addCompletedSession(sessionToFinalize);
     }
-    // Also ensure the processing modal is closed in this path.
     if (deps.domElements?.processingCallModal && deps.modalHandler) {
         deps.modalHandler.close(deps.domElements.processingCallModal);
     }

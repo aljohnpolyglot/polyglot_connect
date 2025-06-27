@@ -13,35 +13,49 @@ import type {
     Connector,
     Group,
     GroupChatHistoryItem,
-    UiUpdater
+    UiUpdater,
+    MessageDocument
 } from '../types/global.d.ts';
+import {
+    collection,
+    doc,
+    setDoc,
+    deleteDoc,
+    query,
+    orderBy,
+    onSnapshot,
+    serverTimestamp,
+    Timestamp   
+    // Timestamp // Not directly used here but good to be aware of
+} from "firebase/firestore";
+import { auth, db } from '../firebase-config'; // Assuming this path
 
+import { uploadImageToImgur } from '../services/imgur_service'; // <<< ADD THIS IMPORT
 console.log('group_manager.ts: Script loaded, waiting for core dependencies.');
 
 window.groupManager = {} as GroupManagerModule;
 console.log('group_manager.ts: Structural placeholder for window.groupManager assigned.');
-
 interface GroupManagerModule {
     initialize: () => void;
-    loadAvailableGroups: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null) => void;
-    joinGroup: (groupOrGroupId: string | Group) => void;
+    loadAvailableGroups: (languageFilter?: string | null, categoryFilter?: string | null, nameSearch?: string | null, options?: { viewType: 'my-groups' | 'discover' }) => void;
+    joinGroup: (groupOrGroupId: string | Group) => Promise<void>; // Matches async joinGroup
     leaveCurrentGroup: (triggerReload?: boolean, updateSidebar?: boolean) => void;
-    handleUserMessageInGroup: ( 
-        textFromInput?: string, 
+    handleUserMessageInGroup: (
+        textFromInput?: string,
         options?: {
             skipUiAppend?: boolean;
             imageFile?: File | null;
-            captionText?: string | null;
-            messageId?: string;
-            timestamp?: number;
+            // captionText is removed as per new implementation logic
+            messageId?: string;     // Added to match implementation's needs
+            timestamp?: number;     // Added to match implementation's needs
         }
-    ) => void;
-    userIsTyping: () => void;
+    ) => Promise<void>;
+    userIsTyping: () => void; // Matches userIsTypingInGroupSignal (which is a shell)
     getCurrentGroupData: () => Group | null | undefined;
     getAllGroupDataWithLastActivity: () => ActiveGroupListItem[];
     isGroupJoined: (groupId: string) => boolean;
     getFullCurrentGroupMembers: () => Connector[];
-    getMembersForGroup: (groupDef: Group) => Connector[]; // ===== ADD THIS LINE =====
+    getMembersForGroup: (groupDef: Group) => Connector[]; // As per your "// ===== ADD THIS LINE ====="
 }
 const dependenciesForGroupManager = [
     'domElementsReady', 
@@ -59,7 +73,7 @@ const groupManagerMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForGroupManager.forEach(dep => groupManagerMetDependenciesLog[dep] = false);
 let groupManagerDepsMetCount = 0;
 
-
+let unsubscribeFromGroupMessages: (() => void) | null = null;
 
 
 
@@ -77,10 +91,10 @@ function initializeActualGroupManager(): void {
         tabManager: !!(window.tabManager && typeof window.tabManager.switchToTab === 'function'),
         chatOrchestrator: !!(window.chatOrchestrator && typeof window.chatOrchestrator.initialize === 'function'),
         polyglotHelpers: !!(window.polyglotHelpers && typeof window.polyglotHelpers.sanitizeTextForDisplay === 'function'),
-        chatUiManager: !!(window.chatUiManager && typeof window.chatUiManager.showGroupChatView === 'function'), 
+        chatUiManager: !!(window.chatUiManager && typeof window.chatUiManager.showGroupChatView === 'function'),
         groupDataManager: !!(window.groupDataManager && typeof window.groupDataManager.initialize === 'function'),
-        groupUiHandler: !!window.groupUiHandler, 
-        groupInteractionLogic: !!window.groupInteractionLogic, 
+        groupUiHandler: !!window.groupUiHandler,
+        groupInteractionLogic: !!window.groupInteractionLogic,
         polyglotConnectors: !!(window.polyglotConnectors && Array.isArray(window.polyglotConnectors))
     };
     const allFinalChecksPassed = Object.values(finalChecks).every(Boolean);
@@ -91,10 +105,14 @@ function initializeActualGroupManager(): void {
         console.error("group_manager.ts: CRITICAL - Some dependencies for full GroupManager setup FAILED finalChecks (see details above). `groupManagerReady` will NOT be dispatched.");
         const failed = Object.entries(finalChecks).filter(([,v]) => !v).map(([k]) => k);
         console.error("Failed finalChecks in GroupManager:", failed);
-        return; 
+        // Assign dummy methods to window.groupManager if you want to prevent further errors
+        // window.groupManager = { /* ... dummy methods ... */ } as GroupManagerModule;
+        // document.dispatchEvent(new CustomEvent('groupManagerReady')); // Dispatch even on failure for dependent modules
+        return;
     }
     console.log('group_manager.ts: All finalChecks passed. Proceeding to assign methods for `groupManagerReady` dispatch.');
     
+    // START OF IIFE that defines the 'methods' object
     const methods = ((): GroupManagerModule => {
         'use strict';
         console.log("group_manager.ts: IIFE for actual methods STARTING.");
@@ -109,17 +127,19 @@ function initializeActualGroupManager(): void {
             groupUiHandler: window.groupUiHandler as GroupUiHandler,
             groupInteractionLogic: window.groupInteractionLogic as GroupInteractionLogic,
             polyglotConnectors: window.polyglotConnectors as Connector[],
-            uiUpdater: window.uiUpdater as UiUpdater // <<< ADD THIS LINE
+            uiUpdater: window.uiUpdater as UiUpdater
         });
 
         let currentGroupTutorObject: Connector | null | undefined = null;
         let currentGroupMembersArray: Connector[] = [];
-        let isUserTypingInGroup: boolean = false;
-        let userTypingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+        let unsubscribeFromGroupMessages: (() => void) | null = null; // MOVED HERE
+        let isUserTypingInGroup: boolean = false; // This seems unused, consider removing if true
+        let userTypingTimeoutId: ReturnType<typeof setTimeout> | null = null; // This seems unused
+
 
         function initialize(): void {
             console.log("group_manager.ts: initialize() - START (FULL).");
-            const { groupDataManager, groupUiHandler } = getDeps(); // Fetch fresh deps
+            const { groupDataManager, groupUiHandler } = getDeps();
             groupDataManager?.initialize?.();
             groupUiHandler?.initialize?.();
             console.log("GroupManager (Facade): Initialized. Delegating to specialized managers.");
@@ -127,73 +147,98 @@ function initializeActualGroupManager(): void {
         }
 
         function getCurrentGroupData(): Group | null | undefined {
-            return getDeps().groupDataManager?.getCurrentGroupData();
+            const { groupDataManager } = getDeps();
+            if (groupDataManager) {
+                return groupDataManager.getCurrentGroupData();
+            }
+            return undefined; // Explicit return
         }
-
         function getFullCurrentGroupMembers(): Connector[] {
             return [...currentGroupMembersArray]; 
         }
 
+
+
      // =================== REPLACE THE loadAvailableGroups FUNCTION IN group_manager.ts ===================
-function loadAvailableGroups(
+  // In D:\polyglot_connect\src\js\core\group_manager.ts
+// This function is inside the IIFE that defines methods for window.groupManager
+async function loadAvailableGroups( // <<< MADE ASYNC
     languageFilter: string | null = null,
     categoryFilter: string | null = null,
     nameSearch: string | null = null,
     options: { viewType: 'my-groups' | 'discover' } = { viewType: 'my-groups' }
-): void {
+): Promise<void> { // <<< RETURN TYPE IS NOW Promise<void>
     console.log(`GM: loadAvailableGroups() - View: ${options.viewType}, Lang: ${languageFilter}, Cat: ${categoryFilter}, Name: ${nameSearch}`);
-    const { groupUiHandler, groupDataManager, domElements } = getDeps(); // Add domElements
+    
+    const { groupUiHandler, groupDataManager, domElements, polyglotHelpers } = getDeps();
 
-    if (!groupUiHandler || !groupDataManager || !domElements) {
-        console.error("GM: Missing GUH, GDM, or domElements in loadAvailableGroups");
+    if (!groupUiHandler || !groupDataManager || !domElements || !polyglotHelpers) {
+        console.error("GM: Missing critical dependencies in loadAvailableGroups. Aborting.");
+        if (domElements.groupsEmptyPlaceholder) {
+            domElements.groupsEmptyPlaceholder.textContent = "Error loading groups. Please try again later.";
+            domElements.groupsEmptyPlaceholder.style.display = 'block';
+        }
+        if (domElements.availableGroupsUl) domElements.availableGroupsUl.innerHTML = '';
         return;
     }
 
+    // ***** START: RACE CONDITION FIX *****
+    // Ensure GroupDataManager is fully initialized (i.e., its userJoinedGroupIdsSet is populated from Firestore)
+    // before we rely on isGroupJoined.
+    try {
+        console.log("GM: loadAvailableGroups - Awaiting GDM initialization...");
+        await groupDataManager.initialize(); // GDM.initialize() now returns a promise that resolves when ready
+        console.log("GM: loadAvailableGroups - GDM initialization complete. userJoinedGroupIdsSet should be reliable.");
+    } catch (error) {
+        console.error("GM: loadAvailableGroups - Error during GDM initialization:", error);
+        if (domElements.groupsEmptyPlaceholder) {
+            domElements.groupsEmptyPlaceholder.textContent = "Could not load your group data. Please check connection and refresh.";
+            domElements.groupsEmptyPlaceholder.style.display = 'block';
+        }
+        if (domElements.availableGroupsUl) domElements.availableGroupsUl.innerHTML = '';
+        return;
+    }
+    // ***** END: RACE CONDITION FIX *****
+
     let allGroups = groupDataManager.getAllGroupDefinitions(languageFilter, categoryFilter, nameSearch);
-    let groupsToDisplay: Group[];
+    let groupsToDisplay: Array<Group & { isJoined?: boolean }>; // Type from GDM
 
     if (options.viewType === 'my-groups') {
-        // --- THIS IS THE ORIGINAL FILTERING LOGIC ---
-        const joinedGroupIdsFromIsJoinedCheck = allGroups
-            .filter(g => groupDataManager.isGroupJoined(g.id))
-            .map(g => g.id);
+        // Now, isGroupJoined() should be reliable as GDM is initialized.
+        // getAllGroupDefinitions itself now adds the `isJoined` property correctly.
+        groupsToDisplay = allGroups.filter(g => g.isJoined); 
         
-        groupsToDisplay = allGroups.filter(g => groupDataManager.isGroupJoined(g.id)); 
+        console.log(`%c[GM_DEBUG] In 'my-groups' view. Initial allGroups from GDM: ${allGroups.length}. After filtering for g.isJoined, groupsToDisplay: ${groupsToDisplay.length}.`, "color: white; background: purple;");
         
-        console.error(`%c[GM_DEBUG] In 'my-groups' view. Initial allGroups count: ${allGroups.length}. After filtering with groupDataManager.isGroupJoined(), groupsToDisplay count: ${groupsToDisplay.length}. IDs: ${JSON.stringify(joinedGroupIdsFromIsJoinedCheck)}`, "color: white; background: purple;");
-        
-    } else { 
-        groupsToDisplay = allGroups.filter(g => !groupDataManager.isGroupJoined(g.id));
-        console.error(`%c[GM_DEBUG] In 'discover' view. Initial allGroups count: ${allGroups.length}. After filtering for NOT groupDataManager.isGroupJoined(), groupsToDisplay count: ${groupsToDisplay.length}.`, "color: white; background: teal;");
+    } else { // 'discover' view
+        groupsToDisplay = allGroups.filter(g => !g.isJoined);
+        console.log(`%c[GM_DEBUG] In 'discover' view. Initial allGroups from GDM: ${allGroups.length}. After filtering for !g.isJoined, groupsToDisplay: ${groupsToDisplay.length}.`, "color: white; background: teal;");
     }
 
     // Call the UI handler to render the list
-    groupUiHandler.displayAvailableGroups(groupsToDisplay, joinGroup);
+    groupUiHandler.displayAvailableGroups(groupsToDisplay, joinGroup); // joinGroup is a method in GM's scope
     
-    // --- THIS IS THE NEW LOGIC ---
-    // Now, update the empty placeholder message based on the results.
+    // Update the empty placeholder message based on the results.
     const placeholderEl = domElements.groupsEmptyPlaceholder;
     if (placeholderEl) {
         const hasActiveFilters = !!languageFilter || !!categoryFilter || !!nameSearch;
         if (groupsToDisplay.length > 0) {
             placeholderEl.style.display = 'none';
         } else {
-            placeholderEl.style.display = 'block'; // Or 'flex'
+            placeholderEl.style.display = 'block';
             if (hasActiveFilters) {
                 placeholderEl.textContent = 'No groups match your current filters.';
             } else {
-                // Show a different message depending on the tab
                 if (options.viewType === 'my-groups') {
-                    placeholderEl.textContent = 'You have not joined any groups yet. Find some in the Discover tab!';
-                } else {
-                    placeholderEl.textContent = 'No new groups to discover right now.';
+                    placeholderEl.textContent = 'You have not joined any groups yet. Explore the Discover tab!';
+                } else { // 'discover'
+                    placeholderEl.textContent = 'No new groups to discover at the moment. Check back later!';
                 }
             }
         }
     }
-    // --- END OF NEW LOGIC ---
     
-    console.log(`GM: loadAvailableGroups() - Finished. Displaying ${groupsToDisplay.length} groups.`);
+    console.log(`GM: loadAvailableGroups() - Finished. Displaying ${groupsToDisplay.length} groups for view '${options.viewType}'.`);
 }
 // =================================================================================================
 
@@ -281,149 +326,309 @@ function loadAvailableGroups(
             return members;
         }
 
-
-
-
-
-
-
-
-     // D:\polyglot_connect\src\js\core\group_manager.ts
-
-     async function joinGroup(groupOrGroupId: string | Group): Promise<void> {
-        console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
-        const { groupDataManager, groupUiHandler, groupInteractionLogic, tabManager, chatOrchestrator } = getDeps();
-    
-        if (!groupUiHandler || !groupDataManager || !groupInteractionLogic || !tabManager || !chatOrchestrator) {
-            console.error("GroupManager: joinGroup - One or more critical dependencies missing!");
-            alert("Cannot join group: core components missing.");
-            return;
-        }
-    
-        // <<< FIX: The logic is now in the correct order >>>
-        // 1. Get the groupId first.
-        const groupId = (typeof groupOrGroupId === 'object' && groupOrGroupId !== null) ? groupOrGroupId.id : groupOrGroupId;
+        async function joinGroup(groupOrGroupId: string | Group): Promise<void> {
+            console.log("GROUP_MANAGER: joinGroup CALLED with:", typeof groupOrGroupId === 'string' ? groupOrGroupId : groupOrGroupId.id);
+            const {
+                groupDataManager,
+                groupUiHandler,
+                groupInteractionLogic,
+                tabManager,
+                chatOrchestrator,
+                // uiUpdater, // Not directly used in this version, GUH handles UI
+                polyglotHelpers // Needed for UUIDs if GIL doesn't generate them for AI messages
+            } = getDeps(); // getDeps() must be defined within the SAME IIFE scope
         
-        // 2. NOW declare groupDef using the groupId.
-        const groupDef = groupDataManager.getGroupDefinitionById(groupId);
-    
-        // 3. NOW it is safe to check groupDef.
-        if (!groupDef || !groupDef.name || !groupDef.language) {
-            // I've also corrected the error message here to be more accurate.
-            console.error(`GroupManager: Group definition (or its name/language) not found for ID: '${groupId}'`);
-            alert(`Error: Could not find details for group ID ${groupId}.`);
-            return;
-        }
-
-        const currentActiveGroupId = groupDataManager.getCurrentGroupId();
-        const currentDomElements = window.domElements;
-        const currentTab = tabManager.getCurrentActiveTab?.();
-        const groupChatUIDisplayStyle = currentDomElements?.groupChatInterfaceDiv?.style.display;
-
-        const isAlreadyActiveAndVisible = currentActiveGroupId === groupId &&
-                                        groupChatUIDisplayStyle !== 'none' &&
-                                        currentTab === 'groups';
-
-        if (isAlreadyActiveAndVisible) {
-            console.warn(`GroupManager: joinGroup called for ALREADY ACTIVE and VISIBLE group '${groupId}'. Ensuring UI consistency.`);
-            tabManager.switchToTab('groups');
-            (window.shellController as any)?.switchView?.('groups');
-            if (window.uiUpdater?.updateGroupChatHeader && groupDef.name && currentGroupMembersArray.length > 0) {
-                window.uiUpdater.updateGroupChatHeader(groupDef.name, currentGroupMembersArray);
-            }
-            return;
-        }
-
-        if (currentActiveGroupId && currentActiveGroupId !== groupId) {
-            leaveCurrentGroup(false, false);
-        }
-    
-        console.log(`GroupManager Facade: Proceeding with full join/activation for group "${groupDef.name}" (ID: ${groupId})`);
-        
-        groupDataManager.setCurrentGroupContext(groupId, groupDef);
-        localStorage.setItem('polyglotLastActiveGroupId', groupId); // <<< ADD THIS LINE
-        currentGroupMembersArray = getMembersForGroup(groupDef);
-        if (currentGroupMembersArray.length === 0) {
-            console.error(`GroupManager: Failed to get any members for group '${groupDef.name}'. Aborting join.`);
-            return;
-        }
-        currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
-    
-        const loadedHistory = groupDataManager.getLoadedChatHistory();
-        console.log(`GroupManager: Loaded history for group '${groupId}': ${loadedHistory.length} messages.`);
-    
-        if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
-            groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
-            groupInteractionLogic.startConversationFlow(true); 
-        } else {
-            console.error("GroupManager: CRITICAL - groupInteractionLogic.initialize not available or host missing.");
-            return;
-        }
-        
-        if (groupUiHandler.showGroupChatView && groupDef.name && currentGroupMembersArray.length > 0) {
-            groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, loadedHistory);
-        } else {
-            console.error("GroupManager: Cannot show group chat view.");
-            resetGroupState();
-            groupDataManager.setCurrentGroupContext(null, null);
-            return;
-        }
-
-        tabManager.switchToTab('groups');
-        
-        // --- THIS IS THE FIX ---
-        // Because we are now IN a group, we must EXPLICITLY tell the sidebar
-        // to re-evaluate its state for the 'groups' tab.
-        const sidebarPanelManager = window.sidebarPanelManager;
-        if (sidebarPanelManager) {
-            console.log("[GroupManager] Forcing sidebar panel update after joining group.");
-            sidebarPanelManager.updatePanelForCurrentTab('groups');
-        }
-        // --- END OF FIX ---
-        
-        // Update the list of active chats
-        chatOrchestrator?.renderCombinedActiveChatsList?.();
-        // --- THIS IS THE CRITICAL FIX ---
-        // We now AWAIT the conversation flow to start and finish its first run.
-
-// --- END OF NEW, CORRECT ORDER ---
-
-console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
-} 
-
-        function sendWelcomeMessagesToGroup(groupDef: Group, tutor: Connector, members: Connector[]): void {
-            console.log("GM: sendWelcomeMessagesToGroup() - START for group:", groupDef?.name);
-            const { groupUiHandler, groupDataManager, groupInteractionLogic } = getDeps(); 
-
-            if (!groupDef || !tutor || !groupUiHandler?.appendMessageToGroupLog || !groupDataManager?.addMessageToCurrentGroupHistory) {
-                console.error("GM.sendWelcomeMessagesToGroup: Missing critical parameters or dependencies (groupDef, tutor, GUH.append, GDM.addMsg).");
+            if (!groupDataManager || !groupUiHandler || !groupInteractionLogic || !tabManager || !chatOrchestrator || !polyglotHelpers) {
+                console.error("GroupManager: joinGroup - Critical dependencies missing!");
+                alert("Cannot join group: core components missing.");
                 return;
             }
-
-            // Tutor sends the initial welcome and prompts the user.
-            const welcomePromptForUser = `Welcome to "${groupDef.name}"! I'm ${tutor.profileName || 'your host for this session'}, and we'll be chatting in ${groupDef.language}. Our general topic is: ${groupDef.tags?.[0] || 'conversation practice'}. To get us started, could you introduce yourself and let us know what you'd like to talk about or practice today?`;
-            groupUiHandler.appendMessageToGroupLog(welcomePromptForUser, tutor.profileName!, false, tutor.id);
-            groupDataManager.addMessageToCurrentGroupHistory({ 
-                speakerId: tutor.id, 
-                text: welcomePromptForUser, 
-                timestamp: Date.now(), 
-                speakerName: tutor.profileName 
-            });
-            
-            // Crucially, save history *after* tutor's first message so it's persisted.
-            groupDataManager.saveCurrentGroupChatHistory(true); // Update sidebar immediately
-
-            // Set a flag in GroupInteractionLogic to indicate it's awaiting the user's first intro.
-            // The actual AI learner introductions will be triggered by GIL after the user speaks.
-            if (groupInteractionLogic && typeof groupInteractionLogic.setAwaitingUserFirstIntroduction === 'function') {
-                groupInteractionLogic.setAwaitingUserFirstIntroduction(true);
-                console.log("GM: Told GroupInteractionLogic to await user's first introduction.");
-            } else {
-                console.warn("GM: groupInteractionLogic.setAwaitingUserFirstIntroduction() not available. AI intros might not wait for user.");
+        
+            const groupId = (typeof groupOrGroupId === 'object' && groupOrGroupId !== null) ? groupOrGroupId.id : groupOrGroupId;
+            const groupDef = groupDataManager.getGroupDefinitionById(groupId);
+        
+            if (!groupDef || !groupDef.name || !groupDef.language) {
+                console.error(`GroupManager: Group definition (or its name/language) not found for ID: '${groupId}'`);
+                alert(`Error: Could not find details for group ID ${groupId}.`);
+                return;
             }
-            
-            console.log("GM: sendWelcomeMessagesToGroup() - FINISHED. Tutor welcome sent, awaiting user intro via GIL.");
+        
+            const user = auth.currentUser;
+            if (!user) {
+                console.error("GroupManager: No authenticated user to join group.");
+                alert("You must be logged in to join a group.");
+                return;
+            }
+        
+            const currentActiveGroupId = groupDataManager.getCurrentGroupId();
+            if (currentActiveGroupId && currentActiveGroupId !== groupId) {
+                console.log(`GM.joinGroup: User is in group '${currentActiveGroupId}', attempting to join '${groupId}'. Leaving current group first.`);
+                await leaveCurrentGroup(false, false); // leaveCurrentGroup must be defined in this IIFE
+                console.log(`GM.joinGroup: Finished leaving group '${currentActiveGroupId}'. Now proceeding to join '${groupId}'.`);
+            } else if (currentActiveGroupId && currentActiveGroupId === groupId) {
+                console.log(`GM.joinGroup: User is already in group '${groupId}'. Activating chat view.`);
+            }
+        
+            try {
+                const memberRef = doc(db, "groups", groupId, "members", user.uid);
+                await setDoc(memberRef, {
+                    joinedAt: serverTimestamp(),
+                    displayName: user.displayName || "Anonymous User", // Consistent default
+                }, { merge: true });
+                console.log(`GroupManager: User ${user.uid} successfully joined/updated in group ${groupId} in Firestore.`);
+                groupDataManager._updateUserJoinedGroupState?.(groupId, true);
+            } catch (error) {
+                console.error(`GroupManager: Error joining group ${groupId} in Firestore:`, error);
+                alert("Failed to join group. Please try again.");
+                groupDataManager._updateUserJoinedGroupState?.(groupId, false); // Revert GDM state
+                return;
+            }
+        
+            // Set GDM context. This loads history from LocalStorage into GDM's internal cache initially.
+            groupDataManager.setCurrentGroupContext(groupId, groupDef);
+            localStorage.setItem('polyglotLastActiveGroupId', groupId);
+        
+            // Populate IIFE-scoped variables (currentGroupMembersArray, currentGroupTutorObject)
+            // These variables should be declared at the top of your IIFE.
+            currentGroupMembersArray = getMembersForGroup(groupDef); // getMembersForGroup must be in IIFE
+            currentGroupTutorObject = currentGroupMembersArray.find(m => m.id === groupDef.tutorId);
+        
+            if (currentGroupMembersArray.length === 0 || !currentGroupTutorObject) {
+                console.error(`GM.joinGroup: Critical error resolving members or tutor for group ${groupId}.`);
+                alert("Error setting up group members. Cannot join.");
+                return;
+            }
+        
+            // Clean up any existing main message listener
+            if (unsubscribeFromGroupMessages) { // unsubscribeFromGroupMessages is an IIFE-scoped variable
+                console.log("GM.joinGroup: Cleaning up previous group message listener.");
+                unsubscribeFromGroupMessages();
+                unsubscribeFromGroupMessages = null;
+            }
+        
+            const messagesQuery = query(collection(db, "groups", groupId, "messages"), orderBy("timestamp", "asc"));
+            let initialSyncDoneForGIL = false; // Flag to ensure GIL starts after initial messages are processed into GDM
+        
+            console.log(`GM.joinGroup: Setting up MAIN Firestore listener for messages in group ${groupId}.`);
+            unsubscribeFromGroupMessages = onSnapshot(messagesQuery, (snapshot) => { // Assigns to IIFE-scoped variable
+                const {
+                    groupUiHandler: currentGUH_Main,
+                    groupDataManager: currentGDM_Main,
+                    uiUpdater: currentUIU_Main, // For scrolling
+                    domElements: currentDOM_Main, // For scrolling
+                    // polyglotConnectors is needed if resolving speaker names for non-members (unlikely for group chat)
+                    // For group members, currentGroupMembersArray (IIFE-scoped) should be used.
+                } = getDeps();
+        
+                if (!currentGDM_Main || !currentGUH_Main) {
+                    console.warn("GM (Main Listener): GDM or GUH not available in onSnapshot callback. Skipping message processing.");
+                    return;
+                }
+        
+                let newMessagesProcessedInThisSnapshot = false;
+        
+                snapshot.docChanges().forEach((change) => {
+                    const msgData = change.doc.data() as MessageDocument; // Type assertion
+                    const userAuth = auth.currentUser; // Get current user for owner check
+        
+                    if (!msgData.messageId) {
+                        console.warn("GM (Main Listener): Received message from Firestore without app-level messageId. Skipping:", change.doc.id, msgData);
+                        return;
+                    }
+        
+                    // Optimistic update reconciliation for user's own messages
+                    if (userAuth && msgData.senderId === userAuth.uid) {
+                        const existingOptimisticMessage = document.querySelector(`.chat-message-wrapper[data-message-id="${msgData.messageId}"]:not([data-firestore-message-id])`);
+                        if (existingOptimisticMessage) {
+                            existingOptimisticMessage.setAttribute('data-firestore-message-id', change.doc.id);
+                            console.log(`GM (Main Listener): Reconciled own optimistic message ${msgData.messageId} with Firestore doc ${change.doc.id}.`);
+                        }
+                        // For user's own messages, we typically don't re-append to UI if already handled optimistically.
+                        // However, GDM cache *should* still be updated with the confirmed Firestore data if it wasn't perfectly synced.
+                    }
+        
+                    // Resolve speakerName using IIFE-scoped currentGroupMembersArray
+                    const speakerData = currentGroupMembersArray.find(member => member.id === msgData.senderId);
+                    const resolvedSpeakerName = msgData.senderName || // Prefer senderName from Firestore if present
+                                             (msgData.senderId === userAuth?.uid ? "You" :
+                                             (speakerData?.profileName || "Bot")); // Fallback to Bot
+        
+                                             const historyItem: GroupChatHistoryItem = { 
+                                                firestoreDocId: change.doc.id,
+                                                messageId: msgData.messageId,
+                                                speakerId: msgData.senderId,
+                                                speakerName: resolvedSpeakerName,
+                                                text: msgData.text,
+                                                timestamp: (msgData.timestamp as Timestamp)?.toMillis() || Date.now(),
+                                                imageUrl: msgData.imageUrl === null ? undefined : msgData.imageUrl, 
+                                                type: msgData.type as GroupChatHistoryItem['type'], 
+                                                reactions: msgData.reactions || {},
+                                                audioBlobDataUrl: msgData.content_url === null ? undefined : msgData.content_url, // <<< ENSURE THIS FIX
+                                            };
+        
+                    if (change.type === "added") {
+                        newMessagesProcessedInThisSnapshot = true;
+        
+                        // SOLUTION FOR SIDEBAR & GDM CACHE (Issue 3)
+                        if (currentGDM_Main.getCurrentGroupId() === groupId) {
+                            currentGDM_Main.addMessageToInternalCacheOnly(historyItem);
+                        }
+        
+                        // Append to UI
+                        if (!(userAuth && msgData.senderId === userAuth.uid && document.querySelector(`.chat-message-wrapper[data-firestore-message-id="${change.doc.id}"]`))) {
+                            currentGUH_Main.appendMessageToGroupLog(
+                                historyItem.text || "",
+                                historyItem.speakerName!,
+                                false, 
+                                historyItem.speakerId,
+                                { 
+                                    messageId: historyItem.messageId,
+                                    id: historyItem.firestoreDocId,
+                                    imageUrl: historyItem.imageUrl,
+                                    timestamp: historyItem.timestamp,
+                                    reactions: historyItem.reactions,
+                                    firestoreDocId: historyItem.firestoreDocId,
+                                    type: historyItem.type,
+                                    // CRITICAL FOR VOICE MEMO PLAYBACK:
+                                    isVoiceMemo: historyItem.type === 'voice_memo', 
+                                    audioSrc: historyItem.audioBlobDataUrl === null ? undefined : historyItem.audioBlobDataUrl 
+                                }
+                            );
+                        }
+                    } else if (change.type === "modified") {
+                        console.log(`GM (Main Listener): Message ${msgData.messageId} modified. FirestoreDocID: ${change.doc.id}. Data:`, msgData);
+                        // TODO: Implement GDM cache update for modified messages
+                        // TODO: Implement UI update for modified messages in groupUiHandler
+                    }
+                }); // End of snapshot.docChanges().forEach()
+        
+                // After processing all changes in this snapshot:
+                if (newMessagesProcessedInThisSnapshot) {
+                    // Check GDM and its method before calling
+                    if (currentGDM_Main && typeof currentGDM_Main.saveCurrentGroupChatHistory === 'function') {
+                        if (currentGDM_Main.getCurrentGroupId() === groupId) {
+                            currentGDM_Main.saveCurrentGroupChatHistory(true); // Now safer
+                        } else {
+                            console.log(`GM (Main Listener): Group ${groupId} is no longer active. GDM cache updated in memory. Consider background save if needed.`);
+                            // Optionally, if you still want to save for inactive groups:
+                            // currentGDM_Main.saveCurrentGroupChatHistory(false); // Or true, depending on desired event dispatch
+                        }
+                    } else {
+                        console.warn("GM (Listener): GDM or saveCurrentGroupChatHistory method not available for snapshot save.");
+                    }
+
+                    // Scroll chat to bottom if it's the active view
+                    if (currentDOM_Main?.groupChatLogDiv && currentDOM_Main.groupChatInterfaceDiv && (currentDOM_Main.groupChatInterfaceDiv as HTMLElement).style.display !== 'none' && currentDOM_Main.groupChatInterfaceDiv.classList.contains('active')) { // THIS IS LIKELY WHERE LINE 513 IS
+                        if (currentUIU_Main && typeof currentUIU_Main.scrollEmbeddedChatToBottom === 'function') {
+                            currentUIU_Main.scrollEmbeddedChatToBottom(currentDOM_Main.groupChatLogDiv);
+                        } else {
+                            console.warn("GM (Listener): uiUpdater or scrollEmbeddedChatToBottom method not available for scrolling.");
+                        }
+                    }
+                } // This closing brace is for 'if (newMessagesProcessedInThisSnapshot)'
+        
+                // SOLUTION FOR GRAND OPENING (Issue 2)
+                // This ensures GIL starts *after* the very first batch of messages from Firestore
+                // has been processed into GDM's cache by the above logic.
+                if (!initialSyncDoneForGIL && snapshot.docChanges().length > 0) { // Check if any docs were processed
+                    initialSyncDoneForGIL = true;
+                    console.log(`GM.joinGroup (Main Listener): Initial Firestore snapshot processed for group ${groupId}. GDM cache should be up-to-date. Starting GIL.`);
+
+                    // Ensure GDM's LocalStorage is also up-to-date with this initial sync
+                    // Check GDM and its method before calling
+                    if (currentGDM_Main && typeof currentGDM_Main.saveCurrentGroupChatHistory === 'function') {
+                        if (currentGDM_Main.getCurrentGroupId() === groupId) {
+                            currentGDM_Main.saveCurrentGroupChatHistory(false); // Now safer
+                        }
+                    } else {
+                        console.warn("GM (Listener): GDM or saveCurrentGroupChatHistory method not available for initial silent save.");
+                    }
+
+                    if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
+                        groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+                        groupInteractionLogic.startConversationFlow(true);
+                    } else {
+                        console.error("GM.joinGroup: Failed to initialize/start GroupInteractionLogic after initial sync.");
+                    }
+                } else if (!initialSyncDoneForGIL && snapshot.docChanges().length === 0) {
+                    initialSyncDoneForGIL = true;
+                    console.log(`GM.joinGroup (Main Listener): Initial Firestore snapshot for group ${groupId} was empty. Starting GIL based on LocalStorage/GDM cache.`);
+
+                    // Optionally, still attempt to save if GDM should clear/save an empty state
+                    // if (currentGDM_Main && typeof currentGDM_Main.saveCurrentGroupChatHistory === 'function') {
+                    //     if (currentGDM_Main.getCurrentGroupId() === groupId) {
+                    //         // currentGDM_Main.saveCurrentGroupChatHistory(false); 
+                    //     }
+                    // }
+
+                    if (groupInteractionLogic?.initialize && currentGroupTutorObject) {
+                        groupInteractionLogic.initialize(currentGroupMembersArray, currentGroupTutorObject);
+                        groupInteractionLogic.startConversationFlow(true);
+                    } else {
+                        console.error("GM.joinGroup: Failed to initialize/start GroupInteractionLogic for empty new group.");
+                    }
+                }
+        
+        
+            }, (error: any) => { // Explicitly type error for the listener
+                console.error(`GroupManager: Error listening to messages for group ${groupId}:`, error);
+            });
+            console.log(`GroupManager: Main persistent Firestore listener setup complete for group ${groupId}.`);
+        
+            // --- UI Update: Show Group Chat View ---
+            // This should happen after context is set. GIL starts after initial message sync.
+            // The history passed here will be from LocalStorage (via GDM.getLoadedChatHistory called by setCurrentGroupContext).
+            // The Firestore listener will then populate/update the UI with live/fresher messages.
+            const historyForNewGroupFromLS = groupDataManager.getLoadedChatHistory(); // GDM's cache state at this point
+            console.log(`GM.joinGroup: Passing history (from LS via GDM) to showGroupChatView. Length: ${historyForNewGroupFromLS.length}. Group: ${groupDef.name}`);
+            groupUiHandler.showGroupChatView(groupDef, currentGroupMembersArray, historyForNewGroupFromLS); // Uses IIFE-scoped currentGroupMembersArray
+        
+            tabManager.switchToTab('groups');
+            window.sidebarPanelManager?.updatePanelForCurrentTab?.('groups'); // Optional chaining
+            chatOrchestrator?.renderCombinedActiveChatsList?.(); // Update sidebar
+        
+            console.log(`group_manager.ts: joinGroup() - FINISHED full join/activation for group: ${groupId}`);
+        
+                
+
+// In group_manager.ts, INSIDE the IIFE `const methods = ((): GroupManagerModule => { ... })();`
+
+    function sendWelcomeMessagesToGroup(groupDef: Group, tutor: Connector, members: Connector[]): void {
+        console.log("GM: sendWelcomeMessagesToGroup() - START for group:", groupDef?.name);
+        const { groupUiHandler, groupDataManager, groupInteractionLogic, polyglotHelpers } = getDeps(); // <<< Added polyglotHelpers
+
+        if (!groupDef || !tutor || !groupUiHandler?.appendMessageToGroupLog || !polyglotHelpers) { // Added polyglotHelpers check
+            console.error("GM.sendWelcomeMessagesToGroup: Missing critical parameters or dependencies.");
+            return;
         }
+
+        const welcomePromptForUser = `Welcome to "${groupDef.name}"! I'm ${tutor.profileName || 'your host for this session'}, and we'll be chatting in ${groupDef.language}. Our general topic is: ${groupDef.tags?.[0] || 'conversation practice'}. To get us started, could you introduce yourself and let us know what you'd like to talk about or practice today?`;
+        groupUiHandler.appendMessageToGroupLog(welcomePromptForUser, tutor.profileName!, false, tutor.id);
+    
+        
+        const user = auth.currentUser; 
+        if (currentGroupTutorObject && groupDef && groupDataManager.addMessageToFirestoreGroupChat) { 
+            groupDataManager.addMessageToFirestoreGroupChat(groupDef.id, {
+                appMessageId: polyglotHelpers.generateUUID(), // <<< NOW OK
+                senderId: currentGroupTutorObject.id, 
+                senderName: currentGroupTutorObject.profileName,
+                text: welcomePromptForUser, 
+                type: 'text'
+            }).then(docId => {
+                if (docId) console.log("GM: Tutor welcome message saved to Firestore.");
+                else console.error("GM: Failed to save tutor welcome message to Firestore.");
+            });
+        }
+    }
+        if (groupInteractionLogic && typeof groupInteractionLogic.setAwaitingUserFirstIntroduction === 'function') {
+            groupInteractionLogic.setAwaitingUserFirstIntroduction(true);
+            console.log("GM: Told GroupInteractionLogic to await user's first introduction.");
+        } else {
+            console.warn("GM: groupInteractionLogic.setAwaitingUserFirstIntroduction() not available. AI intros might not wait for user.");
+        }
+        
+        console.log("GM: sendWelcomeMessagesToGroup() - FINISHED. Tutor welcome sent, awaiting user intro via GIL.");
+    }
 
       // <<< REPLACE THE FUNCTION WITH THIS EMPTY VERSION >>>
 function userIsTypingInGroupSignal(): void {
@@ -436,74 +641,178 @@ function userIsTypingInGroupSignal(): void {
     // groupInteractionLogic?.setUserTypingStatus(true); // This was the error
 }
 
-        function leaveCurrentGroup(triggerReload: boolean = true, updateSidebar: boolean = true): void {
-            const { groupInteractionLogic, groupUiHandler, groupDataManager, tabManager, chatOrchestrator } = getDeps(); 
-            groupInteractionLogic.stopConversationFlow?.();
-            // --- GM.DEBUG.LEAVE.1 ---
-            const currentGroupIdBeforeLeaving = groupDataManager?.getCurrentGroupId?.(); 
-            console.error(`GM.leaveCurrentGroup: CALLED. Current Group ID (from GDM before GDM.setCurrentContext(null) is called by this func): '${currentGroupIdBeforeLeaving}'. TriggerReload: ${triggerReload}, UpdateSidebar: ${updateSidebar}. Stack:`, new Error().stack);
-            // --- END GM.DEBUG.LEAVE.1 ---
+async function handleUserVoiceMemoInGroup(
+    transcript: string,
+    audioSupabaseUrl: string,
+    options: {
+        messageId?: string; // App-level UUID from voice_memo_handler
+        timestamp?: number;
+    } = {}
+): Promise<void> {
+    const functionName = "GroupManager.handleUserVoiceMemoInGroup";
+    const { groupUiHandler, groupDataManager, groupInteractionLogic, polyglotHelpers } = getDeps();
+    const currentUser = auth.currentUser;
 
-            console.log("group_manager.ts: leaveCurrentGroup() - START. TriggerReload:", triggerReload, "UpdateSidebar:", updateSidebar);
+    if (!currentUser || !groupUiHandler || !groupDataManager || !groupInteractionLogic || !polyglotHelpers) {
+        console.error(`${functionName}: Critical dependencies missing.`);
+        return;
+    }
+    const currentGroupData = groupDataManager.getCurrentGroupData();
+    if (!currentGroupData) {
+        console.error(`${functionName}: No current group data.`);
+        return;
+    }
 
-            if (!groupInteractionLogic || !groupUiHandler || !groupDataManager || !tabManager || !chatOrchestrator) {
-                console.error("GroupManager: leaveCurrentGroup - One or more critical dependencies missing!");
-                return;
-            }
+    console.log(`${functionName}: Processing user voice memo. Transcript: "${transcript.substring(0,30)}...", URL: ${audioSupabaseUrl}`);
 
-            groupInteractionLogic.stopConversationFlow?.();
-            
-            if (groupDataManager.getCurrentGroupId()) { // Check if there was an active group
-                console.log("GroupManager Facade: Performing final save for group:", groupDataManager.getCurrentGroupId());
-                groupDataManager.saveCurrentGroupChatHistory(false); 
-            }
+    const optimisticAppMessageId = options.messageId || polyglotHelpers.generateUUID();
+    const optimisticTimestamp = options.timestamp || Date.now();
 
-            groupUiHandler.hideGroupChatViewAndShowList?.();
-            resetGroupState(); 
-            groupDataManager.setCurrentGroupContext(null, null); // This sets GDM's current group to null
-            localStorage.removeItem('polyglotLastActiveGroupId'); // <<< ADD THIS LINE
-           
-            groupInteractionLogic.reset?.();
-
-            const currentTab = tabManager.getCurrentActiveTab?.();
-            const currentChatOrchestrator = window.chatOrchestrator as ChatOrchestrator | undefined; // Re-fetch for safety
-
-          // =================== REPLACE THE DELETED BLOCK WITH THIS ===================
-            // After leaving a group, we always want to be on the 'groups' tab.
-            // By calling the tabManager, we trigger the master coordinator in shell_controller,
-            // which will handle BOTH the view switch and the sidebar panel update correctly.
-        
-         
-            if (tabManager) {
-                tabManager.switchToTab('groups');
-            }
-            
-            // --- THIS IS THE FIX ---
-            // Because we have just LEFT a group, we must EXPLICITLY tell the sidebar
-            // to re-evaluate its state for the 'groups' tab.
-            const sidebarPanelManager = window.sidebarPanelManager;
-            if (sidebarPanelManager) {
-                console.log("[GroupManager] Forcing sidebar panel update after leaving group.");
-                sidebarPanelManager.updatePanelForCurrentTab('groups');
-            }
-            // --- END OF FIX ---
-
-            // The list of groups to display might have changed (e.g., if it was the last joined group)
-            if (tabManager?.getCurrentActiveTab?.() === 'groups') {
-                loadAvailableGroups();
-            }
-
-            // Update the list of active chats
-            chatOrchestrator?.renderCombinedActiveChatsList?.();
-// ============================================================================
-            
-            if (triggerReload && currentTab === 'groups') {
-                console.log("GroupManager: Reloading available groups list as current tab was 'groups'.");
-                loadAvailableGroups();
-            }
-            
-            console.log("group_manager.ts: leaveCurrentGroup() - FINISHED.");
+    // 1. Optimistic UI Append for user's voice memo
+    groupUiHandler.appendMessageToGroupLog(
+        transcript,
+        currentUser.displayName || "You",
+        true, // isUser
+        currentUser.uid,
+        {
+            messageId: optimisticAppMessageId,
+            timestamp: optimisticTimestamp,
+            isVoiceMemo: true,
+            audioSrc: audioSupabaseUrl, // Pass Supabase URL for playback
+            type: 'voice_memo'
         }
+    );
+
+    // 2. Save user's voice memo to Firestore
+    const userMessageFirestoreId = await groupDataManager.addMessageToGroup(
+        currentGroupData.id,
+        currentUser.uid,
+        transcript,
+        'voice_memo',
+        {
+            appMessageId: optimisticAppMessageId,
+            timestamp: new Date(optimisticTimestamp), // Firestore expects Date for serverTimestamp
+            senderName: currentUser.displayName || "User",
+            content_url: audioSupabaseUrl // Save Supabase URL
+        }
+    );
+
+    if (!userMessageFirestoreId) {
+        console.error(`${functionName}: Failed to save user's voice memo to Firestore. Aborting AI response.`);
+        // Optionally update UI of optimistic message to show save error
+        return;
+    }
+    console.log(`${functionName}: User voice memo saved to Firestore. DocID: ${userMessageFirestoreId}, AppID: ${optimisticAppMessageId}`);
+
+    // 3. Trigger Group Interaction Logic for AI responses (passing the transcript)
+    const aiResponsePayload = await groupInteractionLogic.handleUserMessage(
+        transcript, // Pass transcript as the text input to GIL
+        {} // No image options here
+    );
+
+    // 4. Save AI responses to Firestore
+    if (aiResponsePayload && aiResponsePayload.aiMessagesToPersist && aiResponsePayload.aiMessagesToPersist.length > 0) {
+        for (const aiMsg of aiResponsePayload.aiMessagesToPersist) {
+            await groupDataManager.addMessageToFirestoreGroupChat( // Use the more direct Firestore method
+                currentGroupData.id,
+                {
+                    appMessageId: aiMsg.messageId,
+                    senderId: aiMsg.speakerId,
+                    senderName: aiMsg.speakerName,
+                    text: aiMsg.text,
+                    type: aiMsg.type, // Will be 'text' from GIL for this flow
+                    // No content_url or imageUrl for AI's text response to a voice memo
+                }
+            );
+        }
+        console.log(`${functionName}: Saved ${aiResponsePayload.aiMessagesToPersist.length} AI responses to Firestore.`);
+    }
+    // GIL's playScene handles AI UI updates.
+}
+
+
+
+
+async function leaveCurrentGroup(triggerReload: boolean = true, updateSidebar: boolean = true): Promise<void> { // Add Promise<void>
+    console.error("!!!!!!!!!!!!!!!!! leaveCurrentGroup CALLED !!!!!!!!!!!!!!!!!"); // Make it loud
+    console.trace("Call stack for leaveCurrentGroup"); // This will show who called it
+    const { groupInteractionLogic, groupUiHandler, groupDataManager, tabManager, chatOrchestrator } = getDeps();
+    const currentGroupId = groupDataManager.getCurrentGroupId();
+    const user = auth.currentUser;
+
+    console.log(`GM.leaveCurrentGroup: CALLED. Current Group ID: '${currentGroupId}'.`);
+
+    if (groupInteractionLogic) groupInteractionLogic.stopConversationFlow?.();
+
+    if (unsubscribeFromGroupMessages) {
+        unsubscribeFromGroupMessages();
+        unsubscribeFromGroupMessages = null;
+        console.log("GroupManager: Unsubscribed from group messages listener.");
+    }
+
+
+ // --- FOCUS DEBUG HERE ---
+ if (currentGroupId && user) {
+    console.log(`GM.leaveCurrentGroup: ---->>> ENTERING BLOCK TO DELETE FROM FIRESTORE for group ${currentGroupId}`);
+    const memberRef = doc(db, "groups", currentGroupId, "members", user.uid);
+    try {
+        await deleteDoc(memberRef);
+        console.log(`GM.leaveCurrentGroup: <<<<<<---- SUCCESS: User ${user.uid} DELETED from group ${currentGroupId} members in Firestore.`);
+        groupDataManager._updateUserJoinedGroupState?.(currentGroupId, false);
+    } catch (error) {
+        console.error(`GM.leaveCurrentGroup: <<<<<<---- ERROR deleting user from group ${currentGroupId} members in Firestore:`, error);
+    }
+
+    if (groupDataManager && typeof groupDataManager.saveCurrentGroupChatHistory === 'function') {
+        console.log("GM.leaveCurrentGroup: Saving current group chat history (likely for the group being left).");
+        groupDataManager.saveCurrentGroupChatHistory(false); // Save history before context is cleared
+    }
+} else {
+    console.log(`GM.leaveCurrentGroup: SKIPPING FIRESTORE DELETE block. currentGroupId: ${currentGroupId}, user: ${user?.uid}`);
+}
+if(groupUiHandler) {
+    console.log("GM.leaveCurrentGroup: Hiding group chat view via GUH.");
+    groupUiHandler.hideGroupChatViewAndShowList?.();
+}
+
+console.log("GM.leaveCurrentGroup: Resetting IIFE-scoped group state.");
+resetGroupState(); // Resets GM's internal currentGroupTutorObject, currentGroupMembersArray etc.
+
+if(groupDataManager) {
+    console.log("GM.leaveCurrentGroup: Setting GDM current group context to null.");
+    groupDataManager.setCurrentGroupContext(null, null);
+}
+
+if (groupInteractionLogic) {
+    console.log("GM.leaveCurrentGroup: Resetting GIL.");
+    groupInteractionLogic.reset?.();
+}
+
+if (tabManager) {
+    console.log("GM.leaveCurrentGroup: Switching to 'groups' tab via TabManager.");
+    tabManager.switchToTab('groups'); // This might trigger other logic (e.g. in shell_controller)
+}
+
+const sidebarPanelManager = window.sidebarPanelManager; // Get a fresh reference
+if (sidebarPanelManager && typeof sidebarPanelManager.updatePanelForCurrentTab === 'function') {
+    console.log("GM.leaveCurrentGroup: Updating sidebar panel for 'groups' tab.");
+    sidebarPanelManager.updatePanelForCurrentTab('groups');
+}
+if (tabManager?.getCurrentActiveTab?.() === 'groups' && triggerReload) {
+    console.log("GM.leaveCurrentGroup: Currently on 'groups' tab and triggerReload is true. Reloading available groups.");
+    // Await this if it involves async operations that should complete before joinGroup proceeds fully
+    await loadAvailableGroups(null,null,null, {viewType: 'my-groups'}); // Explicitly load 'my-groups'
+} else {
+    console.log(`GM.leaveCurrentGroup: Not reloading groups. Current tab: ${tabManager?.getCurrentActiveTab?.()}, triggerReload: ${triggerReload}`);
+}
+
+if(chatOrchestrator && typeof chatOrchestrator.renderCombinedActiveChatsList === 'function') {
+    console.log("GM.leaveCurrentGroup: Requesting chat orchestrator to re-render combined active chats list.");
+    chatOrchestrator.renderCombinedActiveChatsList?.();
+}
+
+console.log("group_manager.ts: leaveCurrentGroup() - FINISHED.");
+}
 
         function resetGroupState(): void {
             console.log("group_manager.ts: resetGroupState() called.");
@@ -525,110 +834,150 @@ function userIsTypingInGroupSignal(): void {
 // In src/js/core/group_manager.ts
 // Replace the entire handleUserMessageInGroup function with this one.
 // In src/js/core/group_manager.ts
-
 async function handleUserMessageInGroup(
     textFromInput?: string,
-    options?: {
-        skipUiAppend?: boolean;
+    options: {
+        skipUiAppend?: boolean; // Less relevant now if GM always appends user message
         imageFile?: File | null;
-        captionText?: string | null;
         messageId?: string;
         timestamp?: number;
-    }
+    } = {}
 ): Promise<void> {
     const functionName = "GroupManager.handleUserMessageInGroup";
-    const {
-        groupDataManager,
-        groupInteractionLogic,
-        polyglotHelpers,
-        groupUiHandler
-    } = getDeps();
+    const { groupUiHandler, groupDataManager, groupInteractionLogic, polyglotHelpers } = getDeps();
+    const currentUser = auth.currentUser;
 
-    const currentGroup = groupDataManager.getCurrentGroupData();
-    const { imageFile, captionText } = options || {};
-    const text = textFromInput?.trim() || "";
-
-    if (!currentGroup || (!text && !imageFile)) {
-        console.log(`${functionName}: No group active, or no text/image to send.`);
-        groupInteractionLogic.startConversationFlow();
+    if (!currentUser || !groupUiHandler || !groupDataManager || !groupInteractionLogic || !polyglotHelpers) {
+        console.error(`${functionName}: Critical dependencies missing.`);
+        return;
+    }
+    const currentGroupData = groupDataManager.getCurrentGroupData();
+    if (!currentGroupData) {
+        console.error(`${functionName}: No current group data.`);
         return;
     }
 
-    const historyItem: GroupChatHistoryItem = {
-        speakerId: "user_player",
-        speakerName: "You",
-        text: imageFile ? (captionText || text) : text,
-        timestamp: options?.timestamp || Date.now(),
-        messageId: options?.messageId || polyglotHelpers.generateUUID(),
-    };
+    const userProvidedText = (textFromInput || "").trim(); // User's caption or text message
+    const imageFile = options.imageFile;
+    const optimisticAppMessageId = options.messageId || polyglotHelpers.generateUUID();
+    const optimisticTimestamp = options.timestamp || Date.now();
 
-    let base64DataForAI: string | undefined = undefined;
-    let mimeTypeForAI: string | undefined = undefined;
+    let userMessageFirestoreId: string | null = null;
+    let gilOptionsForAi: any = {}; // Options to pass to GIL's handleUserMessage
 
-    if (imageFile) {
-        console.log(`${functionName}: Processing group image "${imageFile.name}".`);
+    if (imageFile) { // User sent an image
+        console.log(`${functionName}: User sent image "${imageFile.name}" with caption: "${userProvidedText}"`);
+
+        const optimisticBlobUrl = URL.createObjectURL(imageFile);
+        groupUiHandler.appendMessageToGroupLog(
+            userProvidedText, currentUser.displayName || "You", true, currentUser.uid,
+            { messageId: optimisticAppMessageId, timestamp: optimisticTimestamp, imageUrl: optimisticBlobUrl, type: 'image' }
+        );
+
+        let resolvedImgurUrl: string | null = null;
         try {
-            const fullDataUrl = await polyglotHelpers.fileToBase64(imageFile);
-            historyItem.isImageMessage = true;
-            // --- THIS IS THE KEY FIX: We assign the data URL to historyItem.imageUrl ---
-            historyItem.imageUrl = fullDataUrl;
-
-            const parts = fullDataUrl.split(',');
-            const mimeTypePart = parts[0].match(/:(.*?);/);
-            mimeTypeForAI = mimeTypePart ? mimeTypePart[1] : imageFile.type;
-            base64DataForAI = parts[1];
-
-        } catch (error) {
-            console.error(`${functionName}: Error processing image:`, error);
-            groupUiHandler.appendMessageToGroupLog("Error processing image.", "System", false, "system_error");
-            groupInteractionLogic.startConversationFlow();
-            return;
+            resolvedImgurUrl = await uploadImageToImgur(imageFile);
+            if (resolvedImgurUrl) console.log(`[GM_Imgur] User's image uploaded: ${resolvedImgurUrl}`);
+            else console.warn(`[GM_Imgur] User's image Imgur upload returned null.`);
+        } catch (err) {
+            console.error(`[GM_Imgur] Imgur upload failed for user's image:`, err);
+            // Optionally update UI for optimistic message: groupUiHandler.updateMessageStatus?.(...);
         }
+
+        userMessageFirestoreId = await groupDataManager.addMessageToGroup(
+            currentGroupData.id, currentUser.uid, userProvidedText, 'image',
+            {
+                appMessageId: optimisticAppMessageId,
+                timestamp: new Date(optimisticTimestamp),
+                senderName: currentUser.displayName || "User",
+                imageUrl: resolvedImgurUrl // Save Imgur URL
+                // No semantic description for user's own image message here; AI will provide it
+            }
+        );
+
+        // Prepare options for GIL
+        gilOptionsForAi.userSentImage = true;
+        try {
+            gilOptionsForAi.imageBase64Data = await polyglotHelpers.fileToBase64(imageFile);
+            gilOptionsForAi.imageMimeType = imageFile.type;
+        } catch (e) {
+            console.error(`${functionName}: Failed to convert user image to base64 for GIL.`, e);
+        }
+
+    } else if (userProvidedText) { // User sent a text message
+        groupUiHandler.appendMessageToGroupLog(
+            userProvidedText, currentUser.displayName || "You", true, currentUser.uid,
+            { messageId: optimisticAppMessageId, timestamp: optimisticTimestamp, type: 'text' }
+        );
+
+        userMessageFirestoreId = await groupDataManager.addMessageToGroup(
+            currentGroupData.id, currentUser.uid, userProvidedText, 'text',
+            {
+                appMessageId: optimisticAppMessageId,
+                timestamp: new Date(optimisticTimestamp),
+                senderName: currentUser.displayName || "User"
+            }
+        );
+        // gilOptionsForAi remains empty for text message
+    } else {
+        console.log(`${functionName}: No text or image provided by user.`);
+        return; // Nothing to process
     }
 
-    // Now, we append the user's message to the UI.
-    // If it's an image, historyItem.imageUrl will have the data.
-    groupUiHandler.appendMessageToGroupLog(
-        historyItem.text || "",
-        "You", 
-        true, // isUser
-        "user_player", 
-        { imageUrl: historyItem.imageUrl, messageId: historyItem.messageId, timestamp: historyItem.timestamp }
-    );
-    
-    // Add to data manager and save
-    groupDataManager.addMessageToCurrentGroupHistory(historyItem);
-    groupDataManager.saveCurrentGroupChatHistory(true);
+    if (!userMessageFirestoreId) {
+        console.error(`${functionName}: Failed to save user's message to Firestore. Aborting AI response.`);
+        return;
+    }
+    console.log(`${functionName}: User message saved. FirestoreID: ${userMessageFirestoreId}, AppID: ${optimisticAppMessageId}`);
 
-    // Delegate to the interaction logic
-    await groupInteractionLogic.handleUserMessage(
-        historyItem.text || undefined,
-        {
-            userSentImage: !!imageFile,
-            imageBase64Data: base64DataForAI,
-            imageMimeType: mimeTypeForAI,
-        }
+    // Trigger Group Interaction Logic
+    const aiResponsePayload = await groupInteractionLogic.handleUserMessage(
+        userProvidedText, // User's text (caption if image, or actual text message)
+        gilOptionsForAi
     );
+
+    // Save AI responses
+    if (aiResponsePayload && aiResponsePayload.aiMessagesToPersist && aiResponsePayload.aiMessagesToPersist.length > 0) {
+        console.log(`${functionName}: GIL generated ${aiResponsePayload.aiMessagesToPersist.length} AI messages. Saving...`);
+        for (const aiMsg of aiResponsePayload.aiMessagesToPersist) {
+            await groupDataManager.addMessageToFirestoreGroupChat(
+                currentGroupData.id,
+                { // Adapt to the structure expected by addMessageToFirestoreGroupChat
+                    appMessageId: aiMsg.messageId,
+                    senderId: aiMsg.speakerId,
+                    senderName: aiMsg.speakerName,
+                    text: aiMsg.text,
+                    type: aiMsg.type, // 'text' or 'image' (for AI comment on user image)
+                    imageSemanticDescription: aiMsg.imageSemanticDescription, // Will be undefined for pure text
+                    // No content_url or imageUrl if AI is just sending text
+                }
+            );
+        }
+        console.log(`${functionName}: Saved ${aiResponsePayload.aiMessagesToPersist.length} AI messages.`);
+    }
+    // GIL's playScene handles optimistic UI for AI messages.
 }
-//...
+       
         const isCurrentlyJoined = (groupId: string): boolean => {
             return !!getDeps().groupDataManager?.isGroupJoined(groupId);
         };
 
+
         const getAllGroupDataWithLastActivity = (): ActiveGroupListItem[] => {
             return getDeps().groupDataManager?.getAllGroupDataWithLastActivity() || [];
         };
+    
+          // =======================================================================
 
-        console.log("group_manager.ts: IIFE for actual methods FINISHED.");
-        return {
-            initialize, loadAvailableGroups, joinGroup, leaveCurrentGroup,
-            handleUserMessageInGroup, userIsTyping: userIsTypingInGroupSignal,
-            getCurrentGroupData, getAllGroupDataWithLastActivity,
-            isGroupJoined: isCurrentlyJoined, getFullCurrentGroupMembers,
-            getMembersForGroup
-        };
-    })(); 
-
+          console.log("group_manager.ts: IIFE for actual methods FINISHED.");
+          return {
+              initialize, loadAvailableGroups, joinGroup, leaveCurrentGroup,
+              handleUserMessageInGroup, userIsTyping: userIsTypingInGroupSignal, // Ensure userIsTypingInGroupSignal is defined
+              getCurrentGroupData, getAllGroupDataWithLastActivity,
+              isGroupJoined: isCurrentlyJoined, getFullCurrentGroupMembers,
+              getMembersForGroup
+          }; // This brace closes the 'return' object
+   }   )();
     if (window.groupManager) {
         Object.assign(window.groupManager, methods);
         console.log("group_manager.ts: SUCCESSFULLY populated window.groupManager with real methods.");
@@ -639,7 +988,9 @@ async function handleUserMessageInGroup(
     document.dispatchEvent(new CustomEvent('groupManagerReady'));
     console.log('group_manager.ts: "groupManagerReady" event dispatched (after init attempt).');
 
-} 
+} // This brace closes the `initializeActualGroupManager` function.
+console.log("group_manager.ts: Script execution finished. Initialization is event-driven or direct.");
+
 // ... (rest of dependency checking logic for group_manager.ts) ...
 function checkAndInitGroupManager(receivedEventName?: string): void {
     if (receivedEventName) {
@@ -780,5 +1131,4 @@ if (groupManagerAllPreloadedAndVerified && groupManagerDepsMetCount === dependen
     console.log('group_manager.ts: No dependencies listed. Initializing directly.');
     initializeActualGroupManager();
 }
-
 console.log("group_manager.ts: Script execution finished. Initialization is event-driven or direct.");

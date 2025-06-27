@@ -132,9 +132,9 @@ console.log('ai_recap_service.ts: "aiRecapServiceReady" event dispatched (after 
             }`;
 
             // Main prompt instructions
-            let prompt = `You are an expert language learning coach for a user learning ${connector.language}. Your name is "Polyglot AI Coach".
-You are providing a detailed and constructive debrief for a language practice session between a "User" and an AI Partner named "${connector.profileName}".
-The User was primarily practicing their ${connector.language} skills. The AI Partner, ${connector.profileName}, was also speaking ${connector.language}.
+            let prompt = `You are an expert language learning coach for a user learning ${connector.language}. Your name is "Polyglot Coach".
+You are providing a detailed and constructive debrief for a language practice session between a "User" and a Partner named "${connector.profileName}".
+The User was primarily practicing their ${connector.language} skills. The Partner, ${connector.profileName}, was also speaking ${connector.language}.
 
 Below is the cleaned transcript of their conversation:
 --- Transcript ---
@@ -265,7 +265,15 @@ Generate the JSON debrief now:`;
 
             return parsedData as RecapData;
         }
-
+        if (window.memoryService?.processNewUserMessage) {
+            console.log(`[CEREBRUM_LIVE_CALL_WRITE] ✍️ Post-recap. Sending full transcript to Scribe for analysis...`);
+            window.memoryService.processNewUserMessage(
+                cleanedTranscriptText,
+                connector.id, // The persona involved in the call
+                'live_call',
+                [] 
+            );
+        }
         console.log("ai_recap_service.ts: IIFE FINISHED.");
         return {
             generateSessionRecap,

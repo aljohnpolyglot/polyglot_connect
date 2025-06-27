@@ -88,6 +88,8 @@ function initializeActualPersonaModalManager(): void {
 
         function openDetailedPersonaModalInternal(connector: Connector): void {
             console.log("personaModalManager.ts: openDetailedPersonaModalInternal - Called for connector:", connector?.id);
+           
+cleanupModalData(); // Ensure a clean slate before populating
             if (!connector?.id) {
                 console.error("PMM.openDetailedPersonaModalInternal: Connector ID missing.");
                 return;
@@ -254,11 +256,13 @@ function handlePersonaModalAction(actionType: string, event?: MouseEvent): void 
     else if (actionType === 'message_modal') clickedButton = domElements.personaModalMessageBtn;
     else if (actionType === 'direct_modal') clickedButton = domElements.personaModalDirectCallBtn;
 
-    modalHandler.close(modalEl);
-    cleanupModalData();
-
     console.log(`PMM: About to call tryInitiateSessionFromPMM for ${connector.id}, action: ${actionType}. Lock is still: ${isProcessingPMMAction}`); // NEW LOG
     tryInitiateSessionFromPMM(connector, actionType, clickedButton);
+    
+    // Close the modal AFTER initiating the action. This prevents the cleanup
+    // from running too early and wiping the connectorId before the next action.
+    modalHandler.close(modalEl);
+    cleanupModalData();
     // The lock (isProcessingPMMAction) is now released within tryInitiateSessionFromPMM's setTimeout
 }
         

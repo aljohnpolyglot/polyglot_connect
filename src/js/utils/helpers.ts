@@ -33,14 +33,27 @@ const helpersModuleInstance: HelpersModuleInterface = (() => {
     'use strict';
     console.log("js/utils/helpers.ts: IIFE STARTING.");
 
-    const fileToBase64 = (file: File): Promise<string> => { // <<< CORRECTED DEFINITION
+    const fileToBase64 = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
+            // This method creates the full Data URL, e.g., "data:image/png;base64,iVBORw0..."
             reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result as string);
+            
+            reader.onload = () => {
+                const fullDataUrl = reader.result as string;
+                
+                // --- THIS IS THE FIX ---
+                // The APIs need the raw Base64 data, not the entire Data URL.
+                // We find the first comma and take everything AFTER it.
+                // This reliably removes the "data:[any-mime-type];base64," prefix.
+                const base64Data = fullDataUrl.substring(fullDataUrl.indexOf(',') + 1);
+                
+                resolve(base64Data);
+            };
+            
             reader.onerror = error => reject(error);
         });
-    };           
+    };       
     const isConnectorCurrentlyActive = (connector: Partial<Connector> | null | undefined): boolean => {
         if (!connector?.sleepSchedule?.wake || !connector.sleepSchedule.sleep) {
             return true;

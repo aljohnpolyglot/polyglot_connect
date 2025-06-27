@@ -38,6 +38,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "src/js/core/achievement_manager.ts", // <<<< ADD THIS LINE
     "polyglot_connect_old" // The backup directory
   ]
 }

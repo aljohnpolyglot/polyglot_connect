@@ -56,7 +56,11 @@ window.uiUpdater = {
     removeProcessingSpinner: () => console.warn("UIU structural: removeProcessingSpinner called before full init."),
     appendSystemMessage: () => { console.warn("UIU structural: appendSystemMessage called before full init."); return null; },
     scrollEmbeddedChatToBottom: () => console.warn("UIU structural: scrollEmbeddedChatToBottom called before full init."),
-    scrollMessageModalToBottom: () => console.warn("UIU structural: scrollMessageModalToBottom called before full init.")
+    scrollMessageModalToBottom: () => console.warn("UIU structural: scrollMessageModalToBottom called before full init."),
+    showLoadingInEmbeddedChatLog: () => console.warn("UIU structural: showLoadingInEmbeddedChatLog called before full init."),
+    showErrorInEmbeddedChatLog: () => console.warn("UIU structural: showErrorInEmbeddedChatLog called before full init."),
+    
+    
 } as UiUpdaterModule; // Cast to the module type
 console.log('ui_updater.ts: Placeholder window.uiUpdater assigned.');
 document.dispatchEvent(new CustomEvent('uiUpdaterPlaceholderReady')); // <<< RENAMED
@@ -88,6 +92,10 @@ interface UiUpdaterModule {
     clearEmbeddedChatInput: () => void;
     toggleEmbeddedSendButton: (enable: boolean) => void;
     clearEmbeddedChatLog: () => void;
+  
+  
+  
+  
     appendToGroupChatLog: (text: string, senderNameFromArg: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => HTMLElement | null;
     updateGroupChatHeader: (groupName: string, members: Connector[]) => void;
   
@@ -102,6 +110,9 @@ interface UiUpdaterModule {
     appendSystemMessage: (logElement: HTMLElement | null, text: string, isError?: boolean, isTimestamp?: boolean) => HTMLElement | null;
     scrollEmbeddedChatToBottom?: () => void;
     scrollMessageModalToBottom?: () => void;
+    showLoadingInEmbeddedChatLog: () => void;
+    showErrorInEmbeddedChatLog: (errorMessage: string) => void;
+    
 }
 
 function initializeActualUiUpdater(): void {
@@ -120,6 +131,7 @@ function initializeActualUiUpdater(): void {
         const deps = {
             domElements: window.domElements as YourDomElements | undefined,
             polyglotHelpers: window.polyglotHelpers as PolyglotHelpers | undefined,
+
             chatUiUpdater: window.chatUiUpdater as ChatUiUpdaterModule | undefined, // <<< ADDED
             polyglotConnectors: window.polyglotConnectors as Connector[] | undefined,
             groupManager: window.groupManager as GroupManager | undefined,
@@ -152,6 +164,9 @@ function initializeActualUiUpdater(): void {
     // Destructure essential deps, others can be fetched via getDeps() inside methods if preferred
     const { domElements, polyglotHelpers } = functionalDeps;
 
+
+          
+    
   // D:\polyglot_connect\src\js\ui\ui_updater.ts
 
 // This is inside initializeActualUiUpdater, replacing the original 'methods' \\\
@@ -355,6 +370,7 @@ const clearVoiceChatLog = (): void => {
         const appendToMessageLogModal = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
             const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
             let finalOptions = { ...options };
+        
             if (!senderClass.includes('user') && !senderClass.includes('system')) {
                 const connectorId = (cd.messagingInterface as HTMLElement)?.dataset.currentConnectorId;
                 const connector = pc?.find(c => c.id === connectorId);
@@ -362,6 +378,8 @@ const clearVoiceChatLog = (): void => {
                     finalOptions = { ...finalOptions, avatarUrl: connector.avatarModern, senderName: connector.profileName, speakerId: connector.id, connectorId: connector.id };
                 }
             }
+            
+            // Always call appendChatMessage.
             return chatUiUpdater.appendChatMessage(cd.messageChatLog, text, senderClass, finalOptions);
         };
 
@@ -404,19 +422,32 @@ const clearVoiceChatLog = (): void => {
                 chatUiUpdater.clearLogCache(cd.messageChatLog);
             }
         };
-             const appendToEmbeddedChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
-            const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
-            let finalOptions = { ...options };
-            if (!senderClass.includes('user') && !senderClass.includes('system')) {
-                const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
-                const connector = pc?.find(c => c.id === connectorId);
-                if (connector) {
-                    finalOptions = { ...finalOptions, avatarUrl: connector.avatarModern, senderName: connector.profileName, speakerId: connector.id, connectorId: connector.id };
-                }
+    // Replacement for appendToEmbeddedChatLog in: D:\polyglot_connect\src\js\ui\ui_updater.ts
+    const appendToEmbeddedChatLog = (text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null => {
+        const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
+    
+        // This function should NOT have complex routing logic. It just prepares the options.
+        let finalOptions = { ...options };
+    
+        // If the message is from a connector, add their specific details for the UI.
+        if (typeof senderClass === 'string' && !senderClass.includes('user') && !senderClass.includes('system')) {
+            const connectorId = cd.embeddedChatContainer?.dataset.currentConnectorId;
+            const connector = pc?.find(c => c.id === connectorId);
+            if (connector) {
+                finalOptions = {
+                    ...finalOptions,
+                    avatarUrl: connector.avatarModern,
+                    senderName: connector.profileName,
+                    speakerId: connector.id,
+                    connectorId: connector.id
+                };
             }
-            return chatUiUpdater.appendChatMessage(cd.embeddedChatLog, text, senderClass, finalOptions);
-        };
-
+        }
+        
+        // Always call appendChatMessage and let IT decide how to render based on options.type.
+        return chatUiUpdater.appendChatMessage(cd.embeddedChatLog, text, senderClass, finalOptions);
+    };
+    
         const showImageInEmbeddedChat = (imageUrl: string | null): void => {
             const { domElements: cd } = getDepsLocal();
             showImageInActivityArea(cd.appShell?.querySelector('#embedded-message-activity-area') as HTMLElement | null, cd.appShell?.querySelector('#embedded-message-activity-image-display') as HTMLImageElement | null, cd.embeddedChatLog, imageUrl);
@@ -460,25 +491,78 @@ const clearVoiceChatLog = (): void => {
                 chatUiUpdater.clearLogCache(cd.embeddedChatLog);
             }
         };
-
-    // <<< REPLACE THE ENTIRE appendToGroupChatLog FUNCTION WITH THIS >>>
-// <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
-    // <<< REPLACE THE ENTIRE appendToGroupChatLog FUNCTION WITH THIS >>>
-// <<< REPLACE THE appendToGroupChatLog FUNCTION >>>
-const appendToGroupChatLog = (text: string, senderNameFromArg: string, isUser: boolean, speakerId: string, options: ChatMessageOptions = {}): HTMLElement | null => {
-    const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
-    const finalSenderClass = isUser ? 'user' : 'connector group-chat-connector';
-    let finalOpts: ChatMessageOptions = { ...options, senderName: senderNameFromArg, showSenderName: !isUser, speakerId, connectorId: speakerId, timestamp: options.timestamp || Date.now() };
-    if (!isUser) {
-        const speakerConnector = pc?.find(c => c.id === speakerId);
-        if (speakerConnector) {
-            finalOpts.avatarUrl = speakerConnector.avatarModern;
-        } else {
-            const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
-            finalOpts.avatarUrl = `${placeholderBase}images/placeholder_avatar.png`;
-        }
+      // --- PASTE THE NEW FUNCTIONS HERE ---
+const showLoadingInEmbeddedChatLog = (): void => {
+    const { domElements } = getDepsLocal();
+    if (domElements?.embeddedChatLog) {
+        domElements.embeddedChatLog.innerHTML = `
+            <div class="chat-log-loading-placeholder">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading conversation...</p>
+            </div>
+        `;
     }
-    return chatUiUpdater.appendChatMessage(cd.groupChatLogDiv, text, finalSenderClass, finalOpts);
+};
+
+const showErrorInEmbeddedChatLog = (errorMessage: string): void => {
+    const { domElements, polyglotHelpers } = getDepsLocal();
+    if (domElements?.embeddedChatLog && polyglotHelpers) {
+        const sanitizedMessage = polyglotHelpers.sanitizeTextForDisplay(errorMessage);
+        domElements.embeddedChatLog.innerHTML = `
+            <div class="chat-log-error-placeholder">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>${sanitizedMessage}</p>
+            </div>
+        `;
+    }
+};
+      
+
+const appendToGroupChatLog = (
+    text: string,
+    // This first string argument can now be 'system-warning', 'system-error',
+    // or the actual senderName if it's a regular user/connector message.
+    senderClassOrName: string,
+    isUser: boolean, // Primarily for non-system messages
+    speakerId: string, // Primarily for non-system messages
+    options: ChatMessageOptions = {}
+): HTMLElement | null => {
+    const { domElements: cd, polyglotConnectors: pc, chatUiUpdater } = getDepsLocal();
+
+    if (typeof senderClassOrName === 'string' && senderClassOrName.startsWith('system-')) {
+        // It's a system message
+        const logEl = cd.groupChatLogDiv;
+        if (!logEl) {
+            console.error("UIU.appendToGroupChatLog: groupChatLogDiv element not found for system message.");
+            return null;
+        }
+        const isErrorType = senderClassOrName === 'system-error' || senderClassOrName === 'system-warning' || !!options.isError;
+        return chatUiUpdater.appendSystemMessage(logEl, text, isErrorType, false /* isTimestamp */);
+    } else {
+        // It's a regular user or connector message
+        const senderNameFromArg = senderClassOrName; // We now know it's the actual name
+        const finalSenderClass = isUser ? 'user' : 'connector group-chat-connector';
+        let finalOpts: ChatMessageOptions = {
+            ...options,
+            senderName: senderNameFromArg,
+            showSenderName: !isUser, // Show name if it's a connector in the group
+            speakerId,
+            connectorId: speakerId, // speakerId is the connectorId in group context
+            timestamp: options.timestamp || Date.now()
+        };
+
+        if (!isUser) { // If it's a connector message, get their avatar
+            const speakerConnector = pc?.find(c => c.id === speakerId);
+            if (speakerConnector) {
+                finalOpts.avatarUrl = speakerConnector.avatarModern;
+            } else {
+                // Fallback avatar if connector not found (shouldn't happen ideally)
+                const placeholderBase = (window as any).POLYGLOT_CONNECT_BASE_URL || '/';
+                finalOpts.avatarUrl = `${placeholderBase}images/placeholder_avatar.png`;
+            }
+        }
+        return chatUiUpdater.appendChatMessage(cd.groupChatLogDiv, text, finalSenderClass, finalOpts);
+    }
 };
         const updateGroupChatHeader = (groupName: string, members: Connector[]): void => {
             const { domElements: cd, polyglotHelpers: ph } = getDepsLocal();
@@ -536,51 +620,99 @@ const appendToGroupChatLog = (text: string, senderNameFromArg: string, isUser: b
             }
         };
 
-        const populateRecapModal = (recapData: RecapData | null): void => {
-            const { domElements: cd, polyglotHelpers: ph } = getDepsLocal();
-            
-            const setText = (el: HTMLElement | null, textVal: string | undefined | null, def = "N/A") => {
-                if (el) el.textContent = ph.sanitizeTextForDisplay(textVal || def);
-            };
-            const safePopulateList = (ul: HTMLUListElement | null, items: Array<string | RecapDataItem> | null | undefined, type: 'simple' | 'vocabulary' | 'improvementArea') => {
-                if (ul) populateListInRecap(ul, items, type);
-            };
-            
-            if (cd) {
-                if (cd.recapConnectorName) cd.recapConnectorName.textContent = 'Call Debrief';
-                setText(cd.recapDate ?? null, null, ''); 
-                setText(cd.recapDuration ?? null, null, ''); 
-                setText(cd.recapConversationSummaryText ?? null, 'Loading...', 'Loading...');
-                safePopulateList(cd.recapTopicsList ?? null, [], 'simple');
-                safePopulateList(cd.recapGoodUsageList ?? null, [], 'simple');
-                safePopulateList(cd.recapVocabularyList ?? null, [], 'vocabulary');
-                safePopulateList(cd.recapFocusAreasList ?? null, [], 'improvementArea');
-                safePopulateList(cd.recapPracticeActivitiesList ?? null, [], 'simple');
-                setText(cd.recapOverallEncouragementText ?? null, '', '');
-            }
+    // D:\polyglot_connect\src\js\ui\ui_updater.ts
 
-            if (!cd?.sessionRecapScreen || !ph || !recapData) {
-                if (cd) setText(cd.recapConversationSummaryText ?? null, 'Recap data is unavailable.');
-                return;
-            }
+const populateRecapModal = (recapData: RecapData | null): void => {
+    const { domElements: cd, polyglotHelpers: ph } = getDepsLocal();
+    
+    const setText = (el: HTMLElement | null, textVal: string | undefined | null, def = "N/A") => {
+        // Null check for 'el' is already correctly inside setText
+        if (el) el.textContent = ph.sanitizeTextForDisplay(textVal || def);
+    };
+    const safePopulateList = (ul: HTMLUListElement | null, items: Array<string | RecapDataItem> | null | undefined, type: 'simple' | 'vocabulary' | 'improvementArea') => {
+        if (ul) populateListInRecap(ul, items, type);
+    };
+    
+    if (!ph) { // Only need polyglotHelpers if we proceed further
+        console.error("UIU: populateRecapModal - Missing polyglotHelpers.");
+        return;
+    }
+    // No need to check cd.sessionRecapScreen here, as individual elements are checked below
 
+    console.log("[UIU_RECAP_DOM_CHECK] recapData received:", JSON.parse(JSON.stringify(recapData || {})));
+    console.log("[UIU_RECAP_DOM_CHECK] cd.recapDate element:", cd.recapDate);
+    console.log("[UIU_RECAP_DOM_CHECK] cd.recapDuration element:", cd.recapDuration);
+    console.log("[UIU_RECAP_DOM_CHECK] cd.recapConnectorName element:", cd.recapConnectorName);
+
+
+    if (!recapData) {
+        console.warn("UIU: populateRecapModal called with null recapData. Displaying 'unavailable'.");
+        // Null checks for each DOM element before setting textContent
+        if (cd.recapConnectorName) cd.recapConnectorName.textContent = 'Call Debrief';
+        setText(cd.recapDate ?? null, null, 'Date Unavailable');
+        setText(cd.recapDuration ?? null, null, 'Duration Unavailable');
+        setText(cd.recapConversationSummaryText ?? null, 'Recap data is unavailable.', 'Recap data is unavailable.');
+        safePopulateList(cd.recapTopicsList ?? null, [], 'simple');
+        safePopulateList(cd.recapGoodUsageList ?? null, [], 'simple');
+        safePopulateList(cd.recapVocabularyList ?? null, [], 'vocabulary');
+        safePopulateList(cd.recapFocusAreasList ?? null, [], 'improvementArea');
+        safePopulateList(cd.recapPracticeActivitiesList ?? null, [], 'simple');
+        setText(cd.recapOverallEncouragementText ?? null, '', '');
+        if (cd.sessionRecapScreen) delete (cd.sessionRecapScreen as HTMLElement).dataset.sessionIdForDownload;
+        return;
+    }
+
+    // If recapData IS available:
+    try {
+        if (cd.recapConnectorName) {
+            cd.recapConnectorName.textContent = `With ${ph.sanitizeTextForDisplay(recapData.connectorName || 'Partner')}`;
+            console.log(`[UIU_RECAP_POPULATE] Set recapConnectorName to: ${cd.recapConnectorName.textContent}`);
+        } else {
+            console.warn("[UIU_RECAP_POPULATE] cd.recapConnectorName element is null.");
+        }
+        
+        // --- START OF TIMESTAMP FIX ---
+        let displayDateTime = 'Date/Time Not Specified';
+        if (recapData.startTimeISO) {
             try {
-                if(cd.recapConnectorName) cd.recapConnectorName.textContent = `With ${ph.sanitizeTextForDisplay(recapData.connectorName || 'Partner')}`;
-                setText(cd.recapDate ?? null, recapData.date, 'Not specified');
-                setText(cd.recapDuration ?? null, recapData.duration, 'N/A');
-                setText(cd.recapConversationSummaryText ?? null, recapData.conversationSummary, "No summary provided.");
-                safePopulateList(cd.recapTopicsList ?? null, recapData.keyTopicsDiscussed, 'simple');
-                safePopulateList(cd.recapGoodUsageList ?? null, recapData.goodUsageHighlights, 'simple');
-                safePopulateList(cd.recapVocabularyList ?? null, recapData.newVocabularyAndPhrases, 'vocabulary');
-                safePopulateList(cd.recapFocusAreasList ?? null, recapData.areasForImprovement, 'improvementArea');
-                safePopulateList(cd.recapPracticeActivitiesList ?? null, recapData.suggestedPracticeActivities, 'simple');
-                setText(cd.recapOverallEncouragementText ?? null, recapData.overallEncouragement, "Keep practicing!");
-                if(cd.sessionRecapScreen) (cd.sessionRecapScreen as HTMLElement).dataset.sessionIdForDownload = recapData.sessionId || '';
-            } catch (e: any) { 
-                console.error("Error populating recap modal sections:", e);
-                if (cd) setText(cd.recapConversationSummaryText ?? null, 'Error displaying recap.');
+                const startDate = new Date(recapData.startTimeISO);
+                // Format to "MM/DD/YYYY, HH:MM AM/PM" (locale-dependent)
+                displayDateTime = startDate.toLocaleString([], { 
+                    year: 'numeric', month: 'numeric', day: 'numeric', 
+                    hour: 'numeric', minute: '2-digit' 
+                });
+            } catch (e) {
+                console.error("Error formatting startTimeISO for display:", e);
+                displayDateTime = recapData.date || 'Date/Time Invalid'; // Fallback to existing date if ISO parse fails
             }
-        };
+        } else if (recapData.date) { // Fallback if only old 'date' field is present
+            displayDateTime = recapData.date;
+        }
+        setText(cd.recapDate ?? null, displayDateTime, 'Date/Time Not Specified');
+        // --- END OF TIMESTAMP FIX ---
+        if (cd.recapDate) console.log(`[UIU_RECAP_POPULATE] Set recapDate to: ${cd.recapDate.textContent} (from data.startTimeISO: ${recapData.startTimeISO}, or data.date: ${recapData.date})`);
+        else console.warn("[UIU_RECAP_POPULATE] cd.recapDate element is null.");
+        
+        setText(cd.recapDuration ?? null, recapData.duration, 'Duration N/A');
+        if (cd.recapDuration) console.log(`[UIU_RECAP_POPULATE] Set recapDuration to: ${cd.recapDuration.textContent} (from data: ${recapData.duration})`);
+        else console.warn("[UIU_RECAP_POPULATE] cd.recapDuration element is null.");
+        
+        setText(cd.recapConversationSummaryText ?? null, recapData.conversationSummary, "No summary provided.");
+        safePopulateList(cd.recapTopicsList ?? null, recapData.keyTopicsDiscussed, 'simple');
+        safePopulateList(cd.recapGoodUsageList ?? null, recapData.goodUsageHighlights, 'simple');
+        safePopulateList(cd.recapVocabularyList ?? null, recapData.newVocabularyAndPhrases, 'vocabulary');
+        safePopulateList(cd.recapFocusAreasList ?? null, recapData.areasForImprovement, 'improvementArea');
+        safePopulateList(cd.recapPracticeActivitiesList ?? null, recapData.suggestedPracticeActivities, 'simple');
+        setText(cd.recapOverallEncouragementText ?? null, recapData.overallEncouragement, "Keep practicing!");
+        
+        if (cd.sessionRecapScreen) (cd.sessionRecapScreen as HTMLElement).dataset.sessionIdForDownload = recapData.sessionId || '';
+    } catch (e: any) { 
+        console.error("Error populating recap modal sections:", e);
+        if (cd.recapConversationSummaryText) {
+            setText(cd.recapConversationSummaryText, 'Error displaying recap details.');
+        }
+    }
+};
 
         const displaySummaryInView = (sessionData: SessionData | null): void => {
             const { domElements: cd, polyglotHelpers: ph, sessionManager: sm } = getDepsLocal();
@@ -621,7 +753,8 @@ const appendToGroupChatLog = (text: string, senderNameFromArg: string, isUser: b
       console.log(`  - typeof appendToMessageLogModal:`, typeof appendToMessageLogModal);
       // ======================= END DEBUGGING LOGS =======================
       
-      
+      // PASTE THESE NEW FUNCTIONS inside your ui_updater.ts IIFE
+
       
       
     // =================== REPLACE THE OLD RETURN BLOCK WITH THIS ===================
@@ -662,26 +795,35 @@ const appendToGroupChatLog = (text: string, senderNameFromArg: string, isUser: b
         removeProcessingSpinner, 
         appendSystemMessage,
         scrollEmbeddedChatToBottom, 
-        scrollMessageModalToBottom
+        scrollMessageModalToBottom,
+        showLoadingInEmbeddedChatLog,
+        showErrorInEmbeddedChatLog,
+     
     };
 // ============================================================================
 
     } catch (e: any) {
         console.error("CRITICAL ERROR INSIDE UiUpdater IIFE:", e.message, e.stack);
         const dummyReturn: UiUpdaterModule = {
-            updateVirtualCallingScreen: () => {}, appendToVoiceChatLog: () => null, showImageInVoiceChat: () => {},
-            updateVoiceChatHeader: () => {}, clearVoiceChatLog: () => {}, resetVoiceChatInput: () => {},
-            updateVoiceChatTapToSpeakButton: () => {}, updateDirectCallHeader: () => {}, updateDirectCallStatus: () => {},
-            updateDirectCallMicButtonVisual: () => {}, updateDirectCallSpeakerButtonVisual: () => {},
-            showImageInDirectCall: () => {}, clearDirectCallActivityArea: () => {}, appendToMessageLogModal: () => null,
-            showImageInMessageModal: () => {}, updateMessageModalHeader: () => {}, resetMessageModalInput: () => {},
-            clearMessageModalLog: () => {}, appendToEmbeddedChatLog: () => null, showImageInEmbeddedChat: () => {},
-            updateEmbeddedChatHeader: () => {}, clearEmbeddedChatInput: () => {}, toggleEmbeddedSendButton: () => {},
-            clearEmbeddedChatLog: () => {}, appendToGroupChatLog: () => null, updateGroupChatHeader: () => {},
-            clearGroupChatInput: () => {}, clearGroupChatLog: () => {},
-            populateRecapModal: () => {}, displaySummaryInView: () => {}, updateTTSToggleButtonVisual: () => {},
-            updateSendPhotoButtonVisibility: () => {}, showProcessingSpinner: () => null, removeProcessingSpinner: () => {},
-            appendSystemMessage: () => null, scrollEmbeddedChatToBottom: () => {}, scrollMessageModalToBottom: () => {}
+            updateVirtualCallingScreen: () => { }, appendToVoiceChatLog: () => null, showImageInVoiceChat: () => { },
+            updateVoiceChatHeader: () => { }, clearVoiceChatLog: () => { }, resetVoiceChatInput: () => { },
+            updateVoiceChatTapToSpeakButton: () => { }, updateDirectCallHeader: () => { }, updateDirectCallStatus: () => { },
+            updateDirectCallMicButtonVisual: () => { }, updateDirectCallSpeakerButtonVisual: () => { },
+            showImageInDirectCall: () => { }, clearDirectCallActivityArea: () => { }, appendToMessageLogModal: () => null,
+            showImageInMessageModal: () => { }, updateMessageModalHeader: () => { }, resetMessageModalInput: () => { },
+            clearMessageModalLog: () => { }, appendToEmbeddedChatLog: () => null, showImageInEmbeddedChat: () => { },
+            updateEmbeddedChatHeader: () => { }, clearEmbeddedChatInput: () => { }, toggleEmbeddedSendButton: () => { },
+            clearEmbeddedChatLog: () => { }, appendToGroupChatLog: () => null, updateGroupChatHeader: () => { },
+            clearGroupChatInput: () => { }, clearGroupChatLog: () => { },
+            populateRecapModal: () => { }, displaySummaryInView: () => { }, updateTTSToggleButtonVisual: () => { },
+            updateSendPhotoButtonVisibility: () => { }, showProcessingSpinner: () => null, removeProcessingSpinner: () => { },
+            appendSystemMessage: () => null, scrollEmbeddedChatToBottom: () => { }, scrollMessageModalToBottom: () => { },
+            showLoadingInEmbeddedChatLog: function (): void {
+                throw new Error('Function not implemented.');
+            },
+            showErrorInEmbeddedChatLog: function (errorMessage: string): void {
+                throw new Error('Function not implemented.');
+            }
         };
         return dummyReturn;
     }
@@ -807,4 +949,8 @@ if (uiUpdaterAllPreloadedAndVerified && uiUpdaterDepsMetCount === dependenciesFo
     // console.log(`ui_updater.ts: Some dependencies pre-verified, waiting for events.`);
 } else if (uiUpdaterDepsMetCount === 0) {
     // console.log('ui_updater.ts: No dependencies pre-verified. Waiting for all events.');
+}
+
+function getDeps(): { domElements: any; } {
+    throw new Error('Function not implemented.');
 }

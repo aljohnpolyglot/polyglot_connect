@@ -38,6 +38,22 @@ export default defineConfig({
   base: '/',
   server: {
     open: true,
-    https: true
+    https: true, // Keep this
+    host: true, // <--- ADD THIS LINE
+    proxy: {
+      '/api/imgur': { // This is a prefix you choose for your proxy path
+        target: 'https://api.imgur.com', // The actual API target
+        changeOrigin: true, // Important for virtual hosted sites
+        rewrite: (path) => path.replace(/^\/api\/imgur/, ''), // Remove your prefix before forwarding
+        configure: (proxy, options) => { // Optional: for logging proxy activity
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log(`[Vite Proxy] Sending to Imgur: ${proxyReq.method} ${proxyReq.path}`);
+          });
+          proxy.on('error', (err, req, res) => {
+            console.error('[Vite Proxy] Error:', err);
+          });
+        }
+      }
+    }
   }
 });

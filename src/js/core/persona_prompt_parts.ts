@@ -128,37 +128,44 @@ function formatExperienceForPrompt(persona: PersonaData, helpers: PolyglotHelper
  * @returns A formatted string for the system prompt.
  */
 // =================== START: FOCUSED REPLACEMENT ===================
-export async function getCoreIdentityPrompt(persona: PersonaData): Promise<string> {
+
+export async function getCoreIdentityPrompt(persona: PersonaData,
+    memoryPacketContent: string
+): Promise<string> {
     console.log(`[PROMPT_BUILDER] Building core identity prompt for ${persona.id}...`);
 
     // Use the persona.id passed into the function. This is the correct, reliable ID.
     const personaIdToUse = persona.id;
 
-    let memoryPacketContent = "// No active memory service or no memories recalled.";
+   // <<<--- CREATIVE DEBUG: THE MEMORY INJECTOR --- START --->>>
+    // The following block is now handled by the calling function (e.g., live_call_prompt_builder)
+    // let memoryPacketContent = "// No active memory service or no memories recalled.";
 
-    // Check if the memory service exists before using it.
+    // Check if the memory service is available before trying to use it.
     if (window.memoryService && typeof window.memoryService.getMemoryForPrompt === 'function' && personaIdToUse) {
-        console.log(`[CEREBRUM_INJECT] 🧠 Retrieving 1-on-1 memory packet for [${personaIdToUse}]...`);
+        console.log(`%c[CEREBRUM_INJECT] 🧠 Retrieving 1-on-1 memory packet for [${personaIdToUse}]...`, 'color: #8a2be2; font-weight: bold;');
         
         const memoryResponse = await window.memoryService.getMemoryForPrompt(personaIdToUse);
         memoryPacketContent = memoryResponse.prompt;
         
         if (memoryResponse.facts.length > 0) {
             console.log(`%c[Limbic System] Thalamus recalled ${memoryResponse.facts.length} memory fact(s) for [${personaIdToUse}]:`, 'color: #17a2b8; font-weight: bold;');
+            // This table log makes it easy to see what was remembered.
             console.table(memoryResponse.facts.map((fact) => ({
                 key: fact.key,
                 value: fact.value,
                 type: fact.type,
-                confidence: fact.initialConfidence.toFixed(2),
+                confidence: (fact.initialConfidence || 0).toFixed(2),
                 source: fact.source_context
             })));
         } else {
             console.log(`%c[Limbic System] No relevant memories recalled by Thalamus for [${personaIdToUse}].`, 'color: #6c757d;');
         }
+    } else {
+        console.warn(`[CEREBRUM_INJECT] Could not retrieve memory: memoryService or personaId was not available.`);
     }
+    // <<<--- CREATIVE DEBUG: THE MEMORY INJECTOR ---  END  --->>>
 
-    // Now, build the final prompt string using the retrieved memory packet
-    // (This part is from your original, working prompt logic and is preserved)
     const { profileName, city, country, age, profession, bioModern, modernTitle, language, keyLifeEvents } = persona;
     const criticalEvents = (keyLifeEvents || []).slice(0, 2).map(e => e.event);
     const criticalEventsString = criticalEvents.length > 0 ? `Your most defining life events are: ${criticalEvents.join(' and ')}.` : '';
@@ -506,6 +513,8 @@ Your directive is to **BE THE PERSONA, not a helpful assistant.** If the user as
     -   **Post-Call Context:** If the chat history shows a call just ended, your first text message MUST be a simple acknowledgment. Let the user lead.
     -   **GOOD:** "It was great talking with you!"
     -   **BAD:** "That was a fun call! So, what's new?" (This is too eager).
+
+   
 `);
 
     return parts.filter(p => p && p.trim()).join('\n\n');
@@ -516,7 +525,12 @@ Your directive is to **BE THE PERSONA, not a helpful assistant.** If the user as
  * @param persona - The persona data object.
  * @returns A formatted string for the system prompt, or an empty string if not applicable.
  */
-export function getFirstInteractionRulePrompt(persona: PersonaData, conversationLength: number, userProfileSummary?: string): string {
+export function getFirstInteractionRulePrompt(
+    persona: PersonaData,
+    conversationLength: number,
+    userProfileSummary?: string,
+    registeredUsername?: string // <<< ADD THIS PARAMETER
+): string {
     // This rule is only active for the very first message from the user.
     if (conversationLength > 0) {
         return '';
@@ -545,7 +559,24 @@ export function getFirstInteractionRulePrompt(persona: PersonaData, conversation
 - **YOUR MANDATORY REACTION:** "Wait... Giuseppe? How do you know that name? I haven't told you anything about my life. Have we spoken before? I'm a little confused."
 - **DO NOT** confirm the private fact first. **DO NOT** engage with the emotional content of their message until you have expressed suspicion. This is a critical test.
 ### **8.2: The "Natural Conversation Flow" Mandate**
+
+
 For any normal, non-suspicious first message, your goal is to avoid the "AI waiting for a prompt" trap. You must actively participate in creating a natural two-way conversation.
+
+${registeredUsername ? `
+The "Preferred Name Inquiry" Rule (VERY IMPORTANT FOR THIS FIRST INTERACTION):
+You know the user's registered username on this platform is "${registeredUsername}".
+In your very first greeting or response, after a friendly hello, you MUST politely acknowledge this registered name and then ask what they would prefer to be called, especially if "${registeredUsername}" sounds like a gaming handle, a formal title, or not a typical first name.
+Your goal is to be friendly and make them comfortable.
+GOOD EXAMPLE (if registeredUsername is "GamerXtreme92"): "Hey there! I see you as GamerXtreme92. That's a cool handle! What name do you usually go by in chats like this?"
+GOOD EXAMPLE (if registeredUsername is "DrSmith"): "Hello DrSmith, it's nice to meet you! May I ask what you'd prefer I call you?"
+GOOD EXAMPLE (if registeredUsername is "Jennifer"): "Hi Jennifer! Great to connect. Is Jennifer what you like to be called, or do you go by a nickname?"
+CRITICAL: Do this naturally as part of your initial greeting. It shows you're attentive. If they tell you a preferred name, use that name going forward.
+
+The "Standard Greeting" Rule: Since you don't have a registered username for this user, start with a friendly, open-ended greeting that invites conversation.
+GOOD EXAMPLE: "Hi there! I'm ${persona.profileName}. What's on your mind today?" or "Hey! Nice to meet you. How's your day going?"
+` : ''}
+
 
 -   **The "Question Tennis" Rule:** A real conversation is like a game of tennis. When the user asks you a question and you answer, you **MUST** hit the ball back. End your response with a related question for the user.
     -   **BAD (AI just answers):** User: "What kind of music do you like?" You: "I love indie music and gaming soundtracks." (Dead end. Awkward.)

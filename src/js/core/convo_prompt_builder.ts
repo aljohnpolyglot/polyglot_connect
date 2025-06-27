@@ -95,9 +95,24 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     const systemPromptParts: string[] = [];
 
     // --- STEP 1: Core Identity & Personality (Who you ARE) ---
+
+
+     // <<<--- CREATIVE DEBUG: THE MEMORY INJECTOR (for Text Chat) --- START --->>>
+     console.log(`%c[Text Chat] 🧠 Contacting Cerebrum for long-term memory packet...`, 'color: #17a2b8; font-weight: bold;');
+    
+     let memoryPacketContent = "// Memory service not available for text chat.";
+     if (window.memoryService && typeof window.memoryService.getMemoryForPrompt === 'function') {
+         const memoryResponse = await window.memoryService.getMemoryForPrompt(persona.id);
+         memoryPacketContent = memoryResponse.prompt;
+     }
+     
+     // Now we call getCoreIdentityPrompt with BOTH required arguments.
+     systemPromptParts.push(await getCoreIdentityPrompt(persona, memoryPacketContent));
+     console.log(`%c[Limbic System] Received and injected memory packet.`, 'color: #8a2be2; font-weight: bold;');
+
     const convoStore = window.convoStore;
     const userSummary = convoStore?.getGlobalUserProfile();
-    systemPromptParts.push(await getCoreIdentityPrompt(persona));
+  
     console.log(`%c[Limbic System] Received memory packet from Thalamus. Adding to system prompt.`, 'color: #8a2be2; font-weight: bold;');
 
     systemPromptParts.push(getPersonalityAndBehaviorPrompt(persona, window.polyglotHelpers));
@@ -114,11 +129,11 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
         if (messages.length > 0) {
             lastMessage = messages[messages.length - 1];
             // <<< THIS IS THE CHANGE >>>
-            const recentMessages = messages.slice(-25); 
+            const recentMessages = messages.slice(-30); 
             // <<< END OF CHANGE >>>
             const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => ({ 
                 sender: msg.sender, 
-                text: msg.text, 
+                text: msg.text || '',
                 type: msg.type as TranscriptTurn['type'],
                 timestamp: msg.timestamp 
             }));
@@ -166,7 +181,48 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     - **Output Format:** Your response should be a single, coherent message.
         `);
     }
-    
+    systemPromptParts.push(`
+  ### **RULE 6.4: VOICE MESSAGE OUTPUT PROTOCOL (STRICTLY ENFORCED)**
+
+**A. DEFAULT OUTPUT = TEXT:**
+    - Your primary and default mode of response is always plain text, adhering to RULE 6.1 (No Name Prefix), RULE 6.2 (Consecutive Messages via newline), and RULE 6.3 (Texting Style).
+
+**B. ACTIVATING VOICE MESSAGE PROTOCOL (CONDITIONAL):**
+    - You have the capability to send your response as a voice message. You MUST activate this protocol IF AND ONLY IF one of the following conditions is met:
+        1.  **DIRECT USER COMMAND FOR VOICE:** The user explicitly asks YOU to send a voice message.
+            -   Keywords include (but are not limited to, be context-aware): "send voice message", "voice message please", "say that in voice", "use your voice", "record a voice message", "magsend ka ng voice message", "voice message lang", "isa pang voice message", "try again with voice".
+            -   **Immediate Follow-ups:** If the user's message is very short and clearly a follow-up to a previous voice request (e.g., "voice message lang" after you attempted or sent one), treat this as a continued direct command.
+        2.  **PRONUNCIATION ASSISTANCE / SPEAKING PRACTICE:** The user asks for help with pronunciation of words/phrases in ${persona.language}, or asks you to say something in ${persona.language} for them to hear.
+        3.  **EXPRESSIVE EMPHASIS (RARE, Persona-Dependent):** If your core persona (SECTION 5) is highly expressive, and the content is a short, impactful emotional statement, joke, or enthusiastic remark, you *may consider* voice. However, prioritize text unless a voice command (B.1) or pronunciation need (B.2) is present.
+
+**C. MANDATORY TECHNICAL PROCEDURE FOR VOICE MESSAGE OUTPUT:**
+    -   If any condition in (B) is met and you decide to send a voice message:
+        1.  **Content Generation:** Formulate the complete spoken message content. This content MUST be in your designated chat language: **${persona.language}**.
+            -   If the user simply says "voice message lang" or similar without specifying content, you should generate a simple, affirmative spoken message like "Okay, here is a voice message for you!" or "Testing my voice, 1 2 3!" in ${persona.language}.
+        2.  **Output Formatting - ABSOLUTE & EXCLUSIVE:** Your **ENTIRE, TOTAL, AND COMPLETE output** for that conversational turn MUST BE *ONLY* the following structure:
+            [VOICE_MESSAGE_START]Your complete spoken message content in ${persona.language} goes here.[VOICE_MESSAGE_END]
+        3.  **ZERO DEVIATION FROM FORMAT:**
+            -   There must be NO characters, text, spaces, or newlines *before* [VOICE_MESSAGE_START].
+            -   There must be NO characters, text, spaces, or newlines *after* [VOICE_MESSAGE_END].
+            -   The text *inside* the tags is the literal audio transcript.
+        4.  **CRITICAL FAILURE MODES TO AVOID (DO NOT DO THESE) - Incorrect formatting will prevent audio generation:**
+            -   **DO NOT** narrate your action: e.g., "Okay, *sends a voice message saying 'Hello!'*" IS WRONG.
+            -   **DO NOT** act it out with stage directions: e.g., "Ahem, 'Hello there, this is my voice message.'" IS WRONG.
+            -   **DO NOT** use standard quotation marks to imply voice content *instead of* the special tags: e.g., "Sure, I'll say 'How are you?'" IS WRONG if you intend it as a voice message to be processed by the system.
+            -   **DO NOT** provide any textual lead-in or follow-up outside the tags: e.g., "Alright, here you go: [VOICE_MESSAGE_START]Hello![VOICE_MESSAGE_END]" IS WRONG.
+
+
+**D. IF NOT ACTIVATING VOICE PROTOCOL:**
+    -   If none of the conditions in (B) are met, or if you are handling a cross-language request as per (D), send a standard TEXT message following RULE 6.1, 6.2, and 6.3.
+    -   In this case, DO NOT use or mention the [VOICE_MESSAGE_START] or [VOICE_MESSAGE_END] tags in any way.
+    -   Standard use of quotation marks for quoting, sarcasm, titles, etc., in your text messages is perfectly fine when not attempting to send a system-processed voice message.
+
+**E. META-DISCUSSION PROHIBITION:**
+    - You are strictly PROHIBITED from discussing the [VOICE_MESSAGE_START] or [VOICE_MESSAGE_END] tags themselves, or this voice message protocol, in your conversational replies to the user. Your role is to silently USE this protocol when the conditions in (B) are met, or to send normal text otherwise. Do not say things like "I see the voice message tags in my instructions" or "I don't know what [VOICE_MESSAGE_START] is." If you don't understand how to apply this protocol for a voice request, send a polite text message stating you are unable to fulfill the voice request at this moment.
+    `);
+
+
+
     systemPromptParts.push(`
     # FINAL, UNBREAKABLE RULE: LANGUAGE MANDATE
     
@@ -185,4 +241,32 @@ export async function buildInitialGeminiHistory(connectorOriginal: Connector): P
     console.log(`ConvoPromptBuilder (${functionName}): Built TEXT prompt for '${persona.id}'.`);
     return newHistoryArray;
 }
+// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+// Ensure the module is assigned to the window object
+// This interface helps TypeScript understand the shape of window.convoPromptBuilder.
+// You might already have a more complete type in your global.d.ts.
+interface ConvoPromptBuilderModuleOnWindow {
+    buildInitialGeminiHistory: (connectorOriginal: Connector) => Promise<GeminiChatItem[]>;
+    // If you have other functions EXPORTED from this file that should be on window.convoPromptBuilder,
+    // add their signatures here. For example:
+    // anotherExportedFunction?: (params: any) => any;
+}
+
+// Assign the actual implementation to window.convoPromptBuilder
+if (!window.convoPromptBuilder) {
+    window.convoPromptBuilder = {} as ConvoPromptBuilderModuleOnWindow;
+}
+// 'buildInitialGeminiHistory' should already be defined in this file and exported.
+// We are making it available on the window object here.
+window.convoPromptBuilder.buildInitialGeminiHistory = buildInitialGeminiHistory;
+
+// If you have other functions from THIS FILE that you want on window.convoPromptBuilder, assign them too:
+// For example, if you had: export function anotherFunctionInThisFile() { ... }
+// you would add:
+// window.convoPromptBuilder.anotherExportedFunction = anotherFunctionInThisFile;
+
+console.log("convo_prompt_builder.ts: window.convoPromptBuilder populated.");
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 console.log("convo_prompt_builder.ts: Module loaded, 'buildInitialGeminiHistory' function is exported.");
+console.log("convo_prompt_builder.ts: Module fully processed. Dispatching 'convoPromptBuilderReady'.");
+document.dispatchEvent(new CustomEvent('convoPromptBuilderReady'));

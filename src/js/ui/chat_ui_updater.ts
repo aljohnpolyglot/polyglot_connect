@@ -69,6 +69,8 @@ export interface ChatUiUpdaterModule {
         menuButtonElement: HTMLElement, 
         defaultTextAfterProgress: string 
     ) => void;
+    showLoadingInEmbeddedChatLog: () => void;
+    showErrorInEmbeddedChatLog: (errorMessage: string) => void;
     getWrapperForActiveUnifiedMenu?: () => HTMLElement | null; // <<< ADD THIS LINE
   }
 
@@ -89,6 +91,38 @@ const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
     function getDepsLocal() {
         return { domElements, polyglotHelpers };
     }
+
+
+
+    function showLoadingInEmbeddedChatLog(): void {
+        const { domElements } = getDepsLocal(); // Use getDepsLocal
+        if (domElements?.embeddedChatLog) {
+            // This HTML includes a simple Font Awesome spinner.
+            // You can style .chat-log-loading-placeholder in your CSS.
+            domElements.embeddedChatLog.innerHTML = `
+                <div class="chat-log-loading-placeholder">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading conversation...</p>
+                </div>
+            `;
+        }
+    }
+    
+    function showErrorInEmbeddedChatLog(errorMessage: string): void {
+        const { domElements, polyglotHelpers } = getDepsLocal(); // Use getDepsLocal
+        if (domElements?.embeddedChatLog && polyglotHelpers) {
+            // This HTML includes a warning icon.
+            // You can style .chat-log-error-placeholder in your CSS.
+            const sanitizedMessage = polyglotHelpers.sanitizeTextForDisplay(errorMessage);
+            domElements.embeddedChatLog.innerHTML = `
+                <div class="chat-log-error-placeholder">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>${sanitizedMessage}</p>
+                </div>
+            `;
+        }
+    }
+
 
     function initialize(deps: { domElements: YourDomElements, polyglotHelpers: PolyglotHelpers }) {
         console.log("chat_ui_updater.ts: Initializing with dependencies.");
@@ -130,26 +164,40 @@ const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
     }
 
     function appendChatMessage(logElement: HTMLElement | null, text: string, senderClass: string, options: ChatMessageOptions = {}): HTMLElement | null {
-      
-        const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
+        if (options.type === 'call_event') {
+            console.log('%c[BRUTE FORCE] #4: appendChatMessage RECEIVED a call_event', 'color: #00FFFF; font-weight: bold;', {
+                text: text,
+                senderClass: senderClass,
+                options: JSON.parse(JSON.stringify(options)) // Deep copy to prevent weird console logging issues
+            });
+        }
 
+        if (senderClass === 'system-call-event' || options.type === 'call_event') {
+            console.log(
+                '%c[CALL_EVENT_TRACE #4] Final Destination: appendChatMessage received options:', 
+                'color: white; background-color: #B22222; padding: 2px;',
+                JSON.parse(JSON.stringify(options))
+            );
+        }
+        const { polyglotHelpers: currentPolyglotHelpers, domElements: currentDomElements } = getDepsLocal();
+    
         // --- THIS IS THE FIX: Make the function robust by ensuring a messageId always exists. ---
         if (!options.messageId) {
-            if (currentPolyglotHelpers) {
-                options.messageId = currentPolyglotHelpers.generateUUID();
-                // This warning is helpful for future debugging but won't be a critical error.
-                console.warn(`[CHAT_UI_DEBUG] A messageId was MISSING from the options object. A new one was generated: ${options.messageId}`);
+            if (options.isThinking) {
+                // This is a "ghost bubble". It's temporary and doesn't need a permanent ID.
+                // We'll generate one for the UI element but won't log a scary warning.
+                // Creative Debug: We prefix the ID to make it obvious in the DOM inspector.
+                options.messageId = `ghost-${polyglotHelpers.generateUUID()}`;
             } else {
-                // Fallback if helpers aren't even ready, which would be a severe issue.
-                options.messageId = `fallback-id-${Date.now()}-${Math.random()}`;
-                 console.error(`[CHAT_UI_DEBUG] CRITICAL: messageId was missing AND polyglotHelpers were unavailable to generate a new one.`);
+                // This is a REAL message that's missing an ID. This is a problem we should be warned about.
+                options.messageId = polyglotHelpers.generateUUID();
+                console.warn(`[CHAT_UI_DEBUG] A messageId was MISSING from a real message object. A new one was generated: ${options.messageId}`);
             }
         }
         // --- END OF FIX ---
-
-        console.log('[CHAT_UI_DEBUG] appendChatMessage called for sender:', senderClass);
-        // Log a clean snapshot of the options object to see exactly what was passed in.
-        console.log('[CHAT_UI_DEBUG] FULL OPTIONS RECEIVED:', JSON.parse(JSON.stringify(options))); 
+    
+        console.log('[CHAT_UI_DEBUG] appendChatMessage called for sender:', senderClass); // LINE 184
+        console.log('[CHAT_UI_DEBUG] FULL OPTIONS RECEIVED:', JSON.parse(JSON.stringify(options))); // LINE 186
       
       
         if (!logElement || !currentPolyglotHelpers) {
@@ -207,19 +255,47 @@ const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
             lastDisplayedTimestamps.set(logElement, messageTimestamp);
         }
         
-        const messageWrapper = document.createElement('div');
+        let messageWrapper: HTMLElement;
+
+        if (options.type === 'call_event') {
+            // For call events, the wrapper MUST be an <li> to act as a "twin"
+            messageWrapper = document.createElement('li');
+            // Add the class and data attribute that the summary list listener expects
+            messageWrapper.className = 'summary-list-item system-event-wrapper'; // <<< ADD 'system-event-wrapper' HERE
+            if (options.callSessionId) { // Ensure sessionId is only added if it exists
+                 messageWrapper.dataset.sessionId = options.callSessionId;
+            }
+        } else {
+            // For all other regular messages, it's a normal div
+            messageWrapper = document.createElement('div');
+        }
 
         
         
         
         console.log('[CHAT_UI_DEBUG] Creating message wrapper. Checking for messageId in options...');
-        if (options.messageId) {
+        if (options.messageId) { // This is your app's UUID
             messageWrapper.dataset.messageId = options.messageId;
-            console.log(`[CHAT_UI_DEBUG] SUCCESS: Set data-message-id to "${options.messageId}" on the wrapper.`);
+            console.log(`[CHAT_UI_DEBUG] SUCCESS: Set data-message-id (app UUID) to "${options.messageId}" on the wrapper.`);
         } else {
-            console.warn('[CHAT_UI_DEBUG] WARNING: No messageId was provided in options, so data-message-id was NOT set on the wrapper.');
+            console.warn('[CHAT_UI_DEBUG] WARNING: No app messageId was provided in options, so data-message-id was NOT set on the wrapper.');
         }
-        // Let's inspect the dataset immediately after trying to set it.
+
+        // --- ADD THIS BLOCK to store Firestore Document ID ---
+        if (options.id) { // This 'id' field in options should be the Firestore document ID for historical messages
+            messageWrapper.dataset.firestoreMessageId = options.id;
+            console.log(`[CHAT_UI_DEBUG] SUCCESS: Set data-firestore-message-id to "${options.id}" on the wrapper.`);
+        } else if (options.type !== 'call_event' && !options.isThinking) { // Don't warn for thinking bubbles or call events that might not have it yet
+            // For user-sent messages before they hit Firestore, options.id might be missing.
+            // This is okay, as reactions can only be added to messages that exist in Firestore.
+            // However, if this is a historical message from Firestore, options.id SHOULD exist.
+            console.warn('[CHAT_UI_DEBUG] WARNING: No options.id (Firestore document ID) was provided. Reactions might not save for this message if it is historical.');
+        }
+        // --- END OF ADDED BLOCK ---
+        // Let
+        // 
+        // 
+        // 's inspect the dataset immediately after trying to set it.
         console.log('[CHAT_UI_DEBUG] Wrapper dataset immediately after setting:', JSON.parse(JSON.stringify(messageWrapper.dataset)));
 
         const currentSpeakerId = options.speakerId || options.connectorId;
@@ -253,28 +329,39 @@ const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
         }
 
         if (options.type === 'call_event' || senderClass === 'system-call-event') {
+            // This is now the ONLY block that will run for a call event.
             messageWrapper.classList.add('system-event-wrapper');
             messageDiv.classList.add('call-event-message');
             let eventIconHtml = '', callActionHtml = '', eventMainText = currentPolyglotHelpers.sanitizeTextForDisplay(text || ""), eventDetailsHtml = '';
+            
             switch (options.eventType) {
-                case 'call_started': eventIconHtml = '<i class="fas fa-phone-alt call-event-icon call-started"></i> '; break;
+                case 'call_started': 
+                    eventIconHtml = '<i class="fas fa-phone-alt call-event-icon call-started"></i> '; 
+                    break;
                 case 'call_ended':
                     eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-ended"></i> ';
-                    callActionHtml = `<button class="call-event-action-btn" data-action="call_back" data-connector-id="${options.connectorIdForButton || ''}" data-session-id="${options.callSessionId || ''}">CALL BACK</button><button class="call-event-action-btn summary-btn" data-action="view_summary" data-session-id="${options.callSessionId || ''}">VIEW SUMMARY</button>`; break;
+                    // This now correctly builds the buttons, and they will not be overwritten.
+                    callActionHtml = `<button class="call-event-action-btn" data-action="call_back" data-connector-id="${options.connectorIdForButton || ''}" data-session-id="${options.callSessionId || ''}">CALL BACK</button><button class="call-event-action-btn summary-btn" data-action="view_summary" data-session-id="${options.callSessionId || ''}">VIEW SUMMARY</button>`; 
+                    break;
                 case 'call_failed_user_attempt':
                     eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> ';
-                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`; break;
+                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`; 
+                    break;
                 case 'call_missed_connector':
                     eventIconHtml = '<i class="fas fa-phone-slash call-event-icon call-missed"></i> ';
                     eventMainText = `${options.connectorNameForDisplay || 'Partner'} missed your call.`;
-                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`; break;
+                    callActionHtml = `<button class="call-event-action-btn" data-action="call_again" data-connector-id="${options.connectorIdForButton || ''}">CALL AGAIN</button>`; 
+                    break;
             }
+        
             if (options.duration) eventDetailsHtml += `<span class="call-event-detail duration"><i class="far fa-clock"></i> ${currentPolyglotHelpers.sanitizeTextForDisplay(options.duration)}</span>`;
             const eventTime = new Date(options.timestamp || Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
             if (eventDetailsHtml && eventTime) eventDetailsHtml += ' | ';
             if (eventTime) eventDetailsHtml += `<span class="call-event-detail time">${eventTime}</span>`;
+            
             messageDiv.innerHTML = `<div class="call-event-main-text">${eventIconHtml}${eventMainText}</div><div class="call-event-details-container">${eventDetailsHtml}</div>${callActionHtml ? `<div class="call-event-actions">${callActionHtml}</div>` : ''}`;
             messageWrapper.appendChild(messageDiv);
+        
         } else if (options.isVoiceMemo && options.audioSrc) {
             messageWrapper.classList.add('chat-message-wrapper');
             messageDiv.classList.add('chat-message-ui', 'voice-memo-message');
@@ -298,73 +385,166 @@ const TIME_DIFFERENCE_THRESHOLD_MINUTES = 30;
             playerControlsContainer.appendChild(waveformDiv);
             messageDiv.appendChild(playerControlsContainer);
             
+            if (options.audioSrc) {
+                waveformDiv.dataset.audioSrc = options.audioSrc;
+                console.log(`[ChatUIUpdater] Voice memo audioSrc set for lazy loading: ${options.audioSrc} on ${waveformContainerId}`);
+            } else {
+                console.warn(`[ChatUIUpdater] No audioSrc provided for voice memo ${options.messageId}`);
+            }
+            waveformDiv.dataset.wavesurferInitialized = "false";
+    
             requestAnimationFrame(() => {
-                if (document.getElementById(waveformContainerId) && (window as any).WaveSurfer) {
-                    try {
-                        const wavesurfer = (window as any).WaveSurfer.create({ container: `#${waveformContainerId}`, waveColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.5)' : 'rgba(100, 100, 100, 0.5)', progressColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.7)', barWidth: 2, barRadius: 2, cursorWidth: 0, height: 30, barGap: 2, responsive: true, hideScrollbar: true });
-                        wavesurfer.load(options.audioSrc);
-                        const btnElement = document.getElementById(playButtonId);
-                        if(btnElement) {
-                            btnElement.onclick = () => wavesurfer.playPause();
-                            wavesurfer.on('play', () => { btnElement.innerHTML = '<i class="fas fa-pause"></i>'; });
-                            wavesurfer.on('pause', () => { btnElement.innerHTML = '<i class="fas fa-play"></i>'; });
-                            wavesurfer.on('finish', () => { btnElement.innerHTML = '<i class="fas fa-play"></i>'; wavesurfer.seekTo(0); });
+                const waveElement = document.getElementById(waveformContainerId);
+                const playBtnElement = document.getElementById(playButtonId);
+    
+                if (waveElement && playBtnElement && (window as any).WaveSurfer) {
+                    playBtnElement.onclick = () => {
+                        let wavesurfer = (waveElement as any).wavesurferInstance;
+                        if (waveElement.dataset.wavesurferInitialized === "false") {
+                            const audioUrlToLoad = waveElement.dataset.audioSrc;
+                            console.log(`[ChatUIUpdater] Initializing WaveSurfer for ${waveformContainerId} with src: ${audioUrlToLoad}`);
+                            if (!audioUrlToLoad) {
+                                console.warn(`[ChatUIUpdater] No audioSrc found in dataset for ${waveformContainerId}. Cannot load.`);
+                                playBtnElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>'; // Show error on button
+                                const errorSpan = document.createElement('span');
+                                errorSpan.className = 'voice-memo-error';
+                                errorSpan.textContent = ' Audio unavailable.';
+                                messageDiv.appendChild(errorSpan); // Append error to message bubble
+                                return;
+                            }
+                            try {
+                                wavesurfer = (window as any).WaveSurfer.create({
+                                    container: `#${waveformContainerId}`,
+                                    waveColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.5)' : 'rgba(100, 100, 100, 0.5)',
+                                    progressColor: senderClass.includes('user') ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.7)',
+                                    barWidth: 2, barRadius: 2, cursorWidth: 0, height: 30, barGap: 2,
+                                    responsive: true, hideScrollbar: true
+                                });
+                                (waveElement as any).wavesurferInstance = wavesurfer; // Store instance on the element
+    
+                                wavesurfer.on('ready', () => {
+                                    console.log(`[ChatUIUpdater] WaveSurfer ready for ${waveformContainerId}, playing.`);
+                                    wavesurfer.play();
+                                });
+                                wavesurfer.on('play', () => { playBtnElement.innerHTML = '<i class="fas fa-pause"></i>'; });
+                                wavesurfer.on('pause', () => { playBtnElement.innerHTML = '<i class="fas fa-play"></i>'; });
+                                wavesurfer.on('finish', () => {
+                                    playBtnElement.innerHTML = '<i class="fas fa-play"></i>';
+                                    wavesurfer.seekTo(0);
+                                });
+                                wavesurfer.on('error', (err: any) => {
+                                    console.error(`[ChatUIUpdater] WaveSurfer error loading ${waveElement.dataset.audioSrc}:`, err);
+                                    playBtnElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                                    const errorSpan = document.createElement('span');
+                                    errorSpan.className = 'voice-memo-error';
+                                    errorSpan.textContent = ' Error loading audio.';
+                                    // Check if an error span already exists to prevent duplicates
+                                    if (!messageDiv.querySelector('.voice-memo-error')) {
+                                        messageDiv.appendChild(errorSpan);
+                                    }
+                                });
+                                
+                                console.log(`[ChatUIUpdater] Loading audio into WaveSurfer: ${audioUrlToLoad}`);
+                                wavesurfer.load(audioUrlToLoad);
+                                playBtnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; // Show loading on button
+                                waveElement.dataset.wavesurferInitialized = "true";
+                            } catch (e) {
+                                console.error("[ChatUIUpdater] Error creating WaveSurfer instance:", e);
+                                playBtnElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                            }
+                        } else if (wavesurfer) {
+                            console.log(`[ChatUIUpdater] WaveSurfer already initialized for ${waveformContainerId}, toggling play/pause.`);
+                            wavesurfer.playPause();
+                        } else {
+                             console.warn(`[ChatUIUpdater] WaveSurfer instance not found for ${waveformContainerId} on subsequent click.`);
+                             playBtnElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
                         }
-                    } catch(e) { /* Fallback to simple audio player */ }
+                    };
+                } else {
+                    console.warn(`[ChatUIUpdater] Could not find elements for WaveSurfer setup: waveElement=${!!waveElement}, playBtnElement=${!!playBtnElement}`);
                 }
             });
-
             if (text && text.trim() !== "") {
-                const transcriptSpan = document.createElement('span');
-                transcriptSpan.className = 'voice-memo-transcript';
-                transcriptSpan.textContent = `(Transcript: ${currentPolyglotHelpers.sanitizeTextForDisplay(text)})`;
-                messageDiv.appendChild(transcriptSpan);
+                const transcriptContainerDiv = document.createElement('div');
+                // Apply a general class for the container, useful for margin/padding.
+                transcriptContainerDiv.className = 'voice-memo-transcript-container'; 
+                
+                const transcriptTextSpan = document.createElement('span');
+                // A more specific class for the text itself, can be styled like regular chat text.
+                transcriptTextSpan.className = 'voice-memo-transcript-text'; 
+
+                let transcriptContent = "";
+                // For user's voice memos, keep the "(Transcript: ...)" prefix
+                if (senderClass.includes('user')) {
+                    transcriptContent = `(Transcript: ${currentPolyglotHelpers.sanitizeTextForDisplay(text)})`;
+                } else { 
+                    // For AI (connector) voice memos, just display the transcribed text directly.
+                    // This makes it feel more like the AI is "speaking" that text.
+                    transcriptContent = currentPolyglotHelpers.sanitizeTextForDisplay(text);
+                }
+                transcriptTextSpan.textContent = transcriptContent;
+                
+                transcriptContainerDiv.appendChild(transcriptTextSpan);
+                messageDiv.appendChild(transcriptContainerDiv); // Append the div container to the main message bubble
             }
+            // --- END OF REPLACEMENT ---
+            
             messageWrapper.appendChild(messageDiv);
 
-        } else { // Regular text/image message
+        } else { 
+            // --- REGULAR TEXT & IMAGE LOGIC ---
             messageWrapper.classList.add('chat-message-wrapper');
             messageDiv.classList.add('chat-message-ui');
-            if (senderClass.includes('user')) { messageWrapper.classList.add('user-wrapper'); messageDiv.classList.add('user'); } 
-            else if (senderClass.includes('system-message')) { messageWrapper.classList.add('system-message-wrapper'); messageDiv.classList.add('system-message'); } 
-            else { messageWrapper.classList.add('connector-wrapper'); messageDiv.classList.add('connector'); }
-            
-            if (options.isThinking) messageDiv.classList.add('connector-thinking');
-            if (options.isError) messageDiv.classList.add('error-message-bubble');
+
+            if (senderClass.includes('user')) {
+                messageWrapper.classList.add('user-wrapper');
+                messageDiv.classList.add('user');
+            } else if (senderClass.startsWith('system-')) { // <<< FIX: Broaden to catch 'system-warning', 'system-error', etc.
+                messageWrapper.classList.add('system-message-wrapper'); // Use system message styling
+                messageDiv.classList.add('system-message');
+                // The options.isError check later will handle adding 'error-message-bubble' if isError:true is passed
+            } else { // Fallback to connector (e.g., 'connector', 'connector-thinking', 'connector-error')
+                messageWrapper.classList.add('connector-wrapper');
+                messageDiv.classList.add('connector');
+            }
+
+            if (options.isThinking) messageDiv.classList.add('connector-thinking'); // Correct for connector thinking
+            if (options.isError) messageDiv.classList.add('error-message-bubble'); // Applies error style
 
             let contentHtml = '';
             const isGroupChatLog = logElement?.id === currentDomElements?.groupChatLogDiv?.id;
+            
             if (options.senderName && !senderClass.includes('user') && !options.isThinking && options.showSenderName !== false && isGroupChatLog) {
                 contentHtml += `<strong class="chat-message-sender-name">${currentPolyglotHelpers.sanitizeTextForDisplay(options.senderName)}</strong>`;
             }
-            if (options.imageUrl) {
-                if (options.imageUrl === 'image_expired') {
-                    // This is our special placeholder for an expired image
-                    contentHtml += `<div class="chat-message-expired-image">
-                                        <i class="fas fa-image-slash"></i>
-                                        <span>[Image expired after 24 hours]</span>
-                                    </div>`;
-                } else {
-                    // This is a normal, valid image URL
-                    contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
-                }
-            }
+
+            let processedText = '';
             if (text && text.trim() !== "") {
-                if (options.imageUrl) contentHtml += '<br>';
-                let processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
+                processedText = currentPolyglotHelpers.sanitizeTextForDisplay(text);
                 processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+            }
+
+            // Correctly handle image, placeholder, and text content
+            if (options.imageUrl) { // This will now be an Imgur URL
+                contentHtml += `<img src="${currentPolyglotHelpers.sanitizeTextForDisplay(options.imageUrl)}" alt="Chat Image" class="chat-message-image">`;
+                if (processedText) contentHtml += `<br><span class="chat-message-text">${processedText}</span>`;
+            } else if (options.type === 'image') { // This is the freemium placeholder
+                contentHtml += `<div class="chat-message-expired-image"><i class="fas fa-image"></i><span>Upgrade to Premium to save images.</span></div>`;
+                if (processedText) contentHtml += `<br><span class="chat-message-text">${processedText}</span>`;
+            } else {
                 contentHtml += `<span class="chat-message-text">${processedText}</span>`;
             }
+            
             messageDiv.innerHTML = contentHtml;
             messageWrapper.appendChild(messageDiv);
         }
 
         const shouldShowAvatar = 
-            !senderClass.includes('user') && 
-            !senderClass.includes('system-message') && 
-            !senderClass.includes('system-call-event') && // <<< THIS IS THE KEY FIX
-            options.type !== 'call_event' &&               // <<< AND THIS IS A SAFETY CHECK
-            options.avatarUrl;
+        !senderClass.includes('user') && 
+        !senderClass.includes('system-message') && 
+        !senderClass.includes('system-call-event') && // <<< THIS IS THE KEY FIX
+        options.type !== 'call_event' &&               // <<< AND THIS IS A SAFETY CHECK
+        options.avatarUrl;
             if (!messageWrapper.classList.contains('system-event-wrapper') && !messageWrapper.classList.contains('system-message-wrapper')) {
 
             
@@ -479,6 +659,15 @@ if (!messageWrapper.classList.contains('system-event-wrapper') &&
         messageWrapper.appendChild(reactionsDisplayContainer);
     }
 }
+if (options.id) { // This 'id' field in options should be the Firestore document ID
+    messageWrapper.dataset.firestoreMessageId = options.id; // <<< THIS IS THE KEY
+    console.log(`[CHAT_UI_DEBUG] SUCCESS: Set data-firestore-message-id to "${options.id}" on the wrapper.`);
+} else if (options.type !== 'call_event' && !options.isThinking) { 
+    console.warn('[CHAT_UI_DEBUG] WARNING: No options.id (Firestore document ID) was provided. Reactions might not save for this message if it is historical.');
+}
+
+
+
 // ===================  END: REPLACE THE REACTION CONTAINER BLOCK  ===================
 // ======================================================================================
 // ======================================================================================
@@ -741,10 +930,16 @@ if (!messageWrapper.classList.contains('system-event-wrapper') &&
         updateMenuTranslateButtonText,
         showMenuActionInProgress,
         resetMenuActionInProgress,
-        getWrapperForActiveUnifiedMenu // <<< ADD THIS LINE
+        getWrapperForActiveUnifiedMenu, // <<< ADD THIS LINE
+        showLoadingInEmbeddedChatLog,
+        showErrorInEmbeddedChatLog,
     };
 })(); // End of IIFE
 
 window.chatUiUpdater = chatUiUpdater;
 document.dispatchEvent(new CustomEvent('chatUiUpdaterReady'));
 console.log('chat_ui_updater.ts: "chatUiUpdaterReady" event dispatched.');
+
+function getDeps(): { domElements: any; polyglotHelpers: any; } {
+    throw new Error('Function not implemented.');
+}

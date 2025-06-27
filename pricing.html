@@ -304,5 +304,82 @@
             // Later: This will redirect to a Stripe Checkout session for the yearly plan
         });
     </script>
+    <!-- At the bottom of pricing.html -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+
+<script type="module">
+    // --- START: Firebase Initialization ---
+    // This is necessary for both the navbar and the payment buttons
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY", // Replace with your actual config
+        authDomain: "YOUR_AUTH_DOMAIN",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_STORAGE_BUCKET",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    // --- END: Firebase Initialization ---
+
+
+    // --- START: Payment Button Logic ---
+    const PADDLE_PRICE_ID_MONTHLY = "pri_...your_monthly_id..."; // Replace with real ID
+    const PADDLE_PRICE_ID_YEARLY  = "pri_...your_yearly_id..."; // Replace with real ID
+    const PAYMENT_FUNCTION_URL = "https://your-vercel-project-name.vercel.app/api/create-payment"; // Your Vercel function URL
+
+    async function initiatePayment(planId, priceId, event) {
+        const user = auth.currentUser;
+        if (!user) {
+            alert("Please sign in or create an account first to subscribe.");
+            window.location.href = '/#firebaseui-auth-container'; // Redirect to sign-in
+            return;
+        }
+
+        const button = event.currentTarget;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirecting...';
+        button.disabled = true;
+
+        try {
+            const idToken = await user.getIdToken(true);
+
+            const response = await fetch(PAYMENT_FUNCTION_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({ planId, priceId })
+            });
+
+            if (!response.ok) throw new Error(`Server error: ${await response.text()}`);
+
+            const data = await response.json();
+            if (data.checkoutUrl) {
+                window.location.href = data.checkoutUrl;
+            } else {
+                throw new Error("Could not get checkout URL.");
+            }
+        } catch (error) {
+            console.error("Payment failed:", error);
+            alert("Could not start payment process. Please try again.");
+            button.innerHTML = planId === 'monthly' ? 'Become an Insider' : 'Go Trailblazer';
+            button.disabled = false;
+        }
+    }
+    
+    // Attach listeners to the buttons
+    document.getElementById('subscribe-monthly-btn').addEventListener('click', (e) => initiatePayment('monthly', PADDLE_PRICE_ID_MONTHLY, e));
+    document.getElementById('subscribe-yearly-btn').addEventListener('click', (e) => initiatePayment('yearly', PADDLE_PRICE_ID_YEARLY, e));
+    // --- END: Payment Button Logic ---
+</script>
+
+<script type="module" src="/landing/navbar-loader.ts"></script>
 </body>
 </html>

@@ -66,7 +66,6 @@
 /* Uses .modal-btn and .primary-btn from buttons.css for #recap-download-transcript-btn */
 
 /* Dark Mode Adjustments for Recap Modal */
-body.dark-mode .recap-modal { /* .modal-content dark mode styles apply */ }
 body.dark-mode .recap-modal .modal-title { color: var(--primary-color-lighter); }
 body.dark-mode .recap-modal .modal-subtitle { color: #a0a3a8; }
 body.dark-mode .recap-body-content p { color: var(--text-color-light); }

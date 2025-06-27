@@ -6,7 +6,7 @@ import * as firebaseui from 'firebaseui';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../src/js/firebase-config'; // Use our single source of truth!
 import whitelistedEmails from '../src/data/whitelistEmails'; // <<< No .ts extension needed
-
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 // --- START: Screenshot mode backdoor (This part is fine) ---
 (window as any).enterScreenshotMode = (secretCode: string) => {
     if (secretCode === "polyglotDev2024") {
@@ -136,3 +136,5 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Add this code to the end of D:\polyglot_connect\landing\landing.ts

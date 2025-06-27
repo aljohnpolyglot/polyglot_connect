@@ -15,15 +15,18 @@ import type {
     CombinedChatItem,         // <<< IMPORTED
     ActiveOneOnOneChatItem,   // <<< IMPORTED
     MessageInStore,    
-    ChatMessageOptions
+    ChatMessageOptions,
+    ChatUiUpdaterModule
     // Assuming MessageInStore is defined and exported from global.d.ts or another types file
 } from '../types/global.d.ts';
 
 console.log('chat_session_handler.ts: Script loaded, waiting for core dependencies (TS Version).');
-
 interface ChatSessionHandlerModule {
     initialize: () => void;
-    openConversationInEmbeddedView: (connectorOrId: Connector | string) => Promise<void>;
+    openConversationInEmbeddedView: (
+        connectorOrId: Connector | string,
+        registeredUserNameForPrompt?: string // <<< ADDED OPTIONAL PARAMETER
+    ) => Promise<void>;
     handleMessagesTabBecameActive: () => Promise<void>;
     openMessageModalForConnector: (connector: Connector) => Promise<void>;
     endActiveModalMessagingSession: () => void;
@@ -46,13 +49,14 @@ function initializeActualChatSessionHandler(): void {
         uiUpdater: UiUpdater;
         modalHandler: ModalHandler;
         listRenderer: ListRenderer;
-        chatUiManager: ChatUiManager; 
+        chatUiManager: ChatUiManager;
         conversationManager: ConversationManager;
         chatActiveTargetManager: ChatActiveTargetManager;
         textMessageHandler: TextMessageHandler;
         polyglotConnectors: Connector[];
         chatOrchestrator: ChatOrchestrator;
         polyglotHelpers: PolyglotHelpersOnWindow;
+        chatUiUpdater: ChatUiUpdaterModule; // <<< CORRECTED: Use ChatUiUpdaterModule
     };
 
     const getSafeDeps = (): VerifiedDeps | null => {
@@ -67,7 +71,8 @@ function initializeActualChatSessionHandler(): void {
             textMessageHandler: window.textMessageHandler,
             polyglotConnectors: window.polyglotConnectors,
             chatOrchestrator: window.chatOrchestrator,
-            polyglotHelpers: window.polyglotHelpers
+            polyglotHelpers: window.polyglotHelpers,
+            chatUiUpdater: window.chatUiUpdater
         };
         const missing: string[] = [];
         if (!deps.domElements) missing.push("domElements");
@@ -81,7 +86,7 @@ function initializeActualChatSessionHandler(): void {
         if (!deps.polyglotConnectors || !Array.isArray(deps.polyglotConnectors)) missing.push("polyglotConnectors");
         if (!deps.chatOrchestrator || typeof deps.chatOrchestrator.renderCombinedActiveChatsList !== 'function') missing.push("chatOrchestrator");
         if (!deps.polyglotHelpers || typeof deps.polyglotHelpers.sanitizeTextForDisplay !== 'function') missing.push("polyglotHelpers");
-        
+         if (!deps.chatUiUpdater || typeof deps.chatUiUpdater.showLoadingInEmbeddedChatLog !== 'function') missing.push("chatUiUpdater");
         if (missing.length > 0) {
             console.error(`CSH: getSafeDeps - MISSING/INVALID: ${missing.join(', ')}.`);
             return null;
@@ -108,7 +113,7 @@ const serviceMethods = ((): ChatSessionHandlerModule => {
     const {
         domElements, uiUpdater, modalHandler, listRenderer,
         chatUiManager, conversationManager, chatActiveTargetManager,
-        textMessageHandler, polyglotConnectors, chatOrchestrator, polyglotHelpers
+        textMessageHandler, polyglotConnectors, chatOrchestrator, polyglotHelpers, chatUiUpdater
     } = resolvedDeps!; 
 
  // Define the wrapper here so it can be referenced by both add/remove event listener
@@ -132,6 +137,7 @@ const newMessageInStoreListener = (event: Event) => {
  * @param {CustomEvent} event The event containing the new message details.
  */
 // in chat_session_handler.ts
+// src/js/core/chat_session_handler.ts (The NEW version)
 
 function handleNewMessageInStore(event: CustomEvent): void {
     setTimeout(() => {
@@ -145,51 +151,44 @@ function handleNewMessageInStore(event: CustomEvent): void {
         const currentEmbeddedId = chatActiveTargetManager.getEmbeddedChatTargetId();
         const currentModalConnector = chatActiveTargetManager.getModalMessageTargetConnector();
         let messageAppended = false;
-    
-        // FIX FOR EMBEDDED CHAT
+        if (message.type === 'call_event') {
+            console.log(
+                '%c[CALL_EVENT_TRACE #3] CSH: Received call event from store. Full message object:', 
+                'color: white; background-color: #FF8C00; padding: 2px;',
+                JSON.parse(JSON.stringify(message))
+            );
+        }
+        // --- THIS IS THE FIX (APPLIED TO EMBEDDED VIEW) ---
+        let senderClass: string;
+        if (message.sender === 'user') {
+            senderClass = 'user';
+        } else if (message.type === 'call_event') {
+            senderClass = 'system-call-event';
+        } else {
+            senderClass = 'connector';
+        }
+        // --- END OF FIX ---
+
+        // LOGIC FOR EMBEDDED CHAT
         if (currentEmbeddedId && currentEmbeddedId === connectorId) {
-            console.log(`CSH: New message for active embedded chat (${connectorId}). Appending to UI.`);
-            const convoRecord = conversationManager.getConversationById(connectorId);
-            const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
+            console.log(`CSH: New message for active embedded chat (${connectorId}). Appending to UI with class: ${senderClass}`);
             
-            // =================== START OF FIX ===================
-            const msgOptions: ChatMessageOptions = { ...message };
-            
-            // This is the crucial mapping that was missing.
-            if (message.type === 'image' && message.content_url) {
-                msgOptions.imageUrl = message.content_url;
-            }
-            // ==================== END OF FIX ====================
-    
-            if (senderClass === 'connector' && convoRecord?.connector) {
-                msgOptions.avatarUrl = convoRecord.connector.avatarModern;
-                msgOptions.senderName = convoRecord.connector.profileName;
-                msgOptions.connectorId = convoRecord.connector.id;
-            }
-    
-            uiUpdater.appendToEmbeddedChatLog?.(message.text || "", senderClass, msgOptions);
+            // --- THIS IS THE FIX ---
+            // The `message` object itself becomes the 'options' payload.
+            // We pass the text and senderClass separately.
+            uiUpdater.appendToEmbeddedChatLog?.(message.text || '', senderClass, message);
             messageAppended = true;
         }
     
-        // FIX FOR MODAL CHAT (The same fix applies here)
+        // LOGIC FOR MODAL CHAT (The same fix is implicitly applied via the senderClass variable)
         if (currentModalConnector && currentModalConnector.id === connectorId) {
-            console.log(`CSH: New message for active modal chat (${connectorId}). Appending to UI.`);
-            const senderClass = message.sender === 'user' ? 'user' : (message.sender === 'system-call-event' ? 'system-call-event' : 'connector');
-    
-            // =================== START OF FIX ===================
+            console.log(`CSH: New message for active modal chat (${connectorId}). Appending to UI with class: ${senderClass}`);
             const msgOptions: ChatMessageOptions = {
                 ...message,
                 avatarUrl: currentModalConnector.avatarModern,
                 senderName: currentModalConnector.profileName,
                 connectorId: currentModalConnector.id,
             };
-
-            // This is the crucial mapping that was missing.
-            if (message.type === 'image' && message.content_url) {
-                msgOptions.imageUrl = message.content_url;
-            }
-            // ==================== END OF FIX ====================
-
             uiUpdater.appendToMessageLogModal?.(message.text || "", senderClass, msgOptions);
             messageAppended = true;
         }
@@ -200,7 +199,6 @@ function handleNewMessageInStore(event: CustomEvent): void {
         }
     }, 0);
 }
-
 
 function initialize(): void {
     console.log("CSH_TS: initialize() - START.");
@@ -213,179 +211,180 @@ function initialize(): void {
     console.log("ChatSessionHandler (TS): Initialized. Modal target cleared. Embedded target state preserved.");
     console.log("CSH_TS: initialize() - FINISHED.");
 }
+// D:\polyglot_connect\src\js\core\chat_session_handler.ts
+// ... (imports and other functions) ...
 
-async function openConversationInEmbeddedView(connectorOrId: Connector | string): Promise<void> {
+// D:\polyglot_connect\src\js\core\chat_session_handler.ts
+
+// ... (existing imports and other surrounding code) ...
+
+async function openConversationInEmbeddedView(
+    connectorOrId: Connector | string,
+    registeredUserNameForPrompt?: string // Parameter to pass the Firebase display name
+): Promise<void> {
     const targetIdForLock = typeof connectorOrId === 'string' ? connectorOrId : connectorOrId?.id;
-    console.log(`CSH_DEBUG_ENTRY: openConversationInEmbeddedView CALLED FOR: ${targetIdForLock}`);
-   
+    console.log(`CSH_DEBUG_ENTRY: openConversationInEmbeddedView CALLED FOR: ${targetIdForLock}, RegisteredName: ${registeredUserNameForPrompt}`);
+
     if (!targetIdForLock) {
-        console.error("CSH_TS: openConversationInEmbeddedView - Invalid connectorOrId, cannot acquire lock.", connectorOrId);
-        chatUiManager.hideEmbeddedChatInterface(); 
+        console.error("CSH_TS: openConversationInEmbeddedView - Invalid connectorOrId.", connectorOrId);
+        chatUiManager.hideEmbeddedChatInterface(); // Ensure UI is hidden if no valid target
         return;
     }
     const operationKey = `embedded-${targetIdForLock}`;
 
-    if (openingEmbeddedOperationId === operationKey) { // <<<< THIS IS THE LOCK CHECK
-        console.warn(`CSH.openConversationInEmbeddedView: Already processing ${operationKey}. Preventing re-entry.`);
+    if (openingEmbeddedOperationId === operationKey) {
+        console.warn(`CSH: Already processing openConversationInEmbeddedView for ${operationKey}. Ignoring duplicate call.`);
         return;
     }
-    openingEmbeddedOperationId = operationKey; // Acquire lock
-    
+    openingEmbeddedOperationId = operationKey;
+
     try {
-        console.log("CSH_TS: openConversationInEmbeddedView() - START. Input:", connectorOrId);
-        
-        const targetId = targetIdForLock;
-        let connectorToOpenWith = (typeof connectorOrId === 'object' && connectorOrId !== null) ? connectorOrId : polyglotConnectors.find(c => c.id === targetId);
+        const connector = (typeof connectorOrId === 'object' && connectorOrId !== null)
+            ? connectorOrId
+            : polyglotConnectors.find(c => c.id === targetIdForLock);
 
-        if (!connectorToOpenWith) { 
-            console.error("CSH_TS: Could not find connector for embedded view.", { targetId, connectorOrId });
-            chatUiManager.hideEmbeddedChatInterface(); 
-            return; 
-        }
-
-        const currentEmbeddedTargetId = chatActiveTargetManager.getEmbeddedChatTargetId();
-        const currentTabManager = window.tabManager as import('../types/global.d.ts').TabManagerModule | undefined;
-        const isMessagesTabActive = currentTabManager?.getCurrentActiveTab?.() === 'messages';
-
-        if (currentEmbeddedTargetId === targetId && 
-            domElements.embeddedChatContainer?.style.display !== 'none' &&
-            isMessagesTabActive) { 
-            
-            console.warn(`CSH.openConversationInEmbeddedView: Called for ALREADY ACTIVE and VISIBLE 1v1 chat '${targetId}'. Minimal UI update only (e.g., header). Chat log NOT cleared or re-rendered from history.`);
-            
-            // --- THIS IS THE FIX ---
-            // Even on a minimal UI update, we MUST rebuild the prompt to load post-call memories.
-            if (window.conversationManager) {
-                console.log(`[CSH_PROMPT_REBUILD] 🧠 Forcing prompt rebuild for ALREADY ACTIVE chat [${targetId}]...`);
-                await window.conversationManager.getGeminiHistoryForConnector(targetId);
-                console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt rebuild complete for active chat.`);
-            }
-            // --- END OF FIX ---
-        
-            chatUiManager.showEmbeddedChatInterface(connectorToOpenWith); 
-            if (domElements.embeddedMessageTextInput) {
-                domElements.embeddedMessageTextInput.focus();
-            }
-            return; 
-        }
-
-        console.log(`CSH.openConversationInEmbeddedView: Proceeding with full display setup for chat '${targetId}'.`);
-        uiUpdater.clearEmbeddedChatLog?.();
-        chatActiveTargetManager.setEmbeddedChatTargetId(targetId); 
-        localStorage.setItem(LAST_EMBEDDED_CHAT_ID_KEY, targetId); 
-        
-        const { conversation: convo, isNew } = await conversationManager.ensureConversationRecord(targetId, connectorToOpenWith); 
-
-        if (!convo || !convo.connector) {
-            console.error(`CSH_TS: Failed to get convo record or connector for '${targetId}'.`);
-            chatActiveTargetManager.clearEmbeddedChatTargetId();
-            localStorage.removeItem(LAST_EMBEDDED_CHAT_ID_KEY);
+        if (!connector) {
+            console.error("CSH_TS: Could not find connector for embedded view.", { targetIdForLock });
             chatUiManager.hideEmbeddedChatInterface();
+            openingEmbeddedOperationId = null;
             return;
         }
 
-        chatUiManager.showEmbeddedChatInterface(convo.connector); 
+        // 1. Set active target, update UI header, and show loading spinner
+        chatActiveTargetManager.setEmbeddedChatTargetId(connector.id);
+        localStorage.setItem(LAST_EMBEDDED_CHAT_ID_KEY, connector.id); // Persist for session restore
+        chatUiManager.showEmbeddedChatInterface(connector); // Updates header, makes chat visible
+        chatUiUpdater.showLoadingInEmbeddedChatLog?.(); // Show loading while history is fetched
 
-// =================== START: REBUILD PROMPT ON CHAT OPEN (EMBEDDED) ===================
-if (window.conversationManager) {
-    console.log(`[CSH_PROMPT_REBUILD] 🧠 Forcing prompt rebuild for [${connectorToOpenWith.id}] on embedded chat open...`);
-    // This tells the conversation manager to create a new, fresh Gemini history
-    // with the latest memories from the Cerebrum.
-    await window.conversationManager.getGeminiHistoryForConnector(connectorToOpenWith.id);
-    console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt rebuild complete for [${connectorToOpenWith.id}].`);
-}
-// ===================  END: REBUILD PROMPT ON CHAT OPEN (EMBEDDED)  ===================
-
-
-        
-        console.log(`CSH.openConversationInEmbeddedView: About to clear and re-render embedded chat log for ${targetId}. History length: ${convo.messages?.length || 0}`);
-        console.error(`CSH_DEBUG_EMBEDDED: Messages for ${targetId} BEFORE rendering loop:`, JSON.parse(JSON.stringify(convo.messages || [])));
-        
-        uiUpdater.clearEmbeddedChatLog?.(); 
-
-// D:\polyglot_connect\src\js\core\chat_session_handler.ts
-
-// <<< START OF REPLACEMENT BLOCK >>>
-
-if (Array.isArray(convo.messages) && convo.messages.length > 0) {
-    convo.messages.forEach((msg: MessageInStore) => {
-        if (!msg) return;
-
-        // --- Logging for Debugging ---
-        console.log(`CSH.openConversationInEmbeddedView - Rendering HISTORICAL msg: ID='${msg.id}', Reactions='${JSON.stringify(msg.reactions)}'`);
-        
-        // --- Prepare Message Data ---
-        let senderClass = msg.sender === 'user-voice-transcript' ? 'user' : (msg.sender === 'user' ? 'user' : 'connector');
-        let textForDisplay = msg.text || ""; 
-
-         // THE FIX: Explicitly map the stored 'id' to the 'messageId' property the UI needs.
-         const msgOptions: ChatMessageOptions = {
-            ...msg, // Spread first to copy all other properties (reactions, etc.)
-            messageId: msg.id, // This is the crucial line
-            connectorIdForButton: msg.connectorIdForButton,
-            connectorNameForDisplay: msg.connectorNameForDisplay
-        };
-        // ^^^^^^ END OF FIX ^^^^^^
-
-        if (senderClass === 'connector' && convo.connector) {
-            msgOptions.senderName = convo.connector.profileName;
-            msgOptions.avatarUrl = convo.connector.avatarModern;
-            msgOptions.connectorId = convo.connector.id;
+        // 2. Ensure the conversation record exists in Firestore and get its ID
+        const conversationId = await conversationManager.ensureConversationRecord(connector);
+        if (!conversationId) {
+            console.error(`CSH_TS: Failed to get/create conversationId for connector: ${connector.id}`);
+            chatActiveTargetManager.clearEmbeddedChatTargetId(); // Clear target if setup fails
+            chatUiUpdater.showErrorInEmbeddedChatLog?.("An unexpected error occurred loading the chat.");
+            openingEmbeddedOperationId = null;
+            return;
         }
 
-        // --- Handle Special Message Types (Voice/Image) ---
-        if (msg.isVoiceMemo && msg.audioBlobDataUrl) {
-            msgOptions.isVoiceMemo = true;
-            msgOptions.audioSrc = msg.audioBlobDataUrl;
-        } else if ((msg.isImageMessage || msg.type === 'image') && msg.content_url) {
-            msgOptions.imageUrl = msg.content_url;
+        // Set conversation context on the DOM element for TextMessageHandler or other modules to pick up
+        if (domElements.embeddedChatContainer) {
+            domElements.embeddedChatContainer.dataset.currentConversationId = conversationId;
+            domElements.embeddedChatContainer.dataset.currentConnectorId = connector.id;
+            // Store the registeredUserNameForPrompt on the DOM element if it's a first interaction scenario.
+            // TextMessageHandler can then pick this up when building the prompt for the user's first message.
+            if (registeredUserNameForPrompt) {
+                 domElements.embeddedChatContainer.dataset.registeredUserName = registeredUserNameForPrompt;
+            } else {
+                // Clear it if not provided, for subsequent openings of the same chat
+                delete domElements.embeddedChatContainer.dataset.registeredUserName;
+            }
+            console.log(`CSH_TS: Set data attributes on embeddedChatContainer. ConvID: '${conversationId}', ConnectorID: '${connector.id}', RegisteredName: '${registeredUserNameForPrompt || 'N/A'}'`);
         }
-        
-        // --- Render the Message ---
-        uiUpdater.appendToEmbeddedChatLog?.(String(textForDisplay), senderClass, msgOptions);
-    });
-// <<< END OF REPLACEMENT BLOCK >>>
-         
+
+        // 3. Await message listener setup for the specific conversation
+        // This will start populating the local cache with messages from Firestore.
+        await conversationManager.setActiveConversationAndListen(conversationId);
+        console.log(`CSH_TS: Message listener is now active for ${conversationId}.`);
+
+        // 4. Get messages from cache (now populated by the listener)
+        const cachedConvo = conversationManager.getConversationById(conversationId);
+        console.log(`CSH_TS: Rendering messages. Found ${cachedConvo?.messages?.length || 0} in cache for ${conversationId}.`);
+
+        // 5. Clear loading spinner and render messages or placeholder
+        uiUpdater.clearEmbeddedChatLog?.(); // Clear loading spinner
+
+        const isFirstEverInteraction = !cachedConvo?.messages || cachedConvo.messages.length === 0;
+
+        if (isFirstEverInteraction) {
+            // No messages yet. Display a placeholder.
+            // The "Preferred Name Inquiry" rule will be part of the system prompt
+            // when the USER sends their first message.
+            console.log(`CSH_TS: No messages found for ${connector.id}. Displaying placeholder.`);
+            if (domElements.embeddedChatLog && polyglotHelpers) {
+                const placeholderHTML = `<div class="chat-log-empty-placeholder"><i class="far fa-comments"></i><p>Start the conversation with ${polyglotHelpers.sanitizeTextForDisplay(connector.profileName)}.</p></div>`;
+                domElements.embeddedChatLog.innerHTML = placeholderHTML;
+            }
+        } if (cachedConvo?.messages && cachedConvo.messages.length > 0) {
+            cachedConvo.messages.forEach(msg => { // msg is of type MessageInStore
+                let senderClass: string;
+                
+                // Determine the CSS class for the message bubble
+                if (msg.sender === 'user') {
+                    senderClass = 'user';
+                } else if (msg.type === 'call_event') {
+                    senderClass = 'system-call-event';
+                } else if (msg.senderId === 'system' || msg.type === 'system_event') {
+                    senderClass = 'system-message';
+                    if (msg.isError) senderClass += ' error-message-bubble';
+                } else { // Assumed to be a connector/AI message
+                    senderClass = 'connector';
+                }
+            
+                // Construct the options object for the UI updater
+                const optionsForUI: ChatMessageOptions = {
+                    ...msg, // THE FIX: Copy all properties from the message first
+            
+                    // Add or override properties specific to the UI rendering
+                    avatarUrl: msg.sender === 'user' ? undefined : (msg.avatarUrl || connector.avatarModern),
+                    senderName: msg.sender === 'user' ? undefined : (msg.senderName || connector.profileName),
+                    speakerId: msg.sender === 'user' ? undefined : (msg.speakerId || connector.id),
+                    connectorId: msg.sender === 'user' ? undefined : (msg.connectorId || connector.id),
+            
+                    // Explicitly map fields that might have different names or need logic
+                    isVoiceMemo: msg.type === 'voice_memo',
+                    audioSrc: msg.type === 'voice_memo' ? msg.content_url || undefined : undefined,
+                    imageUrl: msg.type === 'image' ? msg.imageUrl || undefined : undefined,
+                };
+            
+
+                if (msg.sender === 'connector' && connector) { // Assuming 'connector' is the AI
+                     optionsForUI.avatarUrl = msg.avatarUrl || connector.avatarModern;
+                     optionsForUI.senderName = msg.senderName || connector.profileName;
+                     optionsForUI.speakerId = msg.speakerId || connector.id; // Or msg.senderId
+                     optionsForUI.connectorId = msg.connectorId || connector.id;
+                }
 
 
-} else { 
-    console.log(`CSH_TS: Conversation with ${convo.connector!.profileName} has no messages. Showing placeholder.`);
-    // uiUpdater.clearEmbeddedChatLog() already cleared it. Now we add the placeholder.
-    if (domElements.embeddedChatLog && polyglotHelpers) { 
-        const placeholderHTML = `<div class="chat-log-empty-placeholder">
-                                    <i class="far fa-comments"></i>
-                                    <p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(convo.connector!.profileName)}.</p>
-                                 </div>`;
-        // Only set the placeholder if the log is truly empty
-        if (domElements.embeddedChatLog.children.length === 0 || (domElements.embeddedChatLog.children.length === 1 && domElements.embeddedChatLog.firstElementChild?.classList.contains('log-is-loading'))) {
-            domElements.embeddedChatLog.innerHTML = placeholderHTML;
-        }
+                if (msg.type === 'voice_memo') { console.log('[CSH] Historical Voice Memo - optionsForUI:', JSON.stringify(optionsForUI));
+                    optionsForUI.isVoiceMemo = true;
+                    optionsForUI.audioSrc = msg.content_url || undefined; // <<< CRITICAL MAPPING
+                    if (!msg.content_url) {
+                        console.warn(`[CSH] Rendering historical voice memo (ID: ${msg.messageId}) but content_url is missing! Player will not work.`);
+                    }
+                } else if (msg.type === 'image') {
+                    optionsForUI.imageUrl = msg.imageUrl || undefined; // Map imageUrl for images
+                    if (!msg.imageUrl) {
+                        console.warn(`[CSH] Rendering historical image message (ID: ${msg.messageId}) but imageUrl is missing!`);
+                    }
+                }
+                // Add other type-specific mappings if necessary
+
+                console.log(`[CSH] Preparing to render historical message. Type: ${msg.type}, AppMessageID: ${msg.messageId}, AudioSrc for UI: ${optionsForUI.audioSrc}`);
+              if (domElements.embeddedChatContainer?.dataset.currentConnectorId === connector.id) {
+         uiUpdater.appendToEmbeddedChatLog?.(msg.text || '', senderClass, optionsForUI);
+    } else if (domElements.messagingInterface?.dataset.currentConnectorId === connector.id) {
+         uiUpdater.appendToMessageLogModal?.(msg.text || '', senderClass, optionsForUI);
     }
-}
-        uiUpdater.scrollEmbeddedChatToBottom?.();
-        if (domElements.embeddedMessageTextInput) domElements.embeddedMessageTextInput.focus();
-        
-        // --- THIS IS THE FIX ---
-        // After successfully setting up the chat content, explicitly tell the
-        // TabManager to switch to the 'messages' tab. This will trigger the
-        // ShellController to make the view visible.
-       
-        
-        console.log("CSH_TS: openConversationInEmbeddedView() - About to call chatOrchestrator.renderCombinedActiveChatsList()");
-        chatOrchestrator.renderCombinedActiveChatsList(); 
-        console.log("CSH_TS: openConversationInEmbeddedView() - FINISHED for", targetId);
+            });
+        }
+
+        // 6. Finalize UI
+        uiUpdater.scrollEmbeddedChatToBottom?.(domElements.embeddedChatLog);
+        domElements.embeddedMessageTextInput?.focus();
+        chatOrchestrator.renderCombinedActiveChatsList(); // Refresh sidebar
+
+    } catch (error) {
+        console.error("CSH_TS: Unhandled error in openConversationInEmbeddedView:", error);
+        chatActiveTargetManager.clearEmbeddedChatTargetId();
+        // Attempt to show error in UI, even if some deps might be problematic
+        resolvedDeps?.chatUiUpdater?.showErrorInEmbeddedChatLog?.("An unexpected error occurred while opening the chat.");
     } finally {
+        // Release the lock for this specific operation
         if (openingEmbeddedOperationId === operationKey) {
             openingEmbeddedOperationId = null;
-            console.log(`CSH.openConversationInEmbeddedView: Cleared processing lock for ${operationKey}.`);
         }
     }
-
-
-
-    
 }
-
 async function handleMessagesTabBecameActive(): Promise<void> {
     console.log("CSH_TS: handleMessagesTabBecameActive() - START.");
     
@@ -428,20 +427,27 @@ async function handleMessagesTabBecameActive(): Promise<void> {
     console.log("CSH_TS: Effective chatToOpenId to restore from memory:", chatToOpenId);
 
     if (chatToOpenId) {
-        const { conversation: convo } = await conversationManager.ensureConversationRecord(chatToOpenId);
-        const connectorToOpen = convo?.connector;
+        // Find the full connector object from the master list using the ID.
+        const connectorToOpen = polyglotConnectors.find(c => c.id === chatToOpenId);
+    
         if (connectorToOpen) {
-            await openConversationInEmbeddedView(connectorToOpen); 
+            // Fetch displayName if needed for restoring a chat that might be a first interaction
+            const user = window.auth?.currentUser; // Assuming window.auth is available
+            const displayNameForRestore = user?.displayName || undefined;
+            await openConversationInEmbeddedView(connectorToOpen, displayNameForRestore); // Pass it here too
         } else {
+            console.warn(`CSH: Could not find connector for last active chat ID: ${chatToOpenId}`);
             chatUiManager.hideEmbeddedChatInterface();
         }
-    } else {
+    }else {
         // If no last chat, open the most recent conversation instead
         const allConversations = conversationManager.getActiveConversations(); 
         const convosWithMessages = allConversations.filter(c => c.messages?.length > 0 && c.connector && !c.isGroup);
         if (convosWithMessages.length > 0) {
             convosWithMessages.sort((a, b) => (Number(b.lastActivity) || 0) - (Number(a.lastActivity) || 0));
-            await openConversationInEmbeddedView(convosWithMessages[0].connector);
+            const user = window.auth?.currentUser;
+            const displayNameForMostRecent = user?.displayName || undefined;
+            await openConversationInEmbeddedView(convosWithMessages[0].connector, displayNameForMostRecent); // Pass it
         } else {
             // No chats at all, hide the interface
             chatUiManager.hideEmbeddedChatInterface();
@@ -456,87 +462,133 @@ async function handleMessagesTabBecameActive(): Promise<void> {
 
 
 // =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
+
+// D:\polyglot_connect\src\js\core\chat_session_handler.ts
+// ... (imports and other functions) ...
+
 async function openMessageModalForConnector(connector: Connector): Promise<void> {
     console.log(`CSH_DEBUG_ENTRY: openMessageModalForConnector CALLED FOR: ${connector?.id}`);
-    if (!connector?.id) { 
-        console.error("CSH_TS: Invalid connector for modal. Cannot proceed."); 
-        return; 
+    if (!connector?.id) {
+        console.error("CSH_TS: Invalid connector for modal. Cannot proceed.");
+        return;
     }
     const operationKey = `modal-${connector.id}`;
     if (openingModalOperationId === operationKey) {
-        console.warn(`CSH.openMessageModalForConnector: Already processing ${operationKey}. Preventing re-entry.`);
+        console.warn(`CSH: Already processing openMessageModalForConnector for ${operationKey}.`);
         return;
     }
     openingModalOperationId = operationKey;
 
     try {
-        console.log("CSH_TS: openMessageModalForConnector() - START for", connector.id);
-        const isModalVisible = modalHandler.isVisible?.(domElements.messagingInterface);
-        const currentModalTargetConnector = chatActiveTargetManager.getModalMessageTargetConnector();
-        
-        if (currentModalTargetConnector?.id === connector.id && isModalVisible) {
-            console.warn(`CSH: Modal for ${connector.id} is already open. Focusing input.`);
-            domElements.messageTextInput?.focus();
-            return; 
-        }
-
-        // --- START OF THE FIX ---
-        
-        // 1. Set the target and update the UI header immediately.
         chatActiveTargetManager.setModalMessageTargetConnector(connector);
         uiUpdater.updateMessageModalHeader(connector);
-        uiUpdater.clearMessageModalLog?.();
-        
-        // 2. Ensure the prompt is ready with latest memories BEFORE user can type.
-        await conversationManager.getGeminiHistoryForConnector(connector.id);
-        console.log(`[CSH_PROMPT_REBUILD] ✅ Prompt ready for modal with [${connector.id}].`);
+        uiUpdater.clearMessageModalLog?.(); // Clear log before showing loading/messages
 
-        // 3. Check if a conversation with messages *already exists*.
-        const existingConvo = conversationManager.getConversationById(connector.id);
-        
-        if (existingConvo && existingConvo.messages?.length > 0) {
-            console.log(`CSH: Populating ${existingConvo.messages.length} messages from existing conversation for ${connector.id}.`);
-            existingConvo.messages.forEach((msg: MessageInStore) => {
-                const senderClass = msg.sender === 'user' ? 'user' : 'connector';
+        // Show loading state in modal log (optional, but good UX)
+        // You might need a new method in chatUiUpdater for modal loading/error, or adapt existing ones.
+        // For now, we'll proceed without it and clear directly before rendering.
 
-                const msgOptions: ChatMessageOptions = {
-                    ...msg, // Spread all properties from the stored message (like reactions)
-                    messageId: msg.id, // <<< THIS IS THE ONLY LINE YOU NEED TO ADD
-                    avatarUrl: connector.avatarModern,
-                    senderName: connector.profileName,
-                    connectorId: connector.id,
-                };
-
-                uiUpdater.appendToMessageLogModal?.(msg.text || "", senderClass, msgOptions);
-            });
-// ====================================================================================
-            
-        } else {
-            // This is a NEW chat or an EMPTY one. Show a placeholder.
-            // CRUCIALLY, we do NOT create the record here and do NOT update the active chat list.
-            console.log(`CSH: New/empty modal conversation with ${connector.profileName}. Displaying placeholder.`);
-            if (domElements.messageChatLog && polyglotHelpers) {
-                domElements.messageChatLog.innerHTML =
-                    `<div class="chat-log-empty-placeholder">
-                        <i class="far fa-comments"></i>
-                        <p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(connector.profileName)}.</p>
-                    </div>`;
-            }
+        const conversationId = await conversationManager.ensureConversationRecord(connector);
+        if (!conversationId) {
+            console.error(`CSH_TS: Failed to get/create conversationId for modal chat with: ${connector.id}`);
+            chatActiveTargetManager.clearModalMessageTargetConnector();
+            // Potentially show error in modal log here
+            openingModalOperationId = null;
+            return;
         }
 
-        // 4. Open the modal and set up the input.
-        uiUpdater.scrollMessageModalToBottom?.();
-        uiUpdater.resetMessageModalInput?.();
-        if (domElements.messagingInterface) modalHandler.open(domElements.messagingInterface);
-        domElements.messageTextInput?.focus();
-        
-        console.log("CSH_TS: openMessageModalForConnector() - FINISHED for", connector.id);
+        // --- FIX: Set dataset.currentConversationId AFTER conversationId is defined ---
+        if (domElements.messagingInterface) {
+            domElements.messagingInterface.dataset.currentConversationId = conversationId;
+            domElements.messagingInterface.dataset.currentConnectorId = connector.id;
+            console.log(`CSH_TS: Set data-current-conversation-id to '${conversationId}' on messagingInterface.`);
+        }
         // --- END OF FIX ---
 
+        await conversationManager.setActiveConversationAndListen(conversationId); // Await listener setup
+        console.log(`CSH_TS: Message listener is now active for MODAL chat ${conversationId}.`);
+
+        const cachedConvo = conversationManager.getConversationById(conversationId);
+        // Clear log again *before* rendering, in case loading spinner was there
+
+        uiUpdater.clearMessageModalLog?.(); // Clear log before rendering
+
+        if (cachedConvo?.messages && cachedConvo.messages.length > 0) {
+            cachedConvo.messages.forEach(msg => { // msg is of type MessageInStore
+                let senderClass: string;
+                
+                // Determine the CSS class for the message bubble
+                if (msg.sender === 'user') {
+                    senderClass = 'user';
+                } else if (msg.type === 'call_event') {
+                    senderClass = 'system-call-event';
+                } else if (msg.senderId === 'system' || msg.type === 'system_event') {
+                    senderClass = 'system-message';
+                    if (msg.isError) senderClass += ' error-message-bubble';
+                } else { // Assumed to be a connector/AI message
+                    senderClass = 'connector';
+                }
+            
+                // Construct the options object for the UI updater
+                const optionsForUI: ChatMessageOptions = {
+                    ...msg, // THE FIX: Copy all properties from the message first
+            
+                    // Add or override properties specific to the UI rendering
+                    avatarUrl: msg.sender === 'user' ? undefined : (msg.avatarUrl || connector.avatarModern),
+                    senderName: msg.sender === 'user' ? undefined : (msg.senderName || connector.profileName),
+                    speakerId: msg.sender === 'user' ? undefined : (msg.speakerId || connector.id),
+                    connectorId: msg.sender === 'user' ? undefined : (msg.connectorId || connector.id),
+            
+                    // Explicitly map fields that might have different names or need logic
+                    isVoiceMemo: msg.type === 'voice_memo',
+                    audioSrc: msg.type === 'voice_memo' ? msg.content_url || undefined : undefined,
+                    imageUrl: msg.type === 'image' ? msg.imageUrl || undefined : undefined,
+                };
+
+                if (msg.type === 'voice_memo') {
+                    optionsForUI.isVoiceMemo = true;
+                    optionsForUI.audioSrc = msg.content_url || undefined; // <<< CRITICAL MAPPING
+                    if (!msg.content_url) {
+                        console.warn(`[CSH - Modal] Rendering historical voice memo (ID: ${msg.messageId}) but content_url is missing! Player will not work.`);
+                    }
+                } else if (msg.type === 'image') {
+                    optionsForUI.imageUrl = msg.imageUrl || undefined;
+                    if (!msg.imageUrl) {
+                        console.warn(`[CSH - Modal] Rendering historical image message (ID: ${msg.messageId}) but imageUrl is missing!`);
+                    }
+                }
+                // Add other type-specific mappings if necessary
+
+                if (msg.type === 'voice_memo') { // Extra log for voice memos
+                    console.log(`[CSH - Modal] Historical Voice Memo - optionsForUI:`, JSON.stringify(optionsForUI));
+                }
+                if (domElements.embeddedChatContainer?.dataset.currentConnectorId === connector.id) {
+                    uiUpdater.appendToEmbeddedChatLog?.(msg.text || '', senderClass, optionsForUI);
+               } else if (domElements.messagingInterface?.dataset.currentConnectorId === connector.id) {
+                    uiUpdater.appendToMessageLogModal?.(msg.text || '', senderClass, optionsForUI);
+               }
+            });
+        } else {
+            // Handle empty placeholder for modal
+            if (domElements.messageChatLog && polyglotHelpers) {
+                domElements.messageChatLog.innerHTML = `<div class="chat-log-empty-placeholder"><i class="far fa-comments"></i><p>No messages yet with ${polyglotHelpers.sanitizeTextForDisplay(connector.profileName)}.</p></div>`;
+            }
+        }
+        
+        modalHandler.open(domElements.messagingInterface);
+        uiUpdater.scrollMessageModalToBottom?.();
+        uiUpdater.resetMessageModalInput?.();
+        domElements.messageTextInput?.focus();
+        
+        // No need to call setActiveConversationAndListen again here, it was done above.
+
+    } catch (error) {
+        console.error("CSH_TS: Error in openMessageModalForConnector:", error);
+        chatActiveTargetManager.clearModalMessageTargetConnector();
+        // Potentially show error in modal log
     } finally {
         if (openingModalOperationId === operationKey) {
             openingModalOperationId = null;
-            console.log(`CSH.openMessageModalForConnector: Cleared processing lock for ${operationKey}.`);
         }
     }
 }
@@ -580,7 +632,7 @@ const dependenciesForCSH = [
     'chatUiManagerReady', 
     'conversationManagerReady', 'chatActiveTargetManagerReady',
     'textMessageHandlerReady', 'polyglotDataReady', 
-    'chatOrchestratorReady', 'polyglotHelpersReady'
+    'chatOrchestratorReady', 'polyglotHelpersReady', 'chatUiUpdaterReady'
 ];
 const cshMetDependenciesLog: { [key: string]: boolean } = {};
 dependenciesForCSH.forEach(dep => cshMetDependenciesLog[dep] = false);
@@ -603,6 +655,9 @@ function checkAndInitCSH(receivedEventName?: string): void {
                 case 'polyglotDataReady': eventDependencyVerified = !!(window.polyglotConnectors && Array.isArray(window.polyglotConnectors)); break;
                 case 'chatOrchestratorReady': eventDependencyVerified = !!(window.chatOrchestrator && typeof window.chatOrchestrator?.renderCombinedActiveChatsList === 'function'); break;
                 case 'polyglotHelpersReady': eventDependencyVerified = !!(window.polyglotHelpers && typeof window.polyglotHelpers?.sanitizeTextForDisplay === 'function'); break;
+               case 'chatUiUpdaterReady': eventDependencyVerified = !!(window.chatUiUpdater && typeof window.chatUiUpdater?.appendChatMessage === 'function'); break;
+               
+               
                 default: console.warn(`CSH_EVENT: Unknown event '${receivedEventName}'`); return;
             }
 
@@ -647,6 +702,15 @@ dependenciesForCSH.forEach((eventName: string) => {
         case 'polyglotDataReady': isReadyNow = !!window.polyglotConnectors; isVerifiedNow = !!(isReadyNow && Array.isArray(window.polyglotConnectors)); break;
         case 'chatOrchestratorReady': isReadyNow = !!window.chatOrchestrator; isVerifiedNow = !!(isReadyNow && typeof window.chatOrchestrator?.renderCombinedActiveChatsList === 'function'); break;
         case 'polyglotHelpersReady': isReadyNow = !!window.polyglotHelpers; isVerifiedNow = !!(isReadyNow && typeof window.polyglotHelpers?.sanitizeTextForDisplay === 'function'); break;
+      
+        case 'chatUiUpdaterReady': // <<< ADD THIS CASE
+        isReadyNow = !!window.chatUiUpdater;
+        // Add a check for a key function on chatUiUpdater if you want to be thorough for "verified" status
+        isVerifiedNow = !!(isReadyNow && typeof window.chatUiUpdater?.appendChatMessage === 'function'); // Or showLoadingInEmbeddedChatLog
+        break;
+      
+      
+      
         default: console.warn(`CSH_PRECHECK: Unknown dependency: ${eventName}`); break;
     }
 

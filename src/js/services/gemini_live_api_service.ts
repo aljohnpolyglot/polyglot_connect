@@ -128,7 +128,7 @@ let setupTimeoutId: any = null; // Use 'any' to accept both number and Timeout o
             const { key: apiKey } = apiKeyData; // Destructure to get the key
 
             const fullModelName = modelName.startsWith("models/") ? modelName : `models/${modelName}`;
-            const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+            const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
        
             console.log(`GeminiLiveService (${funcName}): Connecting to WebSocket: ${wsUrl.split('?')[0]}?key=...`);
 
@@ -138,14 +138,16 @@ let setupTimeoutId: any = null; // Use 'any' to accept both number and Timeout o
                 webSocket.onopen = () => {
                     console.log(`GeminiLiveService (${funcName}): WebSocket ONOPEN received.`);
                     const setupMessagePayload = {
-                        setup: { 
-                            model: fullModelName,
+                        setup: {
+                            model: fullModelName, // Should be models/gemini-2.5-flash-preview-native-audio-dialog
                             systemInstruction: sessionSetupConfig.systemInstruction,
                             generationConfig: sessionSetupConfig.generationConfig,
                             realtimeInputConfig: sessionSetupConfig.realtimeInputConfig,
-                            inputAudioTranscription: sessionSetupConfig.inputAudioTranscription || {}, // Send empty object to enable if true in config
-                            outputAudioTranscription: sessionSetupConfig.outputAudioTranscription || {},// Send empty object to enable if true in config
-                            // tools: sessionSetupConfig.tools, // If you have tools
+                            inputAudioTranscription: sessionSetupConfig.inputAudioTranscription || {},
+                            outputAudioTranscription: sessionSetupConfig.outputAudioTranscription || {},
+                           
+                            // NO enable_affective_dialog
+                            // NO proactivity
                         }
                     };
                     console.log(`GeminiLiveService (${funcName}): Sending setup message:`, JSON.stringify(setupMessagePayload).substring(0,500)+"...");

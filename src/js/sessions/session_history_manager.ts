@@ -1,7 +1,22 @@
 // D:\polyglot_connect\src\js\sessions\session_history_manager.ts
 // AFTER
+// src/js/sessions/session_history_manager.ts
+
+// --- Firestore/Firebase Imports ---
+import {
+    collection,
+    doc,
+    onSnapshot,
+    setDoc,
+    query,
+    orderBy,
+    Timestamp
+} from "firebase/firestore";
+import { auth, db } from '../firebase-config';
+import { onAuthStateChanged, type User } from "firebase/auth";
+// --- Original Type Imports ---
 import type {
-    YourDomElements, // <<< ADD THIS LINE
+    YourDomElements,
     PolyglotHelpersOnWindow as PolyglotHelpers,
     ListRenderer,
     SessionManager,
@@ -86,43 +101,133 @@ const getSafeDeps = (): VerifiedDeps | null => {
         console.log("session_history_manager.ts: IIFE (module definition) STARTING.");
         const { polyglotHelpers, listRenderer } = resolvedDeps; // sessionManager from resolvedDeps is for updateSummaryListUI's callback
 
-        let completedSessions: Record<string, SessionData> = {};
-        const STORAGE_KEY = 'polyglotCompletedSessions';
+        let completedSessions: Record<string, SessionData> = {}; // <<< ADD THIS LINE BACK
+        let isSessionManagerFunctional = false;
+        // Check initial state in case sessionManagerReady fired before this listener was added
+        if (window.sessionManager && typeof window.sessionManager.showSessionRecapInView === 'function') {
+            isSessionManagerFunctional = true;
+            console.log("SHM: SessionManager was already functional on init.");
+        }
 
-        function initializeHistory(): void {
-            console.log("SHM_DEBUG: initializeHistory() called from within sessionHistoryMethods IIFE.");
-            const saved = polyglotHelpers.loadFromLocalStorage(STORAGE_KEY) as Record<string, SessionData> | null;
-            if (saved) {
-                completedSessions = saved;
-                console.log(`SHM_DEBUG: History loaded from storage. Found ${Object.keys(completedSessions).length} sessions. Keys:`, Object.keys(completedSessions));
+        document.addEventListener('sessionManagerReady', () => {
+            console.log("SHM: Received 'sessionManagerReady' event. SessionManager methods should now be available.");
+            if (window.sessionManager && typeof window.sessionManager.showSessionRecapInView === 'function') {
+                isSessionManagerFunctional = true;
+                // If the list might have been rendered with a dummy callback, refresh it.
+                // This ensures clicks work if sessionManager became ready after initial render.
+                updateSummaryListUI();
             } else {
-                console.log("SHM_DEBUG: No saved session history found in localStorage. completedSessions is empty.");
-                completedSessions = {}; // Ensure it's an empty object if nothing is loaded
+                console.error("SHM: 'sessionManagerReady' event received, but showSessionRecapInView is still not available on window.sessionManager.");
             }
-            console.log("SHM_DEBUG: initializeHistory() finished within IIFE.");
-        }
+        }, { once: true });
+       // src/js/sessions/session_history_manager.ts
 
-        function saveToStorage(): void {
-            console.log("SHM: saveToStorage() called. Saving completedSessions:", JSON.parse(JSON.stringify(completedSessions)));
-            polyglotHelpers.saveToLocalStorage(STORAGE_KEY, completedSessions);
-        }
+       let currentUserId: string | null = null;
+       let unsubscribeFromSessions: (() => void) | null = null;
 
-        function addCompletedSession(sessionData: SessionData): void {
-            console.log("SHM: addCompletedSession - Attempting to add session:", JSON.parse(JSON.stringify(sessionData || {})));
-            if (!sessionData?.sessionId) {
-                console.error("SHM: Invalid sessionData in addCompletedSession (missing sessionId)", sessionData);
+       function initializeHistory(): void {
+           // This function from Firebase waits to tell us if a user is logged in.
+           onAuthStateChanged(auth, (user: User | null) => {
+               if (user) {
+                   // --- A user is signed in! ---
+                   console.log(`SHM: User ${user.uid} is authenticated. Setting up Firestore listener.`);
+                   currentUserId = user.uid;
+
+                   // If we were already listening for another user, stop that first.
+                   if (unsubscribeFromSessions) unsubscribeFromSessions();
+
+                   // This query gets all session documents for the current user, ordered by newest first.
+                   const sessionsQuery = query(
+                       collection(db, "users", user.uid, "sessions"),
+                       orderBy("startTimeISO", "desc")
+                   );
+
+                   // onSnapshot is the real-time listener. It runs once with all initial data,
+                   // and then runs again every time the data changes in Firestore.
+                   unsubscribeFromSessions = onSnapshot(sessionsQuery, (querySnapshot) => {
+                       console.log("SHM: Firestore listener received an update.");
+                       querySnapshot.docChanges().forEach((change) => {
+                           const sessionDoc = change.doc.data() as SessionData;
+                           const sessionId = change.doc.id;
+
+                           if (change.type === "added" || change.type === "modified") {
+                               completedSessions[sessionId] = { ...sessionDoc, sessionId: sessionId }; // Add to our local cache
+                           }
+                           if (change.type === "removed") {
+                               delete completedSessions[sessionId]; // Remove from cache
+                           }
+                       });
+                       updateSummaryListUI(); // Update the UI with the fresh data from the cache
+                   }, (error) => {
+                       console.error("SHM: Error listening to session history:", error);
+                   });
+
+               } else {
+                   // --- No user is signed in. ---
+                   console.log("SHM: No user authenticated. Clearing session history.");
+                   currentUserId = null;
+                   if (unsubscribeFromSessions) unsubscribeFromSessions(); // Stop any active listener
+                   completedSessions = {}; // Clear the local cache
+                   updateSummaryListUI(); // Update UI to show empty list
+               }
+           });
+       }
+// src/js/sessions/session_history_manager.ts (inside the IIFE)
+
+        /**
+         * Recursively removes keys with `undefined` values from an object.
+         * Firestore does not support `undefined` and will throw an error.
+         * @param obj The object to clean.
+         * @returns A new object with all `undefined` values removed.
+         */
+        function cleanUndefined(obj: any): any {
+            if (obj === null || typeof obj !== 'object') {
+                return obj;
+            }
+            if (Array.isArray(obj)) {
+                return obj.map(item => cleanUndefined(item));
+            }
+            const newObj: { [key: string]: any } = {};
+            for (const key in obj) {
+                if (obj[key] !== undefined) {
+                    newObj[key] = cleanUndefined(obj[key]);
+                }
+            }
+            return newObj;
+        }
+    
+
+        async function addCompletedSession(sessionData: SessionData): Promise<void> {
+            if (!currentUserId) {
+                console.error("SHM: Cannot save session, no user is logged in.");
                 return;
             }
-            completedSessions[sessionData.sessionId] = sessionData;
-            saveToStorage();
-            console.log(`SHM: Session '${sessionData.sessionId}' added. Total sessions now: ${Object.keys(completedSessions).length}`);
+            if (!sessionData?.sessionId) {
+                console.error("SHM: Invalid sessionData provided, missing sessionId.");
+                return;
+            }
+    
+            const cleanSessionData = cleanUndefined(sessionData);
+    
+            // --- ADD THIS DEBUG LOG ---
+            console.log(`SHM_ADD_COMPLETED_SESSION_DEBUG: Session ID being used for Firestore document: '${cleanSessionData.sessionId}'`);
+            // --- END OF DEBUG LOG ---
             
-            // Trigger the UI update for the summary list.
-            updateSummaryListUI();
+            console.log(`SHM: Saving session '${cleanSessionData.sessionId}' to Firestore for user '${currentUserId}'.`);
+            
+            const sessionDocRef = doc(db, "users", currentUserId, "sessions", cleanSessionData.sessionId); // This uses the sessionId from the data
+    
+            try {
+                await setDoc(sessionDocRef, cleanSessionData, { merge: true });
+                console.log(`SHM: Session '${cleanSessionData.sessionId}' successfully saved to Firestore.`);
+            } catch (error) {
+                console.error(`SHM: FAILED to save session '${cleanSessionData.sessionId}' to Firestore:`, error);
+                console.error("SHM: The data object that Firestore rejected was:", JSON.stringify(cleanSessionData, null, 2));
+            }
         }
-
+    
         function getCompletedSessions(): SessionData[] {
-            const sessionsArray = Object.values(completedSessions).sort((a, b) => {
+            const sessionsArray = Object.values(completedSessions).sort((a: SessionData, b: SessionData) => {
                 const timeA = a.startTimeISO ? new Date(a.startTimeISO).getTime() : 0;
                 const timeB = b.startTimeISO ? new Date(b.startTimeISO).getTime() : 0;
                 return timeB - timeA; 
@@ -130,7 +235,6 @@ const getSafeDeps = (): VerifiedDeps | null => {
             console.log("SHM: getCompletedSessions - Returning sessions array, count:", sessionsArray.length);
             return sessionsArray;
         }
-
         const getSessionById = (sessionId: string): SessionData | null => {
 
             console.log(`SHM_DEBUG: getSessionById called for ID: '${sessionId}'.`);
@@ -145,8 +249,10 @@ const getSafeDeps = (): VerifiedDeps | null => {
  * This is useful for getting context immediately after a call ends.
  * @returns {SessionData | null} The most recent session data, or null if history is empty.
  */
+// src/js/sessions/session_history_manager.ts
+
 function getLastSession(): SessionData | null {
-    const sessionsArray = Object.values(completedSessions).sort((a, b) => {
+    const sessionsArray = Object.values(completedSessions).sort((a: SessionData, b: SessionData) => {
         const timeA = a.startTimeISO ? new Date(a.startTimeISO).getTime() : 0;
         const timeB = b.startTimeISO ? new Date(b.startTimeISO).getTime() : 0;
         return timeB - timeA;
@@ -176,39 +282,45 @@ function getLastSession(): SessionData | null {
         }
 
     // AFTER
-function updateSummaryListUI(): void {
-    console.log("SHM: updateSummaryListUI() called.");
-    if (!resolvedDeps) {
-        console.error("SHM: updateSummaryListUI called but resolvedDeps is null. Cannot proceed.");
-        return;
-    }
-
-    let sessions = getCompletedSessions(); // Get all sessions
-    const currentSessionManager = window.sessionManager;
-    const safeListRenderer = resolvedDeps.listRenderer;
-    
-    // Get the search term from the new input field
-    // Note: We access domElements through the already-verified 'resolvedDeps'
-    const searchTerm = resolvedDeps.domElements?.searchSessionHistoryInput?.value.trim().toLowerCase() || '';
-
-    // If there's a search term, filter the list
-    if (searchTerm) {
-        sessions = sessions.filter(session => 
-            session.connectorName?.toLowerCase().includes(searchTerm)
-        );
-    }
-
-    if (safeListRenderer && typeof safeListRenderer.renderSummaryList === 'function') {
-        if (currentSessionManager && typeof currentSessionManager.showSessionRecapInView === 'function') {
-            safeListRenderer.renderSummaryList(sessions, currentSessionManager.showSessionRecapInView);
-        } else {
-            console.error("SHM: window.sessionManager.showSessionRecapInView not available at runtime for listRenderer callback.");
-            safeListRenderer.renderSummaryList(sessions, () => {}); // Fallback with empty function
+    function updateSummaryListUI(): void {
+        console.log("SHM: updateSummaryListUI() called.");
+        if (!resolvedDeps) {
+            console.error("SHM: updateSummaryListUI called but resolvedDeps is null. Cannot proceed.");
+            return;
         }
-    } else {
-        console.error("SHM: listRenderer or listRenderer.renderSummaryList is not available.");
+    
+        let sessions = getCompletedSessions(); // Get all sessions
+        const safeListRenderer = resolvedDeps.listRenderer;
+        
+        const searchTerm = resolvedDeps.domElements?.searchSessionHistoryInput?.value.trim().toLowerCase() || '';
+    
+        if (searchTerm) {
+            sessions = sessions.filter(session => 
+                session.connectorName?.toLowerCase().includes(searchTerm)
+            );
+        }
+    
+        if (safeListRenderer && typeof safeListRenderer.renderSummaryList === 'function') {
+            let recapViewCallback: (sessionDataOrId: SessionData | string) => void;
+    
+            // Check our flag and the actual method on window.sessionManager
+            if (isSessionManagerFunctional && window.sessionManager && typeof window.sessionManager.showSessionRecapInView === 'function') {
+                console.log("SHM: updateSummaryListUI - SessionManager is functional. Using real showSessionRecapInView callback.");
+                recapViewCallback = window.sessionManager.showSessionRecapInView;
+            } else {
+                console.warn("SHM: updateSummaryListUI - SessionManager.showSessionRecapInView not available (isSessionManagerFunctional: " + isSessionManagerFunctional + "). Using temporary fallback callback.");
+                recapViewCallback = (sessionOrId: SessionData | string) => {
+                    const sessionId = typeof sessionOrId === 'string' ? sessionOrId : (sessionOrId as SessionData).sessionId; // Ensure proper type handling for sessionId
+                    console.warn(`SHM: Clicked session (ID: ${sessionId}), but full SessionManager not ready. Informing user via alert.`);
+                    // Fallback to a simple alert if no specific UI notification method is readily available on UiUpdater
+                    alert("Session details are still loading. Please try again shortly.");
+                };
+            }
+            safeListRenderer.renderSummaryList(sessions, recapViewCallback);
+        } else {
+            console.error("SHM: listRenderer or listRenderer.renderSummaryList is not available for updateSummaryListUI.");
+        }
     }
-}
         
         console.log("session_history_manager.ts: IIFE (module definition) FINISHED.");
         return {

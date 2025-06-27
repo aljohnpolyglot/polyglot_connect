@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Imgur Upload Test</title>
+</head>
+<body>
+    <h1>Imgur Upload Test</h1>
+    <p>Get your VITE_IMGUR_CLIENT_ID from your .env file and paste it below.</p>
+    <label for="clientId">Imgur Client ID:</label>
+    <input type="text" id="clientId" size="30" placeholder="Paste your Client ID here"><br><br>
+    <input type="file" id="imageFile" accept="image/*"><br><br>
+    <button id="uploadButton">Upload to Imgur</button>
+    <div id="result"></div>
+
+    <script>
+        const clientIdInput = document.getElementById('clientId');
+        const imageFileInput = document.getElementById('imageFile');
+        const uploadButton = document.getElementById('uploadButton');
+        const resultDiv = document.getElementById('result');
+
+        uploadButton.addEventListener('click', async () => {
+            const clientId = clientIdInput.value.trim();
+            const file = imageFileInput.files[0];
+
+            resultDiv.innerHTML = 'Uploading...';
+
+            if (!clientId) {
+                resultDiv.innerHTML = '<p style="color:red;">Please enter your Imgur Client ID.</p>';
+                return;
+            }
+            if (!file) {
+                resultDiv.innerHTML = '<p style="color:red;">Please select an image file.</p>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("image", file);
+            const apiUrl = "https://api.imgur.com/3/image";
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Client-ID ${clientId}`,
+                    },
+                    body: formData,
+                });
+
+                resultDiv.innerHTML += `<p>Status: ${response.status} ${response.statusText}</p>`;
+
+                const responseText = await response.text(); // Get raw text first
+                resultDiv.innerHTML += `<p>Raw Response Text: <pre>${responseText}</pre></p>`;
+
+
+                if (!response.ok) {
+                    resultDiv.innerHTML += `<p style="color:red;">Imgur API Error (see details in console and above).</p>`;
+                    console.error(`Imgur API Error: ${response.status} ${response.statusText}`);
+                    try {
+                        const errorJson = JSON.parse(responseText); // Try to parse AFTER logging raw text
+                        console.error("Imgur API Error Details:", errorJson.data?.error || errorJson);
+                        resultDiv.innerHTML += `<p style="color:red;">Parsed Error: ${JSON.stringify(errorJson.data?.error || errorJson)}</p>`;
+                    } catch (e) {
+                        console.error("Imgur API Error: Could not parse error response JSON.", e);
+                    }
+                    return;
+                }
+
+                const jsonData = JSON.parse(responseText); // Try to parse AFTER logging raw text
+
+                if (jsonData.success && jsonData.data && jsonData.data.link) {
+                    resultDiv.innerHTML += `<p style="color:green;">Upload Successful! URL: <a href="${jsonData.data.link}" target="_blank">${jsonData.data.link}</a></p>`;
+                    resultDiv.innerHTML += `<img src="${jsonData.data.link}" alt="Uploaded image" style="max-width: 300px;">`;
+                    console.log("Imgur Upload Successful. Response JSON:", jsonData);
+                } else {
+                    resultDiv.innerHTML += `<p style="color:red;">Imgur API Error: Response indicates failure or link is missing (see details in console and above).</p>`;
+                    console.error("Imgur API Error: Response indicates failure or link is missing.", jsonData);
+                }
+            } catch (error) {
+                resultDiv.innerHTML += `<p style="color:red;">Fetch Operation Error: ${error.message}</p>`;
+                console.error("Imgur Upload: Unexpected error during fetch operation.", error);
+                 if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+                    resultDiv.innerHTML += `<p style="color:red;">This often indicates a network issue (CORS, network block, protocol error). Check the console for more details (like ERR_HTTP2_PROTOCOL_ERROR).</p>`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

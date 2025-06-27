@@ -17,7 +17,7 @@ export const LIVE_API_SETUP_TIMEOUT_MS = 15000;
             TEXT: "gemini-1.5-flash-latest",
             MULTIMODAL: "gemini-1.5-flash-latest",
             RECAP: "gemini-1.5-flash-latest",    
-            TTS_GENERATE_CONTENT: "gemini-1.5-flash-latest", // Or specific TTS model if using generateContent
+            TTS_MODEL: "gemini-2.5-flash-preview-tts", // <<< CHANGED TO DEDICATED TTS MODEL
             // MODEL_TTS_SYNTHESIZE: "text-to-speech", // This was in your gemini_core_api.js, keep if needed
         },
         GROQ_MODELS: {

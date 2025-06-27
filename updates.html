@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What's New - Polyglot Connect</title>
+    
+    <link rel="icon" href="/landing/favicon.ico" type="image/x-icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-font: 'Roboto', sans-serif;
+            --heading-font: 'Merriweather Sans', sans-serif;
+            --text-light: #f0f2f5;
+            --text-dark: #212529;
+            --bg-dark: #1c1e21;
+            --border-color: #3a3a3a;
+            --accent-color: #5865F2;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            font-family: var(--primary-font);
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+        }
+
+        .updates-container {
+            max-width: 800px;
+            margin: 120px auto 60px auto; /* Top margin for navbar */
+            padding: 0 2rem;
+        }
+        
+        .updates-header h1 {
+            font-family: var(--heading-font);
+            font-size: 2.8rem;
+            text-align: center;
+            margin-bottom: 2rem;
+            color: var(--accent-color);
+        }
+
+        /* The scrollable box for the notes */
+        .updates-feed {
+            background-color: #2a2a2a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            height: 65vh; /* Take up 65% of the viewport height */
+            overflow-y: auto; /* This makes it scrollable */
+            padding: 1rem 2rem;
+        }
+
+        .patch-note-entry {
+            border-bottom: 1px solid var(--border-color);
+            padding: 2rem 0;
+        }
+        .patch-note-entry:last-child {
+            border-bottom: none;
+        }
+        .patch-note-entry:first-child {
+            padding-top: 0;
+        }
+
+        .patch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .patch-header .version {
+            background-color: var(--accent-color);
+            color: white;
+            font-weight: 700;
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+        }
+
+        .patch-header .release-date {
+            font-size: 0.9rem;
+            color: #a0a0a0;
+        }
+
+        .patch-content h2 {
+            font-family: var(--heading-font);
+            margin: 0 0 1rem 0;
+        }
+        
+        /* Styles for the markdown content */
+        .patch-content .notes-body {
+            line-height: 1.6;
+            color: #d1d2d3;
+        }
+        .patch-content .notes-body ul {
+            padding-left: 20px;
+        }
+        .patch-content .notes-body li {
+            margin-bottom: 0.5rem;
+        }
+        .patch-content .notes-body strong {
+            color: #fff;
+        }
+
+        /* Loading Spinner */
+        #loading-spinner {
+            text-align: center;
+            padding: 4rem;
+            font-size: 2rem;
+            color: var(--accent-color);
+        }
+        .fa-spin {
+            animation: fa-spin 2s infinite linear;
+        }
+        @keyframes fa-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <main class="updates-container">
+        <div class="updates-header">
+            <h1>What's New in the Club</h1>
+        </div>
+        <div id="updates-feed" class="updates-feed">
+            <!-- Patch notes will be injected here by JavaScript -->
+            <div id="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Load the universal navbar -->
+    <script type="module" src="/landing/navbar-loader.ts"></script>
+    
+    <!-- Load the script to fetch and display the patch notes -->
+    <script type="module" src="/src/js/updates-loader.ts"></script>
+</body>
+</html>

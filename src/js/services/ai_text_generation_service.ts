@@ -23,12 +23,13 @@ console.log("ai_text_generation_service.ts: Script execution STARTED (TS Version
 export interface AiTextGenerationServiceModule {
     generateTextMessage: (
         userText: string,
-        connector: Connector,
+        connector: Connector, 
         existingGeminiHistory: GeminiChatItem[],
         preferredProvider?: string,
         expectJson?: boolean,
         context?: 'group-chat' | 'one-on-one',
-        abortSignal?: AbortSignal // <<< ADDED THIS
+        abortSignal?: AbortSignal, // <<< ADDED 
+        options?: { isTranslation?: boolean; [key: string]: any } // <<< ADD THIS
     ) => Promise<string | null | object>;
 
     generateTextFromImageAndTextOpenAI?: (
@@ -168,100 +169,126 @@ function initializeActualAiTextGenerationService(): void {
 // =================== REPLACE THE ENTIRE generateTextMessage FUNCTION WITH THIS ===================
 async function generateTextMessage(
     userText: string,
-    connector: Connector,
+    connector: Connector, // As per your latest version
     existingGeminiHistory: GeminiChatItem[],
-    preferredProvider?: string, // Used for specific tasks like translation
-    expectJson: boolean = false,
-    context: 'group-chat' | 'one-on-one' = 'one-on-one',
-    abortSignal?: AbortSignal
+    preferredProvider?: string,
+    expectJson: boolean = false, // Default to false if not provided
+    context: 'group-chat' | 'one-on-one' = 'one-on-one', // Default context
+    abortSignal?: AbortSignal,
+    options?: { isTranslation?: boolean; [key: string]: any }
 ): Promise<string | null | object> {
     const functionName = "[AI_TextGenSvc][generateTextMessage]";
     console.groupCollapsed(`%c🚀 [Zone Defense Dispatcher] New Request Started`, 'color: #8a2be2; font-weight: bold; font-size: 14px;');
-    console.log(`Input Text: "${userText.substring(0, 100)}..."`);
-    
-    // --- Prepare Payloads and Calculate Context Size (done once) ---
+    console.log(`${functionName} Input Text: "${userText.substring(0, 100)}..."`);
+    console.log(`${functionName} Connector ID: ${connector?.id}, Preferred Provider: ${preferredProvider}, Expect JSON: ${expectJson}, Context: ${context}, Is Translation: ${!!options?.isTranslation}`);
+
+    // Ensure aiConstants are loaded and available
+    const currentConstants = window.aiApiConstants;
+    if (!currentConstants || !currentConstants.PROVIDERS || !currentConstants.GEMINI_MODELS || !currentConstants.GROQ_MODELS || !currentConstants.TOGETHER_MODELS || !currentConstants.OPENROUTER_MODELS) {
+        console.error(`${functionName} CRITICAL: aiConstants or essential provider/model definitions are missing.`);
+        console.groupEnd();
+        return getRandomHumanError(); // Ensure getRandomHumanError is accessible
+    }
+    const { PROVIDERS, GEMINI_MODELS, GROQ_MODELS, TOGETHER_MODELS, OPENROUTER_MODELS, STANDARD_SAFETY_SETTINGS_GEMINI } = currentConstants;
+
+    // --- Prepare Payloads and Calculate Context Size ---
     const sanitizedHistory = (existingGeminiHistory || []).map(turn => {
+        if (!turn || !turn.parts) return null; // Basic check
         const textParts = turn.parts.filter(part => 'text' in part && typeof part.text === 'string' && part.text.trim() !== "").map(part => ({ text: (part as { text: string }).text }));
         if (textParts.length === 0) return null;
         return { ...turn, parts: textParts };
     }).filter(turn => turn !== null) as GeminiChatItem[];
 
     let systemPrompt: string | null = null;
-    if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'user') {
+    if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'user' && sanitizedHistory[0].parts.length > 0) {
         const firstPart = sanitizedHistory[0].parts[0];
         if ('text' in firstPart && typeof firstPart.text === 'string' && firstPart.text.toUpperCase().includes("CRITICAL INSTRUCTION")) {
             systemPrompt = firstPart.text;
         }
     }
     
-    const openAIMessages = convertGeminiHistoryToOpenAIMessages(systemPrompt ? sanitizedHistory.slice(1) : sanitizedHistory, systemPrompt);
-    openAIMessages.push({ role: "user", content: userText });
-    const geminiPayload = prepareGeminiPayload(existingGeminiHistory, userText);
+    const openAIMessagesForNonGemini = convertGeminiHistoryToOpenAIMessages(systemPrompt ? sanitizedHistory.slice(1) : sanitizedHistory, systemPrompt);
+    openAIMessagesForNonGemini.push({ role: "user", content: userText });
     
-    // Estimate token count to make a smart decision
-   // Replace it with this
-const estimatedTokenCount = JSON.stringify(openAIMessages).length / 4;
-    console.log(`Estimated Request Size: ~${Math.round(estimatedTokenCount)} tokens.`);
+    // Pass sanitizedHistory to prepareGeminiPayload.
+    // The prepareGeminiPayload function should handle adding the current userText to the history.
+    const geminiPayloadForGemini = prepareGeminiPayload(sanitizedHistory, userText); 
+    
+    const estimatedTokenCount = JSON.stringify(openAIMessagesForNonGemini).length / 4;
+    console.log(`${functionName} Estimated Request Size (for OpenAI-like payloads): ~${Math.round(estimatedTokenCount)} tokens.`);
 
-
-    // --- THE NEW ZONE DEFENSE LOGIC ---
+    // --- THE ZONE DEFENSE LOGIC ---
     let providerSequence: string[];
 
     if (preferredProvider) {
-        // A specific task (like translation) has its own robust plan
-        console.log(`%cDispatching to: PREFERRED [${preferredProvider.toUpperCase()}]`, 'color: #fd7e14; font-weight: bold;');
-        providerSequence = [preferredProvider, preferredProvider, preferredProvider, PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.GROQ];
-    
+        console.log(`%c${functionName} Dispatching to: PREFERRED [${preferredProvider.toUpperCase()}]`, 'color: #fd7e14; font-weight: bold;');
+        // Ensure preferredProvider is valid before using it
+        const validProviders = Object.values(PROVIDERS);
+        if (validProviders.includes(preferredProvider)) {
+            providerSequence = [preferredProvider, preferredProvider, preferredProvider, PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.GROQ];
+        } else {
+            console.warn(`${functionName} Invalid preferredProvider: ${preferredProvider}. Falling back to default logic.`);
+            // Fallback to default logic if preferredProvider is invalid
+            preferredProvider = undefined; // Clear it to trigger default path
+            // Re-evaluate providerSequence based on default logic (copied from below)
+            if (estimatedTokenCount > 6000) {
+                console.log(`%c${functionName} Dispatching (Fallback): LONG CONTEXT PLAY (Over 6k tokens)`, 'color: #9c27b0; font-weight: bold;');
+                 providerSequence = (Math.random() < 0.50) ?
+                    [PROVIDERS.TOGETHER, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.OPENROUTER] :
+                    [PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.OPENROUTER];
+            } else {
+                console.log(`%c${functionName} Dispatching (Fallback): STANDARD SPEED PLAY (Under 6k tokens)`, 'color: #00D09B; font-weight: bold;');
+                providerSequence = [PROVIDERS.GROQ, PROVIDERS.GROQ, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.GROQ, PROVIDERS.TOGETHER, PROVIDERS.GEMINI];
+            }
+        }
     } else if (estimatedTokenCount > 6000) {
-        // VVVVVV THIS IS THE NEW "50/50" LOGIC FOR LONG CONTEXT VVVVVV
-        console.log('%cDispatching: LONG CONTEXT PLAY (Over 6k tokens)', 'color: #9c27b0; font-weight: bold;');
-        
+        console.log(`%c${functionName} Dispatching: LONG CONTEXT PLAY (Over 6k tokens)`, 'color: #9c27b0; font-weight: bold;');
         if (Math.random() < 0.50) {
-            // 50% chance to lead with Together AI
             console.log('--> Play Call: PRESS-A (Together Lead)');
             providerSequence = [PROVIDERS.TOGETHER, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.OPENROUTER];
         } else {
-            // 50% chance to lead with Gemini
             console.log('--> Play Call: PRESS-B (Gemini Lead)');
             providerSequence = [PROVIDERS.GEMINI, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.TOGETHER, PROVIDERS.OPENROUTER];
         }
-        // ^^^^^^ END OF NEW LOGIC ^^^^^^
-    
     } else {
-        // STANDARD PLAY: The history is short. Prioritize speed.
-        console.log('%cDispatching: STANDARD SPEED PLAY (Under 6k tokens)', 'color: #00D09B; font-weight: bold;');
+        console.log(`%c${functionName} Dispatching: STANDARD SPEED PLAY (Under 6k tokens)`, 'color: #00D09B; font-weight: bold;');
         providerSequence = [PROVIDERS.GROQ, PROVIDERS.GROQ, PROVIDERS.TOGETHER, PROVIDERS.GEMINI, PROVIDERS.GROQ, PROVIDERS.TOGETHER, PROVIDERS.GEMINI];
     }
-
-    // De-duplicate the sequence to create the final failover plan
   
-    console.log('%cFull Failover Plan:', 'color: #8a2be2; font-weight: bold;', providerSequence.join(' ➔ '));
+    console.log(`%c${functionName} Full Failover Plan:`, 'color: #8a2be2; font-weight: bold;', providerSequence.join(' ➔ '));
 
-    // --- Run the Carousel (same as before, but with the new intelligent sequence) ---
+    // --- Run the Carousel ---
     for (const provider of providerSequence) {
-        console.log(`%c--> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
+        if (abortSignal?.aborted) {
+            console.log(`%c${functionName} Aborted by user before trying [${provider}].`, 'color: #ff6347;');
+            console.groupEnd();
+            throw new Error("Operation aborted by user.");
+        }
+        console.log(`%c${functionName} --> ATTEMPTING provider [${provider}]`, 'color: #007acc; font-weight: bold;');
         try {
-            let response: string | object | null = null;
+            let rawApiResponse: string | object | null = null; 
 
             if (provider === PROVIDERS.GEMINI) {
                 const geminiModel = GEMINI_MODELS?.TEXT || "gemini-1.5-flash-latest";
-                const geminiResult = await _geminiInternalApiCaller(geminiPayload, geminiModel, "generateContent", abortSignal);
-                console.log(`%c...with the assist from Gemini's: ${geminiResult.nickname}!`, 'color: #34A853;');
-                response = geminiResult.response;
-            } else {
+                const geminiResult = await _geminiInternalApiCaller(geminiPayloadForGemini, geminiModel, "generateContent", abortSignal);
+                console.log(`%c${functionName} ...with the assist from Gemini's: ${geminiResult.nickname}!`, 'color: #34A853;');
+                rawApiResponse = geminiResult.response; 
+            } else { // For Groq, Together, OpenRouter (OpenAI compatible)
                 let apiKey: string | undefined;
                 let model: string | undefined;
-                let options: any = { temperature: 0.7, response_format: expectJson ? { type: "json_object" } : undefined };
+                let apiCallOptions: any = { temperature: 0.7 }; 
+                if (expectJson) {
+                    apiCallOptions.response_format = { type: "json_object" };
+                }
                 
                 if (provider === PROVIDERS.GROQ) {
-                    model = GROQ_MODELS?.TEXT_CHAT;
-                    apiKey = 'proxied-by-cloudflare-worker';
+                    model = GROQ_MODELS?.TEXT_CHAT || "llama3-8b-8192"; // Fallback model for Groq
+                    apiKey = 'proxied-by-cloudflare-worker'; 
                 } else if (provider === PROVIDERS.OPENROUTER) {
                     apiKey = import.meta.env.VITE_OPEN_ROUTER_API_KEY;
-                    model = OPENROUTER_MODELS?.TEXT_CHAT;
+                    model = OPENROUTER_MODELS?.TEXT_CHAT || "meta-llama/llama-3.1-8b-instruct:free"; // Fallback for OpenRouter
                 } else if (provider === PROVIDERS.TOGETHER) {
-                    // Load the keys directly from import.meta.env each time.
-                    const VITE_TOGETHER_AI_KEYS = [
+                    const VITE_TOGETHER_AI_KEYS_CONFIG = [ // Renamed for clarity
                         { name: 'FRANZ',  key: import.meta.env.VITE_TOGETHER_API_KEY_FRANZ },
                         { name: 'NASH',   key: import.meta.env.VITE_TOGETHER_API_KEY_NASH },
                         { name: 'KAREEM', key: import.meta.env.VITE_TOGETHER_API_KEY_KAREEM },
@@ -273,163 +300,243 @@ const estimatedTokenCount = JSON.stringify(openAIMessages).length / 4;
                         { name: 'PARKER', key: import.meta.env.VITE_TOGETHER_API_KEY_PARKER },
                         { name: 'TRAE',   key: import.meta.env.VITE_TOGETHER_API_KEY_TRAE },
                         { name: 'HAKEEM', key: import.meta.env.VITE_TOGETHER_API_KEY_HAKEEM },
-                    ].filter(k => k.key);
+                    ];
+                    const validTogetherKeys = VITE_TOGETHER_AI_KEYS_CONFIG.filter(k => k.key && !k.key.includes("YOUR_") && k.key.trim() !== "");
 
-                    // --- BRUTE FORCE DEBUG LOG ---
-                    if (VITE_TOGETHER_AI_KEYS.length > 0) {
-                        console.log(`%c[Together AI Check] SUCCESS: Found ${VITE_TOGETHER_AI_KEYS.length} valid Together AI key(s). Provider is ready.`, 'color: #28a745; font-weight: bold;');
-                        const selectedPlayer = VITE_TOGETHER_AI_KEYS[Math.floor(Math.random() * VITE_TOGETHER_AI_KEYS.length)];
+                    if (validTogetherKeys.length > 0) {
+                        console.log(`%c${functionName} [Together AI Check] SUCCESS: Found ${validTogetherKeys.length} valid Together AI key(s). Provider is ready.`, 'color: #28a745; font-weight: bold;');
+                        const selectedPlayer = validTogetherKeys[Math.floor(Math.random() * validTogetherKeys.length)];
                         apiKey = selectedPlayer.key;
-                        options._nickname = selectedPlayer.name;
+                        apiCallOptions._nickname = selectedPlayer.name; // For logging in openaiCompatibleApiCaller
                     } else {
-                        console.error('%c[Together AI Check] FAILED: No valid VITE_TOGETHER_API_KEY... keys found in .env file after filtering.', 'color: #dc3545; font-weight: bold;');
-                        console.log('This usually means the dev server needs to be RESTARTED after adding new keys to the .env file.');
-                        throw new Error("No Together AI keys configured."); 
+                        console.error(`%c${functionName} [Together AI Check] FAILED: No valid VITE_TOGETHER_API_KEY... keys found in .env file or all are placeholders.`, 'color: #dc3545; font-weight: bold;');
+                        console.log(`${functionName} Ensure .env keys are set and the dev server was RESTARTED if they were recently changed.`);
+                        throw new Error("No valid Together AI keys configured or available."); 
                     }
-                    model = TOGETHER_MODELS?.TEXT_CHAT;
+                    model = TOGETHER_MODELS?.TEXT_CHAT || "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"; // Fallback for Together
                 }
 
-                if (!model) { throw new Error(`Model for provider [${provider}] not defined.`); }
+                if (!model) { throw new Error(`${functionName} Model for provider [${provider}] not defined or missing fallback.`); }
+                if (!apiKey) { throw new Error(`${functionName} API key for provider [${provider}] not defined or missing.`); }
                 
-                response = await _openaiCompatibleApiCaller(openAIMessages, model, provider, apiKey, options, abortSignal);
+                rawApiResponse = await _openaiCompatibleApiCaller(openAIMessagesForNonGemini, model, provider, apiKey, apiCallOptions, abortSignal);
             }
 
-            if (response && (typeof response === 'string' ? response.trim() !== '' : true)) {
-                 console.log(`%c<-- SUCCESS from [${provider}].`, 'color: #28a745; font-weight: bold;');
-                 console.groupEnd();
-                 return response;
+            console.log(`${functionName} Raw API response from [${provider}]:`, typeof rawApiResponse === 'string' ? rawApiResponse.substring(0,200) + (rawApiResponse.length > 200 ? "..." : "") : rawApiResponse);
+
+            if (!rawApiResponse && typeof rawApiResponse !== 'string') { // Handles null/undefined specifically. An empty string IS a valid response for non-JSON.
+                throw new Error(`${functionName} Provider [${provider}] returned a null or undefined response.`);
             }
-            throw new Error(`Provider [${provider}] returned an empty or invalid response.`);
+            // If rawApiResponse is an empty string "", it will be handled by the logic below.
+
+            if (expectJson) {
+                if (typeof rawApiResponse === 'object' && rawApiResponse !== null) { // Check for null explicitly
+                    console.log(`%c${functionName} <-- SUCCESS from [${provider}] (expectJson: true, received object).`, 'color: #28a745; font-weight: bold;');
+                    console.groupEnd();
+                    return rawApiResponse;
+                } else if (typeof rawApiResponse === 'string') {
+                    if (rawApiResponse.trim() === "") { // Handle empty string when expecting JSON
+                        throw new Error(`${functionName} Provider [${provider}] (expectJson: true) - Received an empty string response, cannot parse as JSON.`);
+                    }
+                    try {
+                        const parsedJson = JSON.parse(rawApiResponse);
+                        console.log(`%c${functionName} <-- SUCCESS from [${provider}] (expectJson: true, parsed string to object).`, 'color: #28a745; font-weight: bold;');
+                        console.groupEnd();
+                        return parsedJson;
+                    } catch (e: any) {
+                        throw new Error(`${functionName} Provider [${provider}] (expectJson: true) - Failed to parse response string as JSON. Error: ${e.message}. String was: ${rawApiResponse.substring(0,200)}...`);
+                    }
+                } else {
+                    throw new Error(`${functionName} Provider [${provider}] (expectJson: true) - Received unexpected response type: ${typeof rawApiResponse}`);
+                }
+            } else { // Expecting string
+                if (typeof rawApiResponse === 'string') {
+                    // For non-JSON, an empty string can be a valid (though perhaps unhelpful) response.
+                    // The original check `rawApiResponse.trim() !== ''` would throw for empty strings.
+                    // Let's allow empty strings to pass here, the caller can decide if it's useful.
+                    // If you want to treat empty strings as errors for text, re-add `&& rawApiResponse.trim() !== ''`
+                    console.log(`%c${functionName} <-- SUCCESS from [${provider}] (expectJson: false, received string).`, 'color: #28a745; font-weight: bold;');
+                    console.groupEnd();
+                    return rawApiResponse; 
+                } else if (typeof rawApiResponse === 'object' && rawApiResponse !== null && provider === PROVIDERS.GEMINI) {
+                    const geminiObject = rawApiResponse as any; 
+                    if (geminiObject?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        const extractedText = geminiObject.candidates[0].content.parts[0].text;
+                        console.log(`%c${functionName} <-- SUCCESS from [${provider}] (expectJson: false, extracted text from Gemini object). Text: "${extractedText.substring(0,100)}..."`, 'color: #28a745; font-weight: bold;');
+                        console.groupEnd();
+                        return extractedText;
+                    } else if (geminiObject?.promptFeedback?.blockReason) {
+                        const blockMessage = `(Blocked by Gemini: ${geminiObject.promptFeedback.blockReason})`;
+                        console.warn(`${functionName} Provider [${provider}] response blocked. Reason: ${geminiObject.promptFeedback.blockReason}`);
+                        throw new Error(blockMessage); // Throw to allow failover
+                    } else {
+                        console.warn(`${functionName} Provider [${provider}] (expectJson: false) - Gemini object received, but text could not be extracted. Object:`, geminiObject);
+                        throw new Error(`${functionName} Provider [${provider}] (expectJson: false) - Gemini object received, but text could not be extracted.`);
+                    }
+                } else {
+                     throw new Error(`${functionName} Provider [${provider}] (expectJson: false) - Expected string, but received type: ${typeof rawApiResponse}. Value: ${JSON.stringify(rawApiResponse)}`);
+                }
+            }
         } catch (error: any) {
             if (error.name === 'AbortError') {
-                console.log(`%c<-- ABORTED by user. Request for [${provider}] cancelled.`, 'color: #ff6347;');
-                throw error;
+                console.log(`%c${functionName} <-- ABORTED by user. Request for [${provider}] cancelled.`, 'color: #ff6347;');
+                console.groupEnd(); 
+                throw error; 
             }
-            console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
-            console.log(`Error Details:`, error.message);
+            console.warn(`%c${functionName} <-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+            console.log(`${functionName} Error Details:`, error.message);
+            // console.error(error.stack); // Uncomment for full stack trace during debugging
         }
     }
     
-    console.error(`FINAL ERROR. All providers in the sequence failed.`);
+    console.error(`${functionName} FINAL ERROR. All providers in the sequence failed.`);
     console.groupEnd();
-    return getRandomHumanError();
+    return getRandomHumanError(); 
 }
 // ================================================================================================
 
-    async function generateTextFromImageAndTextOpenAI(
-        base64ImageString: string, mimeType: string, connector: Connector,
-        existingConversationHistory: GeminiChatItem[], userTextQuery: string = "What's in this image?",
-        provider: string = PROVIDERS.TOGETHER,
-        abortSignal?: AbortSignal // <<< ADDED THIS
-    ): Promise<string | null> {
-            console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] CALLED FOR CONNECTOR: ${connector?.id} (${connector?.profileName})`);
-            console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] User Text Query (Prompt): ${userTextQuery}`);
-            console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] MimeType: ${mimeType}`);
-            console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] History Length Passed: ${existingConversationHistory?.length}`);
-            let apiKeyToUse: string | undefined; let modelForVision: string | undefined;
-            if (provider === PROVIDERS.TOGETHER) {
-                apiKeyToUse = window.TOGETHER_API_KEY; modelForVision = TOGETHER_MODELS?.VISION;
-            } else {
-                console.error(`AI Text Gen (TS): Vision provider ${provider} not supported by this OpenAI-compatible path.`);
-                return getRandomHumanError();
-            }
-            if (!apiKeyToUse || apiKeyToUse.includes("YOUR_")) return getRandomHumanError();
-            if (!modelForVision) return getRandomHumanError();
-            if (!connector) return getRandomHumanError();
+async function generateTextFromImageAndTextOpenAI(
+    base64ImageString: string,
+    mimeType: string,
+    connector: Connector | null,
+    existingConversationHistory: GeminiChatItem[],
+    userTextQuery?: string,
+    provider: string = PROVIDERS.TOGETHER,
+    abortSignal?: AbortSignal
+): Promise<string | null> {
+    const functionName = "[AI_TEXT_GEN_SVC.OpenAI_Vision]";
+    console.log(`${functionName} CALLED FOR CONNECTOR: ${connector?.id} (${connector?.profileName})`);
 
-            let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
-            const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt); 
-            const userContent: any[] = [{ type: "text", text: userTextQuery }];
-            if (base64ImageString) {
-                userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64ImageString}` } });
-            }
-            openAIMessages.push({ role: "user", content: userContent });
-            console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] MESSAGES SENT TO OPENAI_COMPATIBLE_CALLER for ${connector?.id}:`, JSON.stringify(openAIMessages, null, 2));
+    // --- DEPENDENCY & INPUT VALIDATION ---
+    const _openaiCompatibleApiCaller = (window as any).openaiCompatibleApiCaller;
+    if (!_openaiCompatibleApiCaller) {
+        console.error(`${functionName} CRITICAL: _openaiCompatibleApiCaller is not available on window.`);
+        return getRandomHumanError();
+    }
+    if (!connector) {
+        console.error(`${functionName} CRITICAL: Connector object is missing.`);
+        return getRandomHumanError();
+    }
+    if (!base64ImageString) {
+        console.error(`${functionName} CRITICAL: base64ImageString is missing.`);
+        return getRandomHumanError();
+    }
 
-            if (provider === PROVIDERS.TOGETHER) {
-                console.log(`AI TextGen Service (generateTextFromImageAndTextOpenAI - TOGETHER): Provider: ${provider}, Model: ${modelForVision}, ...`);
-            }
-            try {
-                if (provider === PROVIDERS.TOGETHER) {
-                    apiKeyToUse = window.TOGETHER_API_KEY;
-                    modelForVision = TOGETHER_MODELS?.VISION;
-                } else {
-                    throw new Error(`Provider [${provider}] is not supported for vision in this function.`);
-                }
-        
-                if (!apiKeyToUse || apiKeyToUse.includes("YOUR_")) throw new Error("API key is missing or is a placeholder.");
-                if (!modelForVision) throw new Error("Vision model ID is not configured in aiConstants.");
-                if (!connector) throw new Error("Connector object is missing.");
-                if (!base64ImageString) throw new Error("base64ImageString is missing.");
-                
-                console.log(`${Function}: Config check PASSED. Using model [${modelForVision}].`);
-                
-               // Determine the final user text query for the API
-                let apiCallOptions = { temperature: 0.5, max_tokens: 512 }; 
+    // --- PROMPT & PAYLOAD PREPARATION ---
+    // FIX: Prioritize the incoming prompt, with a safe fallback.
+    const finalUserPrompt = userTextQuery || "What do you think of this image?";
+    console.log(`${functionName} Using Final Prompt: "${finalUserPrompt}"`);
+    console.log(`${functionName} MimeType: ${mimeType}`);
 
-                if (provider === PROVIDERS.TOGETHER) {
-                    console.warn(`[AI_TEXT_GEN_SVC.OpenAI_Vision] PROVIDER IS TOGETHER. Adjusting temperature to 0.2 for vision call.`);
-                    apiCallOptions.temperature = 0.2; // << LOWER TEMPERATURE SPECIFICALLY FOR TOGETHER
-                } else {
-                    console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision] Provider is NOT Together (it's ${provider}). Using default temperature ${apiCallOptions.temperature}.`);
-                }
-                
-                // --- Payload Assembly (this part remains the same as your current working version) ---
-                // It should use userTextQuery (the detailed prompt from text_message_handler)
-                let systemPrompt = `You are ${connector.profileName || 'a helpful assistant'}. Respond naturally in ${connector.language || 'English'}.`;
-                const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
-                
-                const userMessageContentParts: OpenAIMessageContentPart[] = [
-                    { type: "text", text: userTextQuery } // Use the original detailed prompt
-                ];
+    let apiKeyToUse: string | undefined;
+    let modelForVision: string | undefined;
+    let apiCallOptions: any = { temperature: 0.5, max_tokens: 512 };
 
-                if (base64ImageString) {
-                    userMessageContentParts.push({ 
-                        type: "image_url", 
-                        image_url: { url: `data:${mimeType};base64,${base64ImageString}` } 
-                    });
-                }
-                
-                // Add the user's turn (text + image) to the messages array
-                openAIMessages.push({ role: "user", content: userMessageContentParts });
-        
-                // Optional: Log the full payload if debugging is difficult
-                // console.log(`${functionName}: Payload being sent:`, JSON.stringify(openAIMessages, null, 2));
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] PROVIDER: ${provider}`);
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] MODEL_FOR_VISION: ${modelForVision}`);
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] API_KEY_USED (first 5 chars): ${apiKeyToUse?.substring(0,5)}...`);
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] User Query Text (for image): "${userTextQuery}"`);
-                // Log the structure of openAIMessages carefully
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] PAYLOAD (openAIMessages) being sent to _openaiCompatibleApiCaller:`);
-                try {
-                    // Attempt to stringify. If it's huge, this might be slow, but necessary for debug.
-                    console.log(JSON.stringify(openAIMessages, (key, value) => {
-                        if (key === 'image_url' && typeof value === 'object' && value !== null && typeof value.url === 'string' && value.url.startsWith('data:image')) {
-                            return { ...value, url: value.url.substring(0, 50) + '...[TRUNCATED_BASE64]' };
-                        }
-                        return value;
-                    }, 2));
-                } catch (e) {
-                    console.error("[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] Error stringifying openAIMessages:", e);
-                    console.log("[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] openAIMessages (raw object):", openAIMessages);
-                }
-                const callOptions = { temperature: 0.5, max_tokens: 512 }; // Options you are passing
-                console.log(`[AI_TEXT_GEN_SVC.OpenAI_Vision_DEBUG] OPTIONS passed to _openaiCompatibleApiCaller:`, JSON.stringify(callOptions, null, 2));
-                // --- API Call with Clear Logging ---
-                console.log(`${Function}: --> ATTEMPTING call to [${provider}] vision service.`);
-                const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, { temperature: 0.5, max_tokens: 512 }, abortSignal); // <<< PASS IT HERE
-                console.log(`${Function}: <-- SUCCESS from [${provider}].`);
-                return response;
-        
-            } catch (error: any) {
-                if (error.name === 'AbortError') {
-                    console.log(`%c<-- ABORTED by user. Vision request for [${provider}] was cancelled.`, 'color: #ff6347;');
-                    throw error; // Re-throw to stop the failover loop
-                }
-                console.error(`${Function}: <-- FAILED. Error: ${error.message}`);
-                return getRandomHumanError();
-            }
+    // --- PROVIDER-SPECIFIC SETUP ---
+    if (provider === PROVIDERS.TOGETHER) {
+        // FIX: Explicitly type the array to prevent 'never' type error.
+        const VITE_TOGETHER_AI_KEYS: { name: string; key: string | undefined }[] = [
+            { name: 'FRANZ',  key: import.meta.env.VITE_TOGETHER_API_KEY_FRANZ },
+            { name: 'NASH',   key: import.meta.env.VITE_TOGETHER_API_KEY_NASH },
+            { name: 'KAREEM', key: import.meta.env.VITE_TOGETHER_API_KEY_KAREEM },
+            // Add all other keys here...
+        ].filter(k => k.key); // Filter out any that are undefined
+
+        if (VITE_TOGETHER_AI_KEYS.length === 0) {
+            console.error(`${functionName} FAILED: No valid VITE_TOGETHER_API_KEY... keys found in .env file.`);
+            return getRandomHumanError();
         }
+
+        const selectedPlayer = VITE_TOGETHER_AI_KEYS[Math.floor(Math.random() * VITE_TOGETHER_AI_KEYS.length)];
+        apiKeyToUse = selectedPlayer.key;
+        apiCallOptions._nickname = selectedPlayer.name; // Pass nickname for logging in the caller
+        modelForVision = TOGETHER_MODELS?.VISION;
+        apiCallOptions.temperature = 0.2; // Adjust temperature for Together
+        console.warn(`${functionName} PROVIDER IS TOGETHER. Player: ${selectedPlayer.name}. Temp: ${apiCallOptions.temperature}.`);
+
+    } else {
+        console.error(`${functionName} Vision provider [${provider}] not supported by this OpenAI-compatible path.`);
+        return getRandomHumanError();
+    }
+
+    if (!modelForVision) {
+        console.error(`${functionName} Vision model for provider [${provider}] not defined in aiConstants.`);
+        return getRandomHumanError();
+    }
+    if (!apiKeyToUse || apiKeyToUse.includes("YOUR_")) {
+         console.error(`${functionName} API key for provider [${provider}] is missing or is a placeholder.`);
+        return getRandomHumanError();
+    }
+    
+    // --- PAYLOAD ASSEMBLY ---
+    const systemPrompt = `You are ${connector.profileName}. Respond naturally in ${connector.language}.`;
+    const openAIMessages = convertGeminiHistoryToOpenAIMessages(existingConversationHistory, systemPrompt);
+    
+    // Define the type for the parts array to be more specific
+    const userMessageContentParts: ({ type: "text"; text: string; } | { type: "image_url"; image_url: { url: string; }; })[] = [
+        { type: "text", text: finalUserPrompt }
+    ];
+
+    if (base64ImageString) {
+        // --- THIS IS THE FIX ---
+        let finalImageUrl = base64ImageString;
+    
+        // Check if the Base64 string ALREADY includes the Data URL prefix.
+        if (!finalImageUrl.startsWith('data:')) {
+            // If it doesn't, add it. This makes the function robust.
+            finalImageUrl = `data:${mimeType};base64,${finalImageUrl}`;
+        }
+        // Now, `finalImageUrl` is guaranteed to be a correctly formatted Data URL.
+    
+        userMessageContentParts.push({ 
+            type: "image_url", 
+            image_url: { url: finalImageUrl } 
+        });
+    }
+    
+    openAIMessages.push({ role: "user", content: userMessageContentParts });
+
+    // --- DETAILED DEBUG LOGGING ---
+    console.log(`${functionName}_DEBUG] PROVIDER: ${provider}`);
+    console.log(`${functionName}_DEBUG] MODEL_FOR_VISION: ${modelForVision}`);
+    console.log(`${functionName}_DEBUG] API_KEY_USED (first 5 chars): ${apiKeyToUse?.substring(0,5)}...`);
+    console.log(`${functionName}_DEBUG] OPTIONS passed to caller:`, JSON.stringify(apiCallOptions, null, 2));
+    console.log(`${functionName}_DEBUG] PAYLOAD being sent to _openaiCompatibleApiCaller:`);
+    try {
+        console.log(JSON.stringify(openAIMessages, (key, value) => {
+            if (key === 'image_url' && typeof value === 'object' && value?.url?.startsWith('data:image')) {
+                return { ...value, url: value.url.substring(0, 80) + '...[TRUNCATED]' };
+            }
+            return value;
+        }, 2));
+    } catch (e) {
+        console.error(`${functionName}_DEBUG] Error stringifying payload:`, e);
+    }
+    
+    // --- API CALL ---
+    try {
+        console.log(`%c${functionName}: --> ATTEMPTING call to [${provider}] vision service.`, 'color: #17a2b8');
+        const response = await _openaiCompatibleApiCaller(openAIMessages, modelForVision, provider, apiKeyToUse, apiCallOptions, abortSignal);
+        
+        // Add a check here. If the response itself is an error string, treat it as a failure.
+        if (typeof response === 'string' && HUMAN_LIKE_ERROR_MESSAGES.includes(response)) {
+             console.warn(`${functionName}: <-- API returned a fallback error string. Treating as failure.`);
+             throw new Error("API returned a known error message.");
+        }
+
+        console.log(`%c${functionName}: <-- SUCCESS from [${provider}].`, 'color: #28a745');
+        return response;
+
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.log(`%c<-- ABORTED by user. Vision request for [${provider}] was cancelled.`, 'color: #ff6347;');
+            throw error; 
+        }
+        console.error(`${functionName}: <-- FAILED. Error: ${error.message}`);
+        // FIX: Re-throw the original error to trigger the failover in the calling service.
+        throw error;
+    }
+}
         
         async function generateTextForGeminiCallModal(
             userText: string, 

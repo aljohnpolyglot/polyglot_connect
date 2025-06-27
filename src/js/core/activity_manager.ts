@@ -1,11 +1,11 @@
 // D:\polyglot_connect\src\js\core\activity_manager.ts
-
-import type { 
-    Connector, 
-    PolyglotHelpersOnWindow as PolyglotHelpers, 
+import type {
+    Connector,
+    PolyglotHelpersOnWindow as PolyglotHelpers,
     UiUpdater,
     GroupUiHandler,
-    ActivityManager // <<< ADD THIS LINE
+    ActivityManager,
+    ChatMessageOptions // <<< ADD THIS LINE TO IMPORT THE TYPE
 } from '../types/global.d.ts';
 
 console.log('activity_manager.ts: Script loaded, waiting for core dependencies.');
@@ -99,34 +99,48 @@ const getFunctionalUiUpdater = (): UiUpdater | null => {
 
        // PASTE THIS ENTIRE CORRECTED FUNCTION
        function simulateAiTyping(connectorId: string, chatType: string = 'embedded'): HTMLElement | null {
+        // --- CREATIVE DEBUG: The "Propmaster" ---
+        // This function is now the Propmaster. Its only job is to prepare the props (the options) for the UI actor.
+        console.log(`%c[AM Propmaster] Preparing props for a 'thinking' bubble. Connector: ${connectorId}, Context: ${chatType}`, 'color: #6610f2');
+    
         const currentUiUpdater = getFunctionalUiUpdater();
-    
-        const timeoutKey = `${connectorId}_${chatType}`;
-        // Clear any old timeout just in case, but we won't set a new one here.
-        if (personaTypingTimeouts[timeoutKey]) {
-            clearTimeout(personaTypingTimeouts[timeoutKey]);
-        }
-    
         const connector = polyglotConnectors.find(c => c.id === connectorId);
-        if (!connector) return null; 
+        
+        if (!connector || !currentUiUpdater) {
+            console.warn(`[AM Propmaster] Cannot prepare props. Missing connector or functional UI updater.`);
+            return null;
+        }
     
         const displayName = connector.profileName?.split(' ')[0] || connector.name || "Partner";
-        const typingText = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
+        const thinkingMessage = `${polyglotHelpers.sanitizeTextForDisplay(displayName)} is typing...`;
+    
+        // --- The "Prop Box" ---
+        // This is the complete set of options we're passing to the UI renderer.
+        const messageOptions: ChatMessageOptions = {
+            isThinking: true, // <<< THE KEY PROP: This identifies it as a "Ghost Bubble".
+            avatarUrl: connector.avatarModern,
+            senderName: connector.profileName,
+            speakerId: connector.id,
+            connectorId: connector.id
+        };
         
-        // This function now ONLY creates and returns the element.
-        // The calling function is responsible for its lifecycle (how long it stays visible).
-        if (chatType === 'group') {
-            const groupUiHandler = window.groupUiHandler;
-            return groupUiHandler?.updateGroupTypingIndicator(typingText) || null;
+        console.log(`%c[AM Propmaster] Props ready:`, 'color: #6610f2', messageOptions);
+    
+        let thinkingBubbleElement: HTMLElement | null = null;
+        const groupUiHandler = window.groupUiHandler;
+    
+        // The Propmaster hands the props to the correct stage manager (UI updater).
+        if (chatType === 'group' && groupUiHandler?.updateGroupTypingIndicator) {
+            thinkingBubbleElement = groupUiHandler.updateGroupTypingIndicator(thinkingMessage);
         } else if (chatType === 'embedded') {
-            return currentUiUpdater?.appendToEmbeddedChatLog(typingText, 'connector-thinking') || null;
+            thinkingBubbleElement = currentUiUpdater.appendToEmbeddedChatLog?.(thinkingMessage, 'connector-thinking', messageOptions);
         } else if (chatType === 'modal_message') {
-            return currentUiUpdater?.appendToMessageLogModal(typingText, 'connector-thinking') || null;
+            thinkingBubbleElement = currentUiUpdater.appendToMessageLogModal?.(thinkingMessage, 'connector-thinking', messageOptions);
         } else if (chatType === 'voiceChat_modal') {
-            return currentUiUpdater?.appendToVoiceChatLog(typingText, 'connector-thinking') || null;
+            thinkingBubbleElement = currentUiUpdater.appendToVoiceChatLog?.(thinkingMessage, 'connector-thinking', messageOptions);
         }
-        
-        return null;
+    
+        return thinkingBubbleElement;
     }
      // PASTE THIS ENTIRE CORRECTED FUNCTION
      function clearAiTypingIndicator(

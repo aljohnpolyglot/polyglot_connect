@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Polyglot Connect</title>
+    
+    <!-- Use the same favicon and fonts for consistency -->
+    <link rel="icon" href="/landing/favicon.ico" type="image/x-icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Re-using styles from landing.css for a consistent look */
+        :root {
+            --primary-font: 'Roboto', sans-serif;
+            --heading-font: 'Merriweather Sans', sans-serif;
+            --text-color-light: #f8f9fa;
+            --text-color-dark: #212529;
+            --bg-dark-section: #1c1e21;
+            --border-light: #dee2e6;
+            --navbar-accent: #5865F2;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            font-family: var(--primary-font);
+            background-color: var(--bg-dark-section);
+            color: var(--text-color-light);
+            line-height: 1.7;
+        }
+        
+        /* Main content container for the legal text */
+        .legal-container {
+            max-width: 800px;
+            margin: 120px auto 60px auto; /* Top margin to clear the fixed navbar */
+            padding: 0 2rem;
+        }
+
+        .legal-container h1 {
+            font-family: var(--heading-font);
+            font-size: 2.8rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            border-bottom: 2px solid var(--navbar-accent);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .legal-container h2 {
+            font-family: var(--heading-font);
+            font-size: 1.5rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            color: var(--navbar-accent);
+        }
+
+        .legal-container p, .legal-container li {
+            font-size: 1rem;
+            color: #d1d2d3;
+            margin-bottom: 1rem;
+        }
+
+        .legal-container ul {
+            padding-left: 20px;
+        }
+
+        .legal-container a {
+            color: var(--navbar-accent);
+            text-decoration: none;
+        }
+
+        .legal-container a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <main class="legal-container">
+        <h1>Privacy Policy</h1>
+        <p><strong>Last Updated:</strong> June 28, 2025</p>
+    
+        <p>Your privacy is fundamental to the experience at Polyglot Connect. This Privacy Policy explains how we handle your information when you interact with our platform and our digital Connectors.</p>
+    
+        <h2>1. Information We Collect</h2>
+        <ul>
+            <li><strong>Account Information:</strong> We collect basic information from your chosen sign-in provider (like Google) to create your account, such as your name, email, and profile picture.</li>
+            <li><strong>Interaction Data:</strong> To enable dynamic and memorable conversations, our platform processes the content you share, including text messages, images, and audio from voice communications. This allows the Connectors to respond contextually and recall previous interactions.</li>
+            <li><strong>Activity Data:</strong> We collect general usage data (e.g., feature usage frequency) to help us improve the platform's performance and stability.</li>
+        </ul>
+    
+        <h2>2. How We Use Your Information</h2>
+        <ul>
+            <li><strong>To Power the Experience:</strong> Your interaction data is used exclusively to generate responses from the Connectors and to build a continuous, personalized experience for you.</li>
+            <li><strong>To Maintain Your Account:</strong> We use your account information to manage your subscription and provide you with service-related updates.</li>
+            <li><strong>To Improve the Platform:</strong> We analyze aggregated, anonymized activity data to identify bugs and enhance our features.</li>
+        </ul>
+        
+        <h2>3. How We Share Your Information</h2>
+        <p>We are not in the business of selling your data. We only share information with essential third-party partners who help us operate the Service:</p>
+        <ul>
+            <li><strong>Technology Partners:</strong> The content of your interactions is processed by our secure technology partners to enable the Connectors' conversational abilities. These partners are bound by strict confidentiality agreements.</li>
+            <li><strong>Payment Processors (Paddle.com):</strong> If you subscribe, your payment is handled entirely by Paddle, our Merchant of Record. We never see or store your financial details.</li>
+            <li><strong>Infrastructure Providers (e.g., Firebase, Vercel, Imgur, Supabase):</strong> Your account data and conversation history are stored on secure cloud infrastructure.</li>
+        </ul>
+        <p>We will only disclose your information if required by law.</p>
+    
+        <h2>4. Your Control and Data Security</h2>
+        <p>We employ industry-standard security measures to protect your information. Your conversation history is tied to your active account to provide a persistent connection with the Connectors. You can request the deletion of your account and all associated data at any time by contacting our support team.</p>
+        
+        <h2>5. Children's Privacy</h2>
+        <p>Our Service is not intended for individuals under the age of 13. We do not knowingly collect personal information from children.</p>
+    
+        <h2>6. Contact Us</h2>
+        <p>If you have any questions about this Privacy Policy or your data, please reach out to us at <a href="mailto:privacy@polyglot-connect.com">privacy@polyglot-connect.com</a>.</p>
+    </main>
+
+    <!-- This one script loads the navbar and footer, and handles all the logic -->
+    <script type="module" src="/landing/navbar-loader.ts"></script>
+    
+</body>
+</html>

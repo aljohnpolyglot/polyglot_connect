@@ -4,7 +4,8 @@ const whitelistedEmails: string[] = [
     "tumalajhoven@gmail.com",
     "mogatas.princealjohn.05082003@gmail.com",
     "princealjohnmogatas@gmail.com",
-    "holasoyaljohn@gmail.com"
+    "holasoyaljohn@gmail.com",
+    "monsieurjeanlelait@gmail.com"
     ];
 
 

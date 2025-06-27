@@ -21,30 +21,53 @@ import type {
     ListItemData,
     CombinedChatItem,         // <<< ADD COMMA HERE
      ActiveOneOnOneChatItem,
-    ActiveGroupListItem // <<< ADD THIS IMPORT
+    ActiveGroupListItem, // <<< ADD THIS IMPORT
+    PolyglotHelpersOnWindow
 } from '../types/global.d.ts'; 
-
+import { auth } from '../firebase-config'; // <<< ADD THIS LINE
+import { flagLoader } from '../utils/flagcdn.js';
+import { polyglotHelpers } from '../utils/helpers.js';
 console.log('list_renderer.ts: Script loaded, waiting for core dependencies.');
-
 interface ListRendererModule {
-   renderActiveChatList: (combinedChatsArray: CombinedChatItem[], onCombinedItemClick: (itemData: CombinedChatItem) => void) => void;
-    renderSummaryList: (sessionsArray: SessionData[], onSummaryClick: (sessionDataOrId: SessionData | string) => void) => void;
+    initialize: (deps: { // <<< MODIFIED: initialize now takes a deps object
+        domElements: YourDomElements,
+        polyglotHelpers: PolyglotHelpersOnWindow, // Ensure this type is imported/defined
+        activityManager: ActivityManager,       // Ensure this type is imported/defined
+        flagLoader: FlagLoader                 // Ensure this type is imported/defined
+    }) => void;
+    renderActiveChatList: (chats: CombinedChatItem[], clickCallback: (itemData: CombinedChatItem) => void) => void;
+    renderSummaryList: (sessions: Array<Partial<SessionData> & { connectorId?: string }>, itemClickCallback: (sessionDataOrId: SessionData | string) => void) => void;
     renderAvailableGroupsList: (groupsArray: Group[], onGroupClick: (groupOrId: Group | string) => void) => void;
     renderGroupMembersList: (
         members: Connector[],
-        tutorId: string | null,
+        tutorId: string | null | undefined, // <<< CORRECTED: Allow undefined
         onMemberClick: (connector: Connector) => void,
-        listUlElement: HTMLUListElement | null, // Pass the specific UL element
-        searchFilter?: string // Optional search term
-    ) => void; // New
+        listUlElement: HTMLUListElement | null,
+        searchFilter?: string
+    ) => void;
+    renderConnectorCards: ( // Assuming this was also part of your module
+        connectorsToDisplay: Connector[],
+        filterContext: 'my-friends' | 'discover',
+        callbacks: {
+            onMessageClick: (connector: Connector) => void,
+            onCallClick: (connector: Connector) => void,
+            onCardClick: (connector: Connector) => void
+        }
+    ) => void;
 }
 
 // Assign a structural placeholder
 window.listRenderer = {
-    renderActiveChatList: () => console.warn("LR structural: renderActiveChatList called before full init."),
-    renderSummaryList: () => console.warn("LR structural: renderSummaryList called before full init."),
-    renderAvailableGroupsList: () => console.warn("LR structural: renderAvailableGroupsList called before full init."),
-    renderGroupMembersList: () => console.error("LR dummy: renderGroupMembersList") // <<< ADD THIS
+    initialize: () => console.warn("LR placeholder: initialize() called."), // <<< ADDED
+    renderActiveChatList: () => console.warn("LR placeholder: renderActiveChatList called."),
+    renderSummaryList: () => console.warn("LR placeholder: renderSummaryList called."),
+    renderAvailableGroupsList: () => console.warn("LR placeholder: renderAvailableGroupsList called."),
+    renderGroupMembersList: (members, tutorId, onMemberClick, listUlElement, searchFilter) => { // <<< Matched signature
+        console.error("LR placeholder: renderGroupMembersList called.", { members, tutorId, searchFilter });
+    },
+    renderConnectorCards: (connectorsToDisplay, filterContext, callbacks) => { // <<< ADDED
+        console.warn("LR placeholder: renderConnectorCards called.", { connectorsToDisplay, filterContext });
+    }
 } as ListRendererModule;
 console.log('list_renderer.ts: Structural placeholder for window.listRenderer assigned.');
 
@@ -63,16 +86,28 @@ function initializeActualListRenderer(): void {
     };
 
     const allDepsMet = Object.values(depsCheck).every(Boolean);
-
-    if (!allDepsMet) {
-        console.error("list_renderer.ts: CRITICAL - Functional dependencies not ready. Halting ListRenderer setup. Check details:", depsCheck);
-        window.listRenderer = { /* Dummy methods for ListRendererModule */
-            renderActiveChatList: () => console.error("LR dummy: renderActiveChatList"),
-            renderSummaryList: () => console.error("LR dummy: renderSummaryList"),
-            renderAvailableGroupsList: () => console.error("LR dummy: renderAvailableGroupsList"),
-            renderGroupMembersList: () => console.error("LR dummy: renderGroupMembersList") // <<< ADD THIS LINE
+    const actualDependencies = {
+        domElements: window.domElements,
+        polyglotHelpers: window.polyglotHelpers,
+        activityManager: window.activityManager,
+        flagLoader: window.flagLoader
+    };
+    if (!allDepsMet) { // 'allDepsMet' should be defined by your dependency checking logic
+        console.error("list_renderer.ts: CRITICAL - Functional dependencies not ready. Halting ListRenderer setup.");
+        // Dummy implementation for window.listRenderer
+        window.listRenderer = {
+            initialize: (deps) => console.error("LR dummy: initialize called on uninitialized module with deps:", deps),
+            renderActiveChatList: () => console.error("LR dummy: renderActiveChatList called on uninitialized module."),
+            renderSummaryList: () => console.error("LR dummy: renderSummaryList called on uninitialized module."),
+            renderAvailableGroupsList: () => console.error("LR dummy: renderAvailableGroupsList called on uninitialized module."),
+            renderGroupMembersList: (members, tutorId, onMemberClick, listUlElement, searchFilter) => {
+                console.error("LR dummy: renderGroupMembersList called on uninitialized module.");
+            },
+            renderConnectorCards: (connectorsToDisplay, filterContext, callbacks) => {
+                console.error("LR dummy: renderConnectorCards called on uninitialized module.");
+            }
         } as ListRendererModule;
-        document.dispatchEvent(new CustomEvent('listRendererReady')); // Dispatch even on failure
+        document.dispatchEvent(new CustomEvent('listRendererReady'));
         console.warn('list_renderer.ts: "listRendererReady" event dispatched (initialization FAILED).');
         return;
     }
@@ -80,7 +115,48 @@ function initializeActualListRenderer(): void {
 
     window.listRenderer = ((): ListRendererModule => {
         'use strict';
+ // Declare module-scoped variables to hold dependencies
+ let _domElements: YourDomElements;
+ let _polyglotHelpers: PolyglotHelpersOnWindow;
+ let _activityManager: ActivityManager;
+ let _flagLoader: FlagLoader;
 
+ // The initialize method will receive and store the dependencies
+ const initialize = (deps: {
+     domElements: YourDomElements,
+     polyglotHelpers: PolyglotHelpersOnWindow,
+     activityManager: ActivityManager,
+     flagLoader: FlagLoader
+     
+ }): void => {
+     console.log("ListRenderer Service: Initializing with dependencies:", deps);
+     _domElements = deps.domElements;
+     _polyglotHelpers = deps.polyglotHelpers;
+     _activityManager = deps.activityManager;
+     _flagLoader = deps.flagLoader;
+     // Any other setup logic that depends on these
+ };
+
+ // Helper to access scoped dependencies (optional, but can be cleaner)
+ const getScopedDeps = () => {
+     if (!_domElements || !_polyglotHelpers /* || other checks */) {
+         // This state should ideally not be reached if initialize is called correctly.
+         console.error("ListRenderer: Attempted to use dependencies before they were initialized!");
+         // Fallback to window, though this indicates a logic flaw if hit post-initialize
+         return {
+             domElements: window.domElements,
+             polyglotHelpers: window.polyglotHelpers,
+             activityManager: window.activityManager,
+             flagLoader: window.flagLoader
+         };
+     }
+     return {
+         domElements: _domElements,
+         polyglotHelpers: _polyglotHelpers,
+         activityManager: _activityManager,
+         flagLoader: _flagLoader
+     };
+ };
         const getDeps = () => ({
             domElements: window.domElements as YourDomElements,
             polyglotHelpers: window.polyglotHelpers as PolyglotHelpers,
@@ -89,6 +165,7 @@ function initializeActualListRenderer(): void {
             // viewManager: window.viewManager as ViewManager,
             polyglotFilterLanguages: window.polyglotFilterLanguages as LanguageFilterItem[],
             polyglotConnectors: window.polyglotConnectors as Connector[]
+            
         });
 
         // Type for itemData passed to createListItemHTML
@@ -150,30 +227,63 @@ function initializeActualListRenderer(): void {
                             avatarHtml = `<div class="list-item-avatar icon-avatar"><i class="fas fa-users"></i></div>`;
                         }
 
-                        let plainPreview = "No messages yet.";
-                        if (groupItem.messages && groupItem.messages.length > 0) {
-                            const lastMsg = groupItem.messages[groupItem.messages.length - 1];
-                            if (lastMsg?.text && (typeof (lastMsg as any).speakerName === 'string' || (lastMsg as any).speakerId === "user_player")) {
-                                let speakerDisplay = (lastMsg as any).speakerId === "user_player" ? "You" : ((lastMsg as any).speakerName || "System");
-                                plainPreview = `${speakerDisplay}: ${lastMsg.text}`;
-                            } else if (lastMsg?.text) {
-                                plainPreview = lastMsg.text;
-                            } else if (lastMsg) {
-                                plainPreview = "[Group media/event]";
-                            }
-                            plainPreview = plainPreview.length > 25 ? `${plainPreview.substring(0, 22)}...` : plainPreview;
-                        }
-                        subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span>`;
-                        
-                        if (groupItem.lastActivity) {
-                            const formattedTime = polyglotHelpers.formatRelativeTimestamp(groupItem.lastActivity);
-                            if (formattedTime) subTextOutput += ` <span class="list-item-timestamp">${formattedTime}</span>`;
-                        }
+                       // in list_renderer.
+                       let plainPreview = "No messages yet.";
+                       let speakerPrefix = "";
+                       const user = auth.currentUser; // For checking if "You:" prefix is needed
 
-                    } else { // --- 1-ON-1 CHAT ITEM (Active List in Sidebar) ---
+                       if (groupItem.messages && groupItem.messages.length > 0 && groupItem.messages[0]) {
+                           const lastMessage = groupItem.messages[0]; // GDM now ensures this is the one to use
+                           
+                           console.log(`[LR_Sidebar_Debug] Group: ${groupItem.name}, LastMsg from GDM:`, JSON.parse(JSON.stringify(lastMessage)));
+
+                           plainPreview = lastMessage.text || "No text content"; // Fallback for empty text
+
+                           if (lastMessage.speakerId && user && lastMessage.speakerId === user.uid && lastMessage.type !== 'system_event') {
+                               speakerPrefix = "You: ";
+                           } else if (lastMessage.speakerName && lastMessage.speakerName !== "System" && lastMessage.type !== 'system_event') {
+                               // Only add speaker name prefix if it's not "You" and not a system message
+                               // And if plainPreview doesn't already start with the speaker's name (e.g. from AI formatting)
+                               const nameForPrefix = lastMessage.speakerName.split(' ')[0]; // Just first name
+                               if (!plainPreview.toLowerCase().startsWith(nameForPrefix.toLowerCase() + ":")) {
+                                    // speakerPrefix = `${nameForPrefix}: `; // We might not need this prefix if GDM gives full text
+                               }
+                           }
+                            // If GDM's finalPreviewMessage.text ALREADY contains "You: " or "Speaker: ", then speakerPrefix should be empty.
+                           // The GDM logic for finalPreviewMessage should ideally handle the prefixing.
+                           // Here, we just ensure the text is displayed.
+                           // If GDM's `finalPreviewMessage.text` already includes prefixes, then `speakerPrefix` might not be needed.
+                           // Let's assume GDM provides the fully prefixed text in `lastMessage.text` for now.
+                       } else {
+                           console.log(`[LR_Sidebar_Debug] Group: ${groupItem.name}, No valid messages array or first message found in groupItem.messages.`);
+                       }
+
+                       // Combine prefix and preview, then truncate
+                       let fullPreviewText = plainPreview; // speakerPrefix + plainPreview;
+                       fullPreviewText = fullPreviewText.length > 25 ? `${fullPreviewText.substring(0, 22)}...` : fullPreviewText;
+                       
+                       subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(fullPreviewText)}</span>`;
+                       
+                       if (groupItem.lastActivity) {
+                           const formattedTime = polyglotHelpers.formatRelativeTimestamp(groupItem.lastActivity);
+                           if (formattedTime) {
+                               subTextOutput += ` <span class="list-item-timestamp">${formattedTime}</span>`;
+                           }
+                       }
+                       console.log(`[LR_Sidebar_Debug] Group: ${groupItem.name}, Final subTextOutput: ${subTextOutput}`);
+
+                   } else {// --- 1-ON-1 CHAT ITEM (Active List in Sidebar) ---
                         const oneOnOneItem = itemData as ActiveOneOnOneChatItem;
                         const connector = oneOnOneItem.connector;
 
+    // --- START: ADD THESE LOGS ---
+    console.log(`LR_CREATE_HTML: Rendering 1-on-1 chat for ${connector?.id}.`);
+    console.log(`LR_CREATE_HTML: Last Activity Timestamp from data:`, oneOnOneItem.lastActivity);
+    const lastMsgForLog = oneOnOneItem.messages && oneOnOneItem.messages.length > 0
+        ? oneOnOneItem.messages[oneOnOneItem.messages.length - 1]
+        : null;
+    console.log(`LR_CREATE_HTML: Last Message from data:`, JSON.parse(JSON.stringify(lastMsgForLog || {})));
+    // --- END: ADD THESE LOGS ---
                         if (!connector?.id) {
                             console.warn("LR_ERROR: createListItemHTML (activeChat 1-on-1) - Invalid connector data.", itemData);
                             wrapperClasses.push('error-item'); // Add error class to wrapper
@@ -186,15 +296,40 @@ function initializeActualListRenderer(): void {
                         avatarHtml = `<img src="${connector.avatarModern || placeholderAvatarSrc}" alt="${polyglotHelpers.sanitizeTextForDisplay(name)}" class="list-item-avatar" onerror="this.onerror=null; this.src='${placeholderAvatarSrc}'">`;
                         
                         let plainPreview = "No messages yet.";
-                        if (oneOnOneItem.messages && oneOnOneItem.messages.length > 0) {
-                            const lastMsg = oneOnOneItem.messages[oneOnOneItem.messages.length - 1];
-                            if (lastMsg) {
-                                let textPreview = lastMsg.text || "[Media]";
-                                plainPreview = lastMsg.sender?.startsWith('user') ? `You: ${textPreview}` : textPreview;
-                                plainPreview = plainPreview.length > 25 ? `${plainPreview.substring(0, 22)}...` : plainPreview;
+                        const user = auth.currentUser;
+                        
+                        // 1. Prioritize optimistic lastMessagePreview (if you implement it for user-sent messages)
+                        if (oneOnOneItem.lastMessagePreview) {
+                            plainPreview = oneOnOneItem.lastMessagePreview;
+                        }
+                        // 2. Use the lastMessage object from the parent ConversationDocument summary
+                        else if (oneOnOneItem.lastMessage) { // Simplified check: just see if the object exists
+                            const lastMsg = oneOnOneItem.lastMessage;
+                            // Use a fallback of empty string '' if lastMsg.text is null
+                            const messageText = lastMsg.text || ''; 
+                        
+                            if (user && lastMsg.senderId === user.uid) {
+                                plainPreview = `You: ${messageText}`;
+                            } else if (lastMsg.senderId === "system") {
+                                plainPreview = `[${messageText}]`;
+                            } else {
+                                // THIS IS THE FIX: We are now assigning `messageText`, which is guaranteed to be a string.
+                                plainPreview = messageText;
                             }
                         }
+                        // 3. Fallback (LESS IDEAL FOR LIST PREVIEWS - should be rare if lastMessage is reliable)
+                        else if (oneOnOneItem.messages && oneOnOneItem.messages.length > 0) {
+                            console.log(`LR_CREATE_HTML: Last Message from data:`, (lastMsgForLog || {})); // Logs the object directly
+                            const lastMsgFromArray = oneOnOneItem.messages[oneOnOneItem.messages.length - 1];
+                            if (lastMsgFromArray) {
+                                plainPreview = lastMsgFromArray.sender?.startsWith('user') ? `You: ${lastMsgFromArray.text || ''}` : (lastMsgFromArray.text || '');
+                            }
+                        }
+                        
+                        // Truncate the final result for display
+                        plainPreview = plainPreview.length > 25 ? `${plainPreview.substring(0, 22)}...` : plainPreview;
                         subTextOutput = `<span class="list-item-subtext-preview">${polyglotHelpers.sanitizeTextForDisplay(plainPreview)}</span>`;
+                        // --- END OF FIX ---
                         
                         if (oneOnOneItem.lastActivity) {
                             const formattedTime = polyglotHelpers.formatRelativeTimestamp(oneOnOneItem.lastActivity);
@@ -337,8 +472,11 @@ function renderList(
         console.error(`LR_renderList: itemClickHandler NOT function for context '${itemTypeContext}'.`);
         // Continue rendering, but clicks might not work as expected.
     }
-    const oldChildrenCountLR = ulElement.children.length; // <<< ADD THIS
-    ulElement.innerHTML = ''; // Clear previous items
+    const oldChildrenCountLR = ulElement.children.length; // <<< ADD 
+    
+    while (ulElement.firstChild) {
+        ulElement.removeChild(ulElement.firstChild);
+    }
     console.log(`LR_renderList_DOM_DEBUG: After innerHTML='', children for ${ulElement.id}: ${ulElement.children.length}. (Was ${oldChildrenCountLR})`); // <<< ADD THIS
     if (ulElement.children.length > 0 && oldChildrenCountLR > 0) { // <<< ADD THIS
         console.warn(`LR_renderList_DOM_WARN: innerHTML='' on ${ulElement.id} did NOT clear children!`); // <<< ADD THIS
@@ -466,7 +604,7 @@ function renderList(
 } // End of renderList
 function renderGroupMembersListInternal (
     members: Connector[],
-    tutorId: string | null,
+    tutorId: string | null | undefined, // <<< CORRECTED: Matches ListRendererModule
     onMemberClick: (connector: Connector) => void,
     listUlElement: HTMLUListElement | null,
     searchFilter?: string
@@ -525,18 +663,99 @@ function renderGroupMembersListInternal (
     });
     listUlElement.appendChild(fragment);
 }
+
+ // ADD DUMMY/PLACEHOLDER IMPLEMENTATIONS FOR THE MISSING METHODS
+        // WITHIN THE SCOPE OF THE IIFE, BEFORE THE RETURN STATEMENT.
+        const initializeActual = (deps: { /* Define actual deps based on your ListRendererModule */
+            domElements: YourDomElements,
+            polyglotHelpers: PolyglotHelpersOnWindow,
+            activityManager: ActivityManager,
+            flagLoader: FlagLoader
+        }) => {
+            console.log("ListRenderer: Actual initialize function called with deps:", deps);
+            // Assign dependencies to be used by other methods within this IIFE
+            _domElements = deps.domElements;
+          
+            _activityManager = deps.activityManager;
+          
+            // Your actual initialization logic here
+        };
+
+        const renderConnectorCardsActual = (
+            connectorsToDisplay: Connector[],
+            filterContext: 'my-friends' | 'discover',
+            callbacks: {
+                onMessageClick: (connector: Connector) => void,
+                onCallClick: (connector: Connector) => void,
+                onCardClick: (connector: Connector) => void
+            }
+        ) => {
+            console.log("ListRenderer: Actual renderConnectorCards function called.", { connectorsToDisplay, filterContext });
+            // Your actual logic for rendering connector cards
+            // For example:
+            // const { domElements: currentDomElements } = getDeps();
+            // if (currentDomElements?.connectorHubGrid) {
+            //     currentDomElements.connectorHubGrid.innerHTML = `<p>Rendering ${connectorsToDisplay.length} connector cards.</p>`;
+            // }
+        };
+
+
         console.log("ui/list_renderer.ts: IIFE finished.");
         return {
-           renderActiveChatList: (combinedChatsArray: CombinedChatItem[], onCombinedItemClick: (itemData: CombinedChatItem) => void) => {
-                console.log("LR_DEBUG: renderActiveChatList called with combinedChatsArray:", JSON.parse(JSON.stringify(combinedChatsArray || []))); 
-                const { domElements,} = getDeps(); // Uses getDeps from list_renderer.ts
-                renderList(
-                    domElements.chatListUl, 
-                    domElements.emptyChatListMsg, 
-                    combinedChatsArray as ListItemData[], // Cast if renderList is more generic
-                    'activeChat', 
-                    onCombinedItemClick as (item: ListItemData) => void // Cast if renderList is more generic
-                );
+            initialize,
+            renderConnectorCards: function (connectorsToDisplay: Connector[], filterContext: 'my-friends' | 'discover', callbacks: {
+                onMessageClick: (connector: Connector) => void;
+                onCallClick: (connector: Connector) => void;
+                onCardClick: (connector: Connector) => void;
+            }): void {
+                throw new Error('Function not implemented.');
+            },
+            renderActiveChatList: (
+                combinedChatsArray: CombinedChatItem[], 
+                onCombinedItemClick: (itemData: CombinedChatItem) => void
+            ) => {
+                // This is the logic from my previous answer, now in the correct place.
+                const { domElements } = getDeps();
+                const ulElement = domElements.chatListUl;
+                const emptyMsgElement = domElements.emptyChatListMsg;
+            
+                if (!ulElement || !emptyMsgElement) {
+                    console.error("LR: Cannot render active chat list, ulElement or emptyMsgElement is missing.");
+                    return;
+                }
+            
+                // First, clear any previous list items.
+                ulElement.innerHTML = '';
+                
+                // Check if the final list of chats is empty.
+                if (!combinedChatsArray || combinedChatsArray.length === 0) {
+                    // Data has been fetched, and it's confirmed to be empty.
+                    emptyMsgElement.innerHTML = 'No active chats.'; // No spinner
+                    emptyMsgElement.style.display = 'block';
+                } else {
+                    // Data has been fetched, and there are chats to show.
+                    emptyMsgElement.style.display = 'none';
+            
+                    const fragment = document.createDocumentFragment();
+                    
+                    // Loop directly over the CombinedChatItem array. NO CASTING NEEDED.
+                    combinedChatsArray.forEach(item => {
+                        const li = document.createElement('li');
+            
+                        // createListItemHTML is flexible enough to handle this `item`
+                        li.innerHTML = createListItemHTML(item, 'activeChat');
+            
+                        const clickableItem = li.firstElementChild as HTMLElement;
+                        if (clickableItem && !clickableItem.classList.contains('error-item')) {
+                            // The click handler also expects a `CombinedChatItem`, so the types match perfectly.
+                            clickableItem.addEventListener('click', () => {
+                                onCombinedItemClick(item);
+                            });
+                        }
+                        fragment.appendChild(li);
+                    });
+                    ulElement.appendChild(fragment);
+                }
             },
           renderSummaryList: (sessionsArray, onSummaryClick) => {
         console.log("LR: renderSummaryList - Received sessionsArray, count:", sessionsArray?.length, JSON.parse(JSON.stringify(sessionsArray || []))); // <<< LOG DATA

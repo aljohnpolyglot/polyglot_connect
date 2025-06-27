@@ -1,3 +1,4 @@
+
 import type {
     UiUpdater,
     AIService,
@@ -12,23 +13,94 @@ import type {
     MessageInStore,
     GeminiChatItem,
     ActivityManager,
-    ModalHandler // <<< THIS IS THE FIX. WE ARE NOW IMPORTING THE TYPE.
+    ModalHandler,
+    GeminiTtsService 
+   
 } from '../types/global.d.ts';
 import { SEPARATION_KEYWORDS } from '../constants/separate_text_keywords.js';
 import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
+import { auth } from '../firebase-config';
+import { uploadImageToImgur } from '../services/imgur_service'; // <<< ADD THIS IMPORT
+// --- THIS IS THE FIX ---
+// Import the function directly. This guarantees we have the correct, up-to-date version.
+import { getGroupPersonaSummary } from './persona_prompt_parts.js';
+
+import { 
+    uploadAudioToSupabase, 
+    base64ToBlob, 
+    convertL16ToWavBlob // <<< IMPORT THE NEW FUNCTION
+} from '../services/supabaseService'; // Adjust path if necessary
 console.log('text_message_handler.ts: Script loaded, waiting for core dependencies.');
 
-// =================== START: NEW CANCELLATION LOGIC ===================
-// in text_message_handler.ts at the very top
+const getSafeDeps = (functionName: string = "TextMessageHandler internal"): TextMessageHandlerDeps | null => {
+    
+    // Create the dependency object first, including the imported getGroupPersonaSummary
+    const deps = {
+        uiUpdater: window.uiUpdater,
+        aiService: window.aiService,
+        conversationManager: window.conversationManager,
+        domElements: window.domElements,
+        polyglotHelpers: window.polyglotHelpers,
+        chatOrchestrator: window.chatOrchestrator,
+        aiApiConstants: window.aiApiConstants,
+        activityManager: window.activityManager,
+        modalHandler: window.modalHandler,
+        getGroupPersonaSummary: getGroupPersonaSummary, // Add the imported function here
+    };
+    
+    // Now, iterate and check if any are missing.
+    // Add 'getGroupPersonaSummary' to criticalKeys if you want to explicitly check its presence,
+    // though as an import, it will always be available to this module.
+    const criticalKeys: (keyof TextMessageHandlerDeps)[] = [
+        'uiUpdater', 'aiService', 'conversationManager', 'domElements', 
+        'polyglotHelpers', 'aiApiConstants', 'activityManager', 'modalHandler',
+        'getGroupPersonaSummary' // Added for completeness in checking against TextMessageHandlerDeps
+    ];
+ 
+    for (const key of criticalKeys) {
+        // The check needs to correctly access the properties of the `deps` object
+        if (!deps[key as keyof typeof deps]) { 
+            console.error(`TMH (${functionName}): CRITICAL - Dependency '${key}' is missing.`);
+            return null;
+        }
+    }
+    
+    // The cast to TextMessageHandlerDeps is now safe as `deps` includes `getGroupPersonaSummary`.
+    return deps as TextMessageHandlerDeps;
+};
 
-// =================== ADD THIS IMPORT LINE ===================
-import { getGroupPersonaSummary, getTimeAwarenessAndReasonPrompt } from './persona_prompt_parts';
-// ============================================================
 // Map to track ongoing AI generation calls for each conversation.
 // Key: targetId (string), Value: AbortController
 const activeAiOperations = new Map<string, AbortController>();
 const activeTypingIndicators = new Map<string, HTMLElement>();
 
+
+
+function showTypingIndicatorFor(targetId: string, context: 'embedded' | 'modal') {
+    const { activityManager, conversationManager } = getSafeDeps("showTypingIndicatorFor")!;
+    if (!activityManager || !conversationManager) return;
+
+    // First, clear any existing indicator for this chat to prevent duplicates.
+    clearTypingIndicatorFor(targetId);
+
+    const connector = conversationManager.getConversationById(targetId)?.connector;
+    if (!connector) return;
+
+    const chatTypeForManager = context === 'modal' ? 'modal_message' : 'embedded';
+    const indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
+
+    if (indicatorElement) {
+        activeTypingIndicators.set(targetId, indicatorElement);
+    }
+}
+
+function clearTypingIndicatorFor(targetId: string) {
+    if (activeTypingIndicators.has(targetId)) {
+        const indicatorElement = activeTypingIndicators.get(targetId);
+        indicatorElement?.remove();
+        activeTypingIndicators.delete(targetId);
+    }
+}
 
 /**
  * Interrupts any ongoing AI operation for a specific conversation and prepares a new AbortController.
@@ -115,45 +187,22 @@ interface TextMessageHandlerDeps {
     aiApiConstants: AIApiConstants;
     activityManager: ActivityManager;
     modalHandler: ModalHandler; // <<< THIS IS THE FIX
+    getGroupPersonaSummary(connector: Connector, language: string): string;
+ 
 }
 function initializeActualTextMessageHandler(): void {
     console.log('text_message_handler.ts: initializeActualTextMessageHandler() for FULL method population called.');
 
-    const getSafeDeps = (functionName: string = "TextMessageHandler internal"): TextMessageHandlerDeps | null => {
-        const deps = {
-            uiUpdater: window.uiUpdater,
-            aiService: window.aiService,
-            conversationManager: window.conversationManager,
-            domElements: window.domElements,
-            polyglotHelpers: window.polyglotHelpers,
-            chatOrchestrator: window.chatOrchestrator,
-            aiApiConstants: window.aiApiConstants,
-            activityManager: window.activityManager,
-            modalHandler: window.modalHandler // <<< ADD THIS
-        };
-        // This line assumes you added `modalHandler` to the TextMessageHandlerDeps interface in global.d.ts
-        const criticalKeys: (keyof Omit<TextMessageHandlerDeps, 'chatOrchestrator'>)[] = ['uiUpdater', 'aiService', 'conversationManager', 'domElements', 'polyglotHelpers', 'aiApiConstants', 'activityManager', 'modalHandler']; // <<< AND ADD IT HERE
-     
-        for (const key of criticalKeys) {
-            if (!deps[key]) {
-                console.error(`TMH (${functionName}): CRITICAL MISSING window.${key}.`);
-                return null;
-            }
-        }
-        if (!deps.chatOrchestrator) {
-            console.warn(`TMH (${functionName}): chatOrchestrator not yet available. Methods may need to fetch it dynamically.`);
-        }
-        return deps as TextMessageHandlerDeps; // This correctly returns deps even if chatOrchestrator is missing (as it's optional)
-    };
+   
 
     const resolvedFunctionalDeps = getSafeDeps("Full TMH Initialization");
 
     if (!resolvedFunctionalDeps) {
         console.error("text_message_handler.ts: CRITICAL - Functional dependencies not ready for full TMH setup. Methods will remain placeholders.");
-        if (!(window.textMessageHandler as any).__functionalReady) {
-             document.dispatchEvent(new CustomEvent('textMessageHandlerReady'));
-             console.warn('text_message_handler.ts: "textMessageHandlerReady" (DUMMY) event dispatched due to missing deps.');
-        }
+        // if (!(window.textMessageHandler as any).__functionalReady) {
+        //      document.dispatchEvent(new CustomEvent('textMessageHandlerReady'));
+        //      console.warn('text_message_handler.ts: "textMessageHandlerReady" (DUMMY) event dispatched due to missing deps.');
+        // }
         return;
     }
     console.log('text_message_handler.ts: Functional dependencies for full method population appear ready.');
@@ -314,8 +363,7 @@ processedText = processedText.replace(exceptionRegex, `$1${DOT_PLACEHOLDER}`);
 }
 // ===================  END: REPLACE THE ENTIRE TMH PARSER FUNCTION  ===================
 
-// ===================  END: REPLACE WITH THIS LANGUAGE-AWARE FUNCTION  ===================
-// ===================  END: ADD THIS ENTIRE NEW HELPER FUNCTION  ===================
+
 function showTypingIndicatorFor(targetId: string, context: 'embedded' | 'modal') {
     const { activityManager, conversationManager } = getSafeDeps("showTypingIndicatorFor")!;
     if (!activityManager || !conversationManager) return;
@@ -323,13 +371,16 @@ function showTypingIndicatorFor(targetId: string, context: 'embedded' | 'modal')
     // First, clear any existing indicator for this chat to prevent duplicates.
     clearTypingIndicatorFor(targetId);
 
+    // In a 1-on-1 chat, the "targetId" is the conversation ID, and the connector is part of that record.
     const connector = conversationManager.getConversationById(targetId)?.connector;
     if (!connector) return;
 
     const chatTypeForManager = context === 'modal' ? 'modal_message' : 'embedded';
+    // The activityManager should create the UI element and return it
     const indicatorElement = activityManager.simulateAiTyping(connector.id, chatTypeForManager);
 
     if (indicatorElement) {
+        // We track the element by conversation ID to clear it later
         activeTypingIndicators.set(targetId, indicatorElement);
     }
 }
@@ -343,22 +394,6 @@ function clearTypingIndicatorFor(targetId: string) {
 }
 
 
-
-
-
-
-/**
- * Renders a sequence of AI messages with realistic, word-count-based delays
- * and typing indicators, specifically for 1v1 chats. It also removes trailing
- * periods from very short messages for naturalism.
- * @param lines The array of message strings from the AI.
- * @param targetId The ID of the connector receiving the messages.
- * @param connector The full Connector object for the AI persona.
- * @param context 'embedded' or 'modal' to direct the UI updates.
- */
-// Replace with this new, simplified version
-// REPLACE WITH THIS BLOCK
-
 /**
  * Renders a sequence of AI messages with realistic, paced delays and typing
  * indicators for each individual message bubble in a 1v1 chat.
@@ -369,74 +404,69 @@ function clearTypingIndicatorFor(targetId: string) {
  */
 async function playAiResponseScene(
     lines: string[],
-    targetId: string,
+    conversationId: string, // This is the Firestore document ID
     connector: Connector,
     context: 'embedded' | 'modal'
 ): Promise<void> {
 
-    const { uiUpdater, conversationManager } = getSafeDeps("playAiResponseScene")!;
+    const { uiUpdater, conversationManager, polyglotHelpers } = getSafeDeps("playAiResponseScene")!;
+    if (!uiUpdater || !conversationManager || !polyglotHelpers) return;
+
     const appendToLog = context === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal;
 
     for (const [index, line] of lines.entries()) {
         let text = line.trim();
         if (!text) continue;
 
-        // 1. Show the typing indicator. The helper handles clearing any previous one.
-        showTypingIndicatorFor(targetId, context);
+        // 1. Show the typing indicator.
+        showTypingIndicatorFor(conversationId, context);
 
-       // 2. Calculate a realistic typing delay for the current line.
-const words = text.trim().split(/\s+/).length;
+        // 2. Calculate a realistic typing delay.
+        const words = text.trim().split(/\s+/).length;
+        const wpm = 40; // average human typing speed
+        const wordsPerMs = wpm / 60 / 1000;
+        let typingDurationMs = Math.max(1200, Math.min(words / wordsPerMs, 5000)) + (Math.random() * 500);
 
-// Use realistic human WPM to compute base delay
-const wpm = 40; // average human typing speed
-const wordsPerMs = wpm / 60 / 1000;
-let typingDurationMs = words / wordsPerMs;
-
-// Add subtle randomness to avoid robotic timing
-typingDurationMs += Math.random() * 500;
-
-// Clamp duration to reasonable min/max
-typingDurationMs = Math.max(1200, Math.min(typingDurationMs, 5000));
-
-        
         console.log(`%c[ScenePlayer] Line ${index + 1} for ${connector.profileName}. Words: ${words}. Typing: ${(typingDurationMs / 1000).toFixed(1)}s`, 'color: #8a2be2;');
 
         // 3. Wait for the typing to "finish".
         await new Promise(resolve => setTimeout(resolve, typingDurationMs));
 
-        // 4. Clear the typing indicator right before showing the message.
-        clearTypingIndicatorFor(targetId);
+        // 4. Clear the indicator right before showing the message.
+        clearTypingIndicatorFor(conversationId);
 
-     // 5. Clean up text for naturalism ...
-if (text.length < 12 && text.endsWith('.') && !text.endsWith('..')) {
-    text = text.slice(0, -1);
-}
+        // 5. Generate a UNIQUE ID for this message bubble.
+        const messageId = polyglotHelpers.generateUUID();
 
-// 6. Generate a UNIQUE ID and timestamp for this specific message bubble.
-const messageId = polyglotHelpers.generateUUID();
-const timestamp = Date.now();
+        // 6. Append the actual message bubble to the UI with all the data it needs.
+        // This will prevent the "messageId was MISSING" warning.
+        appendToLog?.(text, 'connector', {
+            avatarUrl: connector.avatarModern,
+            senderName: connector.profileName,
+            timestamp: Date.now(),
+            connectorId: connector.id,
+            messageId: messageId, // Pass the ID to the UI
+        });
 
-// 7. Append the actual message bubble to the UI, passing the new ID.
-appendToLog?.(text, 'connector', {
-    avatarUrl: connector.avatarModern,
-    senderName: connector.profileName,
-    timestamp: timestamp,
-    connectorId: connector.id,
-    messageId: messageId // Pass the ID to the UI
-});
-
-// 8. Save the message to history, also passing the SAME ID and timestamp.
-await conversationManager.addModelResponseMessage(targetId, text, messageId, timestamp);
-
-// 9. Add a short "reading" pause ...
-if (index < lines.length - 1) {
-    await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
-}
+        // 7. CRITICAL: Save the AI's message to Firestore.
+        await conversationManager.addModelResponseMessage(conversationId, text);
+        if (window.memoryService?.processNewUserMessage) {
+            console.log(`[CEREBRUM_SELF_WRITE] ✍️ 1-on-1: Sending [${connector.profileName}]'s own message for self-analysis...`);
+            // The AI processes its own message to remember its statements.
+            window.memoryService.processNewUserMessage(
+                text,
+                connector.id,
+                'ai_invention',
+                []
+            );
+        }
+        // 8. Add a short "reading" pause between bubbles.
+        if (index < lines.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
+        }
     }
     console.log(`%c[ScenePlayer] SCENE FINISHED for ${connector.profileName}.`, 'color: #8a2be2; font-weight: bold;');
 }
-
-
 
 
 
@@ -477,1245 +507,813 @@ function getHistoryForAiCall(
 
 const getChatOrchestrator = (): ChatOrchestrator | undefined => window.chatOrchestrator;
 
-        async function sendEmbeddedTextMessage(
-            textFromInput: string,
-            currentEmbeddedChatTargetId: string | null,
-            options: {
-                skipUiAppend?: boolean;
-                isVoiceMemo?: boolean;
-                audioBlobDataUrl?: string | null;
-                messageId?: string;
-                timestamp?: number;
-                imageFile?: File | null;
-                captionText?: string | null;
-            } = {}
-        ): Promise<void> {
 
-            const { checkAndIncrementUsage } = await import('./usageManager');
-            const { openUpgradeModal } = await import('../ui/modalUtils');
-            const usageResult = await checkAndIncrementUsage('textMessages');
-            if (!usageResult.allowed) {
-                console.log("TMH: User has reached text message limit. Showing upgrade modal.");
-                const { modalHandler, domElements } = getSafeDeps("Upgrade Modal Trigger")!;
-                if (modalHandler && domElements?.upgradeLimitModal) {
-                    modalHandler.open(domElements.upgradeLimitModal);
-                } else {
-                    alert(`You've reached your monthly message limit for the ${usageResult.plan} plan. Please upgrade for unlimited messages!`);
-                }
-                // IMPORTANT: Re-enable the send button and stop execution
-                if (uiUpdater && !options.skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
-                openUpgradeModal('text', usageResult.daysUntilReset); // We will create this function next
-                return; 
-            }
+// Target File: src/js/core/text_message_handler.ts
 
+// (Ensure all necessary imports are at the top of the file as previously discussed)
+// import { uploadImageToImgur } from '../services/imgur_service';
+// import { uploadAudioToSupabase, base64ToBlob } from '../services/supabaseService';
+// import type { GeminiTtsService, ChatMessageOptions, Connector, ... } from '../types/global.d.ts';
+// import { getMultimodalPreamble, getGroupPersonaSummary } from './persona_prompt_parts';
+// import { intelligentlySeparateText } from './yourTextSeparatorLogicFile';
+// import { playAiResponseScene, showTypingIndicatorFor, clearTypingIndicatorFor, interruptAndTrackAiOperation, getHistoryForAiCall } from './textMessageHandlerHelpers'; // Assuming these are helpers
 
+async function sendEmbeddedTextMessage(
+    textFromInput: string,
+    targetIdentifier: string | null, // This can be EITHER conversationId OR connectorId
+    options: {
+        skipUiAppend?: boolean;
+        isVoiceMemo?: boolean;
+        audioSrc?: string | null;
+        messageId?: string;
+        timestamp?: number;
+        imageFile?: File | null;
+        captionText?: string | null;
+    } = {}
+): Promise<void> {
+    const functionName = "TMH.sendEmbeddedTextMessage";
+    const context = 'embedded';
 
-
-            const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend, messageId: optionsMessageId, timestamp: optionsTimestamp } = options;
-            if (currentEmbeddedChatTargetId) clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
-            const functionName = "sendEmbeddedTextMessage";
-
-           
-            
-            const text = textFromInput?.trim() || "";
-
-            const userMessageTimestamp = optionsTimestamp || Date.now();
-            const userMessageId = optionsMessageId || polyglotHelpers.generateUUID();
-
-            if (!currentEmbeddedChatTargetId) {
-                console.warn(`TMH.${functionName}: Missing targetId.`);
-                if (uiUpdater && !skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
-                return;
-            }
-
-            if (!isVoiceMemo && !imageFile && !text) {
-                console.warn(`TMH.${functionName}: Empty message (not voice memo, no image).`);
-                if (uiUpdater && !skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
-                return;
-            }
-
-            const record = await conversationManager.ensureConversationRecord(currentEmbeddedChatTargetId);
-            const convo = record.conversation as ConversationRecordInStore | null;
-
-            if (!convo || !convo.connector) {
-                console.error(`TMH.${functionName}: Invalid convo or missing connector for ID: ${currentEmbeddedChatTargetId}`);
-                if (uiUpdater && !skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
-                return;
-            }
-            const currentConnector: Connector = convo.connector;
-
-            let imageUrlForDisplay: string | undefined = undefined;
-            let imagePartsForGemini: Array<{ inlineData: { mimeType: string; data: string; } }> | undefined = undefined;
-            let imageSemanticDescriptionForStore: string | undefined = undefined;
-
-            if (imageFile) {
-                console.log(`TMH.${functionName}: Processing image "${imageFile.name}" with caption "${captionText || text}"`);
-                let base64StringForStore: string; // Declare here
-
-                try {
-                    base64StringForStore = await polyglotHelpers.fileToBase64(imageFile); // Assign here
-                    const base64DataForApi = base64StringForStore.split(',')[1];
-                    imagePartsForGemini = [{ inlineData: { mimeType: imageFile.type, data: base64DataForApi } }];
-                    console.log(`TMH.${functionName}: Image converted to base64 for AI. MimeType: ${imageFile.type}`);
-                    
-                    // imageUrlForDisplay will now be the base64 string for storage purposes.
-                    // If skipUiAppend is true (which it is for images from chat_event_listeners),
-                    // TMH doesn't need its own temporary blob for UI.
-                    imageUrlForDisplay = base64StringForStore;
-                    // The user's actual text (caption or message text if image sent with text input field)
-                    const userProvidedTextForContext = captionText || text || "";
-
-                    if (aiService.generateTextFromImageAndText && convo.connector) {
-                        // --- NEW, MORE FOCUSED PROMPT FOR INITIAL DESCRIPTION ---
-                        const specificDescriptionPrompt = `You are an image analysis AI. 
-                        Your ONLY task is to provide a concise, factual, and objective description of the visual content of the image itself. 
-                        Speak in ${convo.connector.language || 'English'}.
-                        Describe only what you visually see in THIS SPECIFIC IMAGE. 
-                        If there are recognizable people, landmarks, or specific types of places or famous persons, try to identify them if you are reasonably confident. 
-                        Do NOT add any conversational elements, greetings, or refer to the user.
-                        If the user provided any text with the image ("${userProvidedTextForContext || 'none'}"), use it as minor context if it helps identify an object, but your primary focus is the visual content.
-                        Keep the description to 1-2 sentences.`;
-                        // --- END NEW PROMPT ---
-
-                        console.log(`TMH.${functionName}: Calling AI for initial semantic description with focused prompt.`);
-                        const desc = await aiService.generateTextFromImageAndText(
-                            base64DataForApi,
-                            imageFile.type,
-                            convo.connector, // Connector is still useful for language context
-                            [], // Empty history for a clean description
-                            specificDescriptionPrompt, // Use the new, focused prompt
-                            aiApiConstants.PROVIDERS.TOGETHER // Or your preferred provider for this task
-                        );
-
-                        if (desc && typeof desc === 'string' && !desc.startsWith("[") && !desc.toLowerCase().includes("hearing you") && !desc.toLowerCase().includes("trouble understanding")) {
-                            imageSemanticDescriptionForStore = desc.trim();
-                            console.log(`TMH.${functionName}: AI generated initial image description: "${imageSemanticDescriptionForStore}"`);
-                        } else if (desc && typeof desc === 'string') {
-                            console.warn(`TMH.${functionName}: AI description was a placeholder, error, or irrelevant: "${desc}"`);
-                            imageSemanticDescriptionForStore = undefined; // Explicitly set to undefined if bad
-                        } else {
-                            console.warn(`TMH.${functionName}: AI description was not a string or was null.`);
-                            imageSemanticDescriptionForStore = undefined;
-                        }
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                } catch (error) {
-                    console.error(`TMH.${functionName}: Error processing image:`, error);
-                    if (!skipUiAppend) {
-                         uiUpdater.appendToEmbeddedChatLog?.("Error processing image.", 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                    }
-                    if (imageUrlForDisplay) URL.revokeObjectURL(imageUrlForDisplay);
-                    if (uiUpdater && !skipUiAppend) uiUpdater.toggleEmbeddedSendButton?.(true);
-                    return;
-                }
-            }
-
-            let textForDisplayAndStore: string;
-            let typeForStore: string = 'text';
-            const messageExtraData: Partial<MessageInStore> = { // Explicitly typed if MessageInStore is available
-                id: userMessageId,
-                timestamp: userMessageTimestamp
-            };
-
-            if (imageFile) {
-                typeForStore = 'image';
-                
-                let userProvidedTextForImage: string | null = null;
-                if (captionText) {
-                    userProvidedTextForImage = captionText.trim();
-                } else if (text && imageFile) {
-                    userProvidedTextForImage = text.trim();
-                }
-                
-                textForDisplayAndStore = userProvidedTextForImage || ""; // <<< FIX: Default to empty string if null
-            
-                messageExtraData.content_url = imageUrlForDisplay;
-                messageExtraData.imagePartsForGemini = imagePartsForGemini;
-                if (imageSemanticDescriptionForStore) {
-                    messageExtraData.imageInitialDescription = imageSemanticDescriptionForStore;
-                }
-            } else if (isVoiceMemo) {
-                typeForStore = 'voice_memo';
-                textForDisplayAndStore = text; // text is already string ("" if empty)
-                messageExtraData.isVoiceMemo = true;
-                messageExtraData.audioBlobDataUrl = optionsAudioBlobUrl;
-            } else { // Plain text message
-                textForDisplayAndStore = text; // text is already string ("" if empty)
-            }
-
-            if (!skipUiAppend) { // This condition is key
-                console.log(`TMH.${functionName}: Appending user message to UI. Text: "${textForDisplayAndStore.substring(0, 30)}", Image: ${!!imageUrlForDisplay}`);
-                uiUpdater.appendToEmbeddedChatLog?.(
-                    textForDisplayAndStore,
-                    'user',
-                    {
-                        timestamp: userMessageTimestamp,
-                        messageId: userMessageId,
-                        imageUrl: imageUrlForDisplay // This comes from the image processing block earlier
-                    }
-                );
-            } else {
-                console.log(`TMH.${functionName}: Skipping UI append for user message as requested by options.`);
-            }
-
-            await conversationManager.addMessageToConversation(
-                currentEmbeddedChatTargetId!,
-                'user',
-                textForDisplayAndStore,
-                typeForStore,
-                userMessageTimestamp,
-                messageExtraData
-            );
-            
-            // This is now the main UI feedback block, triggered for text, voice, and images
-            // when the user's message has been handled locally.
-            if (!skipUiAppend && uiUpdater) {
-                uiUpdater.toggleEmbeddedSendButton?.(false); // Disable send button while AI thinks
-            }
-          // =================== TWIN TAG: EMBEDDED-USER ===================
-          
-      
-          
-          if (window.memoryService && window.memoryService.processNewUserMessage) {
-                const userTextToProcess = textForDisplayAndStore || (captionText || "");
-                if (userTextToProcess.trim()) {
-                    console.log(`[CEREBRUM_WRITE] ✍️ Sending USER'S message to memory service for analysis...`);
-                    // We now AWAIT this, forcing it to complete before proceeding.
-                 
-                    if (window.conversationManager) { // <<< SAFETY CHECK
-                        const convoRecord = await window.conversationManager.getConversationById(currentEmbeddedChatTargetId);
-                        const recentHistory = convoRecord?.messages.slice(-10) || []; // Increased slice for better context
-                        await window.memoryService.processNewUserMessage(
-                            userTextToProcess,
-                            currentEmbeddedChatTargetId,
-                            'one_on_one',
-                            recentHistory
-                        );
-                    }
-                    console.log(`[CEREBRUM_WRITE] ✅ USER'S message analysis complete.`);
-                }
-            }
-          
-          
-          
-          
-            let aiRespondedSuccessfully = false; // <<< ADD THIS LINE// --- NEW: Show an immediate "thinking" indicator while we wait for the AI ---
-            const controller = interruptAndTrackAiOperation(currentEmbeddedChatTargetId);
-          
-          
-          
-          
-            try {
-          
-                let promptForAI: string;
-                let aiResponseObject: string | null | object; // Declare response object here
-
-                if (imageFile) { // User sent an image (with or without caption)
-                    const userProvidedTextWithImage = captionText || textFromInput?.trim() || "";
-                    const simplifiedPersonaContext = `You are ${currentConnector.profileName}.
-                   
-                    Your interests include: ${currentConnector.interests?.join(', ') || ''}.
-                    Your personality traits are: ${currentConnector.personalityTraits?.join(', ') || ''}.
-                    You are currently interacting with a user who sent an image.`;
-                    
-                                        promptForAI = `${simplifiedPersonaContext}
-                    
-                   The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-                    
-                    Your Conversational Comment (as ${currentConnector.profileName}):
-                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
-                    - AVOID generic phrases like "What's this?" or "Nice photo."
-                    - Your goal is to start a conversation. Try one of these persona-driven approaches:
-                      - Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
-                      - Ask an open-ended question driven by your curiosity and interests.
-                      - Share a brief, relevant memory or thought from your own life experiences that the image sparks.
-                    
-                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
-                    [IMAGE_DESCRIPTION_START]
-                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
-                    [IMAGE_DESCRIPTION_END]
-                    
-                    Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
-                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-                    // =================================== END OF STRIKE 1 =================================== 
-                    
-                    if (imagePartsForGemini && imagePartsForGemini[0]?.inlineData?.data) {
-                        console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply.`);
-                        aiResponseObject = await (aiService.generateTextFromImageAndText as any)(
-                            imagePartsForGemini[0].inlineData.data,
-                            imageFile.type,
-                            currentConnector,
-                            getHistoryForAiCall(undefined, true),    // EMPTY HISTORY for image reply
-                            promptForAI,
-                            aiApiConstants.PROVIDERS.TOGETHER,
-                            controller.signal // <<< ADD THIS
-                        );
-                    } else {
-                        console.error(`TMH.${functionName}: imageFile present but imagePartsForGemini data missing.`);
-                        throw new Error("Missing image data for AI call."); // Or handle gracefully
-                    }
-                } else { // User sent TEXT-ONLY
-                    promptForAI = textForDisplayAndStore; // This is the user's text message
-                    console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply.`);
-                
-                    // --- THIS IS THE FIX: Rebuild history right before the AI call ---
-                    console.log(`%c[TMH Pre-AI] 🧠 Rebuilding prompt with latest memories for [${currentEmbeddedChatTargetId}]...`, 'color: #6610f2; font-weight: bold;');
-                    let historyForAiCall = await conversationManager.getGeminiHistoryForConnector(currentEmbeddedChatTargetId);
-                    console.log(`%c[TMH Pre-AI] ✅ Prompt rebuild complete.`, 'color: #28a745; font-weight: bold;');
-                
-                    // Check if the PREVIOUS message in the store was a call event.
-                    // The user's current message is at index (length - 1), so we check (length - 2).
-                    if (convo.messages.length >= 2) {
-                        const secondToLastMessage = convo.messages[convo.messages.length - 2];
-                        if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
-                            console.log("TMH: Call event detected as the PREVIOUS message. Injecting context into AI history.");
-                            historyForAiCall.push({
-                                role: 'user',
-                                parts: [{ text: "[A voice call took place between you and the user.]" }]
-                            });
-                        }
-                    }
-                // Check if the PREVIOUS message in the store was a call event.
-                // The user's current message is at index (length - 1), so we check (length - 2).
-                if (convo.messages.length >= 2) {
-                    const secondToLastMessage = convo.messages[convo.messages.length - 2];
-                    if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
-                        console.log("TMH: Call event detected as the PREVIOUS message. Injecting context into AI history.");
-                        historyForAiCall.push({
-                            role: 'user',
-                            parts: [{ text: "[A voice call took place between you and the user.]" }]
-                        });
-                    }
-                }
-                    // --- END: CONTEXT INJECTION FOR CALLS ---
-    
-                    aiResponseObject = await (aiService.generateTextMessage as any)(
-                        promptForAI,
-                        currentConnector,
-                        historyForAiCall,
-                        null, // <<< THE FIX. Pass null to be explicit.
-                        false,
-                        'one-on-one',
-                        controller.signal
-                    );
-                }
-
-                const aiResponseText = typeof aiResponseObject === 'string'
-                ? aiResponseObject
-                : (typeof aiResponseObject === 'object' && aiResponseObject !== null
-                    ? JSON.stringify(aiResponseObject)
-                    : null);
-
-
-                    console.log(`TMH (Embedded): Received main AI response. Raw aiResponseObject type: ${typeof aiResponseObject}`);
-                    if (aiResponseText !== null) {
-                        console.log(`TMH (Embedded): Main AI response (stringified): "${aiResponseText.substring(0, 200)}..."`);
-                    } else {
-                        console.log(`TMH (Embedded): Main AI response was NULL.`);
-                    }
-
-
-
-
-
-                    let isConsideredErrorForThisContext = false;
-                    const isBlockedResponse = typeof aiResponseText === 'string' && aiResponseText.startsWith("(My response was blocked:");
-    
-                    if (aiResponseText === null) {
-                        isConsideredErrorForThisContext = true;
-                        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.("Sorry, I couldn't generate a response right now.", 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                        console.warn("TMH (Embedded): AI response was null.");
-                    } else if (isBlockedResponse) {
-                        isConsideredErrorForThisContext = true;
-                        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                        console.warn(`TMH (Embedded): AI response was a blocked response: "${aiResponseText}"`);
-                    } else if (imageFile) {
-                        // For image replies, we are more tolerant of "human-like errors" initially,
-                        // because we want to attempt parsing for [IMAGE_DESCRIPTION_START] anyway.
-                        // The parsing logic itself will handle if the content is bad.
-                        // We only consider it a "human-like error" here if it's one of the *very generic* confused replies
-                        // AND our parsing fails to find the description tags.
-                        console.log(`TMH (Embedded): Image file present. Will proceed to parsing. Raw AI response: "${aiResponseText.substring(0,100)}..."`);
-                    } else {
-                        // For TEXT-ONLY replies, the original isHumanError check is fine.
-                        const isTextReplyHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseText || "");
-                        if (isTextReplyHumanError) {
-                            isConsideredErrorForThisContext = true;
-                            if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                            console.warn(`TMH (Embedded): AI TEXT response was a human-like error: "${aiResponseText}"`);
-                        }
-                    }
-    
-                    if (isConsideredErrorForThisContext) {
-                        // Nothing more to do if we've decided it's an error we can't recover from here.
-                    } else {
-                        // This is where the successful AI response is handled (or attempted parsing for images)
-                        if (imageFile && typeof aiResponseText === 'string') {
-        console.log(`TMH (Embedded): Processing successful AI response for IMAGE.`);
-        // --- IMAGE RESPONSE PATH FOR EMBEDDED CHAT ---
-        let conversationalReply = aiResponseText; // Initial assignment
-        let extractedImageDescription: string | undefined = undefined;
-        const descStartTag = "[IMAGE_DESCRIPTION_START]";
-        const descEndTag = "[IMAGE_DESCRIPTION_END]";
-        const startIndex = aiResponseText.indexOf(descStartTag);
-        const endIndex = aiResponseText.indexOf(descEndTag);
-
-        if (startIndex !== -1 && endIndex > startIndex) {
-            extractedImageDescription = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
-            conversationalReply = aiResponseText.substring(0, startIndex).trim();
-            console.log(`TMH (Embedded): Parsed image response. Conversational: "${conversationalReply.substring(0,30)}...", Description: "${(extractedImageDescription || "").substring(0,50)}..."`);
-        } else {
-            conversationalReply = aiResponseText.trim(); // Treat whole response as conversational if no tags
-            console.warn(`TMH (Embedded): Image description tags not found in AI response. Full response treated as conversational: "${aiResponseText.substring(0,50)}..."`);
-        }
-
-        // --- NEW FALLBACK LOGIC ---
-        let textToDisplayForScene = conversationalReply; 
-
-        if (!textToDisplayForScene && extractedImageDescription) {
-            console.warn(`TMH (Embedded): AI provided an image description but no conversational comment. Using description as the reply text.`);
-            textToDisplayForScene = extractedImageDescription; 
-        }
-        // --- END NEW FALLBACK LOGIC ---
-
-        // Update the original user message in the store with the extracted description (if any)
-        if (extractedImageDescription && userMessageId) {
-            const convoRecordForUpdate = conversationManager.getConversationById(currentEmbeddedChatTargetId);
-            if (convoRecordForUpdate?.messages) {
-                const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
-                if (msgIndex !== -1) {
-                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription;
-                    window.convoStore?.updateConversationProperty(currentEmbeddedChatTargetId, 'messages', [...convoRecordForUpdate.messages]);
-                    window.convoStore?.saveAllConversationsToStorage(); // Ensure it's saved
-                    console.log(`TMH (Embedded): Updated user image message ${userMessageId} with semantic description in store.`);
-                } else {
-                    console.warn(`TMH (Embedded): Could not find original user image message ${userMessageId} to update description.`);
-                }
-            }
-        }
-        
-        // Use textToDisplayForScene (which might be the conversational part or the description)
-        const processedText = intelligentlySeparateText(textToDisplayForScene, currentConnector, { probability: 1.0 });
-        const responseLines = processedText.split('\n').filter(line => line.trim());
-        
-        if (responseLines.length > 0) {
-            await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
-        } else {
-            // If after all fallbacks, there are still no lines to display, show a generic message.
-            console.warn("TMH (Embedded): No valid lines to display after processing AI response for image, even after fallback. Displaying generic AI ack.");
-            const genericAckId = polyglotHelpers.generateUUID();
-            const genericAckTimestamp = Date.now();
-            uiUpdater.appendToEmbeddedChatLog?.("I've received your image.", 'connector', {
-                avatarUrl: currentConnector.avatarModern,
-                senderName: currentConnector.profileName,
-                timestamp: genericAckTimestamp,
-                connectorId: currentConnector.id,
-                messageId: genericAckId
-            });
-            // Also save this generic acknowledgment to conversation history
-            await conversationManager.addModelResponseMessage(currentEmbeddedChatTargetId, "I've received your image.", genericAckId, genericAckTimestamp);
-        }
-        aiRespondedSuccessfully = true; // Mark success after handling the image reply
-
-    } else if (aiResponseText) { // This is for TEXT-ONLY responses
-        // --- TEXT-ONLY RESPONSE PATH FOR EMBEDDED CHAT ---
-        // =================== TWIN TAG: EMBEDDED-AI ===================
-        if (window.memoryService && window.memoryService.processNewUserMessage) {
-            console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis...`);
-            window.memoryService.processNewUserMessage(
-                aiResponseText,
-                currentEmbeddedChatTargetId,
-                'ai_invention'
-            );
-       }
-        console.log(`[Auto-Separator] Raw AI Text (Embedded): "${aiResponseText}"`);
-        const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
-        console.log(`[Auto-Separator] Processed Text (Embedded): "${processedText.replace(/\n/g, '\\n')}"`);
-        
-        const responseLines = processedText.split('\n').filter(line => line.trim());
-        await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
-        aiRespondedSuccessfully = true; // Mark success after handling the text reply
+    if (!targetIdentifier) {
+        console.warn(`${functionName}: No targetIdentifier provided. Aborting.`);
+        // Optionally show UI error if context demands
+        return;
     }
-}
-// --- END OF REPLACEMENT BLOCK ---
-// ...
 
-} catch (e: any) {
-    clearTypingIndicatorFor(currentEmbeddedChatTargetId); // <<< ADD THIS LINE
-    if (e.name === 'AbortError') {
-        // This is not a real error. It's the expected result of our cancellation.
-        console.log(`%c[Interrupt] AI request for ${currentEmbeddedChatTargetId} was successfully aborted by a new message.`, 'color: #ff9800;');
+    const deps = getSafeDeps(functionName);
+    if (!deps) {
+        console.error(`${functionName}: Critical dependencies missing for embedded send. Aborting.`);
+        return;
+    }
+    const {
+        conversationManager,
+        aiService,
+        polyglotHelpers,
+        uiUpdater,
+    } = deps;
+
+    // --- Robust ID Resolution Funnel ---
+    let connector: Connector | undefined;
+    let conversationId: string | null = null;
+    let conversationRecord: ConversationRecordInStore | undefined | null = null;
+
+    // Attempt 1: Assume targetIdentifier is a conversationId
+    conversationRecord = conversationManager.getConversationById(targetIdentifier);
+    if (conversationRecord && conversationRecord.connector) {
+        connector = conversationRecord.connector;
+        conversationId = conversationRecord.id;
+        console.log(`[TMH] (${context}) Resolved targetIdentifier ("${targetIdentifier}") as ConversationID. Connector: ${connector.profileName}, ConversationID: ${conversationId}`);
     } else {
-        // This is a real, unexpected error.
-        console.error(`TMH.${functionName}: Error during AI response generation:`, e);
-        const displayError = polyglotHelpers.sanitizeTextForDisplay(e.message) || "An unexpected error occurred.";
-        if (!skipUiAppend) uiUpdater.appendToEmbeddedChatLog?.(displayError, 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-    }
-} finally {
-    // Clean up the controller from the map if it's the one we created for this operation.
-    if (activeAiOperations.get(currentEmbeddedChatTargetId) === controller) {
-        activeAiOperations.delete(currentEmbeddedChatTargetId);
-    }
-
-    // The rest of your existing finally block
-    if (domElements.embeddedMessageSendBtn) {
-        domElements.embeddedMessageSendBtn.disabled = false;
-    }
-    if (aiRespondedSuccessfully) {
-        const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
-        if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && currentEmbeddedChatTargetId) {
-            try {
-                await window.memoryService.markInteraction(currentEmbeddedChatTargetId, currentUserId);
-            } catch (e) {
-                console.error(`TMH.${functionName}: Error marking interaction for ${currentEmbeddedChatTargetId}:`, e);
+        // Attempt 2: Assume targetIdentifier is a connectorId
+        console.log(`[TMH] (${context}) TargetIdentifier ("${targetIdentifier}") not a direct ConversationID or record incomplete. Attempting as ConnectorID.`);
+        const foundConnector = window.polyglotConnectors?.find(c => c.id === targetIdentifier);
+        if (foundConnector) {
+            connector = foundConnector;
+            console.log(`[TMH] (${context}) Resolved targetIdentifier ("${targetIdentifier}") as ConnectorID: ${connector.profileName}. Ensuring conversation record...`);
+            const ensuredConvId = await conversationManager.ensureConversationRecord(connector);
+            if (ensuredConvId) {
+                conversationId = ensuredConvId;
+                console.log(`[TMH] (${context}) Ensured/Retrieved ConversationID: ${conversationId} for Connector: ${connector.profileName}`);
+            } else {
+                console.error(`${functionName}: Successfully found connector for ID "${targetIdentifier}", but failed to ensure/get its conversation ID. Aborting.`);
+                uiUpdater.appendToEmbeddedChatLog?.("Error: Could not establish a chat session for this contact.", 'system-error', { isError: true, messageId: polyglotHelpers.generateUUID() });
+                return;
             }
+        } else {
+            console.error(`${functionName}: targetIdentifier ("${targetIdentifier}") is neither a known ConversationID nor a ConnectorID. Aborting.`);
+            uiUpdater.appendToEmbeddedChatLog?.("Error: Invalid chat target. Cannot send message.", 'system-error', { isError: true, messageId: polyglotHelpers.generateUUID() });
+            return;
         }
     }
-    getChatOrchestrator()?.notifyNewActivityInConversation?.(currentEmbeddedChatTargetId);
-}
-        } // End of sendEmbeddedTextMessage
 
-        async function handleEmbeddedImageUpload(event: Event, currentEmbeddedChatTargetId: string | null): Promise<void> {
-            const functionName = "handleEmbeddedImageUpload";
-            const target = event.target as HTMLInputElement;
-            const file = target.files?.[0];
+    // Final check after resolution attempts
+    if (!connector || !conversationId) {
+        console.error(`${functionName}: Failed to resolve valid Connector and ConversationID from targetIdentifier ("${targetIdentifier}"). Connector: ${connector?.id}, ConversationID: ${conversationId}. Aborting.`);
+        uiUpdater.appendToEmbeddedChatLog?.("Error: Critical problem identifying chat participant or session. Please try refreshing.", 'system-error', { isError: true, messageId: polyglotHelpers.generateUUID() });
+        return;
+    }
+    // --- Connector and ConversationID are now robustly resolved ---
 
-            if (!file) { if (target) target.value = ''; return; }
-            if (!currentEmbeddedChatTargetId) { console.error(`TMH.${functionName}: Missing targetId.`); if (target) target.value = ''; return; }
+    // --- User's Message Handling ---
+    const userMessageText = options.imageFile ? (textFromInput.trim() || (options.captionText || "").trim()) : textFromInput.trim();
+    const optimisticMessageId = options.messageId || polyglotHelpers.generateUUID();
+    const optimisticTimestamp = options.timestamp || Date.now();
 
-            const record = await conversationManager.ensureConversationRecord(currentEmbeddedChatTargetId);
-            const convo = record.conversation as ConversationRecordInStore | null;
-            if (!convo || !convo.connector) {
-                console.error(`TMH.${functionName}: Invalid convo or connector for ID: ${currentEmbeddedChatTargetId}`);
-                if (target) target.value = ''; return;
-            }
-            const currentConnector: Connector = convo.connector;
+    // --- Optimistic UI Append ---
+    // voice_memo_handler.ts calls this with skipUiAppend: true after it handles its own UI.
+    // chat_event_listeners.ts (for text/image) calls this with skipUiAppend: false (or undefined).
+    if (!options.skipUiAppend) {
+        const uiAppendOptions: ChatMessageOptions = {
+            messageId: optimisticMessageId,
+            timestamp: optimisticTimestamp,
+        };
+        let messageContentForUI = userMessageText;
 
-            if (file.size > 4 * 1024 * 1024) { alert("Image too large (max 4MB)."); if (target) target.value = ''; return; }
+        if (options.isVoiceMemo && options.audioSrc) { // This case is less likely if skipUiAppend is false
+            uiAppendOptions.isVoiceMemo = true; uiAppendOptions.audioSrc = options.audioSrc;
+            messageContentForUI = userMessageText || "[Voice Memo]";
+            console.log(`[TMH] (${context}) Appending USER voice memo to UI (TMH, skipUiAppend=false). AppID: ${optimisticMessageId}`);
+        } else if (options.imageFile) {
+            uiAppendOptions.imageUrl = URL.createObjectURL(options.imageFile); uiAppendOptions.type = 'image';
+            messageContentForUI = userMessageText; // Caption
+            console.log(`[TMH] (${context}) Appending USER image to UI (TMH, optimistic blob). AppID: ${optimisticMessageId}`);
+        } else if (userMessageText.trim()) {
+            console.log(`[TMH] (${context}) Appending USER text message to UI (TMH). AppID: ${optimisticMessageId}`);
+        } else if (!options.imageFile && !options.isVoiceMemo) {
+            console.log(`[TMH] (${context}) User message is empty text, not image/VM. Skipping send.`);
+            return; // Don't send empty text messages
+        }
+        // Only append if there's actual content or it's a media type that implies content
+        if (messageContentForUI.trim() || uiAppendOptions.isVoiceMemo || uiAppendOptions.type === 'image') {
+           uiUpdater.appendToEmbeddedChatLog?.(messageContentForUI, 'user', uiAppendOptions);
+        }
+    }
 
-            // Outer scope aiRespondedSuccessfully is not strictly needed here if all logic is within onloadend
-            // let aiRespondedSuccessfullyOuter = false; 
-            const reader = new FileReader();
+    // --- Process and Send Message (using resolved `connector` and `conversationId`) ---
+    if (options.imageFile) {
+        // ***** IMAGE SENDING LOGIC *****
+        console.log(`${functionName}: Processing user image for ${context} chat ${conversationId}.`);
+        let base64DataForAI: string | null = null;
+        let mimeTypeForAI: string | null = null;
+        let resolvedImgurUrl: string | null = null;
 
-            reader.onloadend = async () => {
-                const resultString = reader.result as string;
-                const base64DataForApi = resultString.split(',')[1];
-                const dataUrlForDisplay = resultString;
-                const imagePlaceholderTextForStore = "[User sent an image]"; // Or derive a better placeholder
-
-                const imageMessageId = polyglotHelpers.generateUUID();
-                const imageTimestamp = Date.now();
-
-                // First, display the user's image in the UI with its unique ID.
-                uiUpdater.appendToEmbeddedChatLog?.("", 'user', { 
-                    imageUrl: dataUrlForDisplay, 
-                    timestamp: imageTimestamp,
-                    messageId: imageMessageId 
-                });
-        
-                // Then, save the message to the conversation history with all its data.
-                await conversationManager.addMessageToConversation(
-                    currentEmbeddedChatTargetId, // <<< FIX: Use the correct variable passed into the function.
-                    'user',
-                    "[User sent an image]",
-                    'image',
-                    imageTimestamp,
-                    {
-                        id: imageMessageId,
-                        content_url: dataUrlForDisplay,
-                        imagePartsForGemini: [{ inlineData: { mimeType: file.type, data: base64DataForApi } }]
-                    }
-                );
-                uiUpdater.toggleEmbeddedSendButton?.(false);
-
-                const thinkingMsgOptions: ChatMessageOptions = {
-                    senderName: currentConnector.profileName?.split(' ')[0],
-                    avatarUrl: currentConnector.avatarModern,
-                    isThinking: true,
-                    connectorId: currentConnector.id
-                };
-                const thinkingMsg = uiUpdater.appendToEmbeddedChatLog?.(`${thinkingMsgOptions.senderName || 'Partner'} is looking at the image...`, 'connector-thinking', thinkingMsgOptions);
-                let aiRespondedSuccessfully = false; // Scoped to onloadend
-        
-                try {
-                    const preamble = getMultimodalPreamble(currentConnector);
-
-                    const PromptForImageAndDescription = `${preamble}
-                    
-                    The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-                    
-                    Your Conversational Comment (as ${currentConnector.profileName}):
-                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction. For example, if you like history, notice historical details. If you like food, comment on the meal.
-                    - AVOID generic phrases like "What's this?" or "Nice photo."
-                    - Your goal is to start a conversation. Try one of these persona-driven approaches:
-                      - Make a creative observation that reflects your personality (e.g., an 'adventurous' person might say "This looks like it was taken somewhere exciting!").
-                      - Ask an open-ended question driven by your curiosity and interests.
-                      - Share a brief, relevant memory or thought from your own life experiences that the image sparks.
-                    
-                     CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
-                    [IMAGE_DESCRIPTION_START]
-                    A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
-                    [IMAGE_DESCRIPTION_END]
-                    
-                    Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
-                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-
-const relevantHistoryForAi = getHistoryForAiCall(undefined, true);
-// ^^^^^^ relevantHistoryForAi DEFINED ^^^^^^
-
-const aiMsgResponse = await (aiService.generateTextFromImageAndText as any)(
-    base64DataForApi,                       // 1
-    file.type,                              // 2
-    currentConnector,                       // 3
-    relevantHistoryForAi,                   // 4. history (now correctly using the helper)
-    PromptForImageAndDescription,     // 5. prompt
-    aiApiConstants.PROVIDERS.TOGETHER       // 6. preferredProvider
-);
-                    if (thinkingMsg?.remove) thinkingMsg.remove();
-                    let conversationalReply: string | null = null;
-                    let extractedImageDescription: string | undefined = undefined;
-
-                    if (typeof aiMsgResponse === 'string') {
-                        const descStartTag = "[IMAGE_DESCRIPTION_START]";
-                        const descEndTag = "[IMAGE_DESCRIPTION_END]";
-                        const startIndex = aiMsgResponse.indexOf(descStartTag);
-                        const endIndex = aiMsgResponse.indexOf(descEndTag);
-
-                        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-                            extractedImageDescription = aiMsgResponse.substring(startIndex + descStartTag.length, endIndex).trim();
-                            conversationalReply = aiMsgResponse.substring(0, startIndex).trim();
-                            console.log(`TMH.${functionName}: Parsed image response. Conversational: "${(conversationalReply||"").substring(0,30)}...", Description: "${(extractedImageDescription||"").substring(0,50)}..."`);
-                        } else {
-                            conversationalReply = aiMsgResponse.trim();
-                            console.warn(`TMH.${functionName}: Image description tags not found in AI response. Full response treated as conversational.`);
-                        }
-                    }
-                    const aiResponseTextForDisplay = conversationalReply;
-                    const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseTextForDisplay || "");
-    
-                    if (aiResponseTextForDisplay === null) {
-                        uiUpdater.appendToEmbeddedChatLog?.("Sorry, I couldn't process the image right now.", 'connector-error', { isError:true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                    } else if (isHumanError) {
-                        uiUpdater.appendToEmbeddedChatLog?.(aiResponseTextForDisplay, 'connector-error', { isError:true, isSystemLikeMessage:true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                    } else {
-                        const processedText = intelligentlySeparateText(aiResponseTextForDisplay, currentConnector, { probability: 1.0 });
-                        const responseLines = processedText.split('\n').filter(line => line.trim());
-                        await playAiResponseScene(responseLines, currentEmbeddedChatTargetId, currentConnector, 'embedded');
-                        aiRespondedSuccessfully = true;
-                    }
-    
-                    if (extractedImageDescription) {
-                        const userImageMessageOriginalId = imageMessageId;
-                        console.log(`TMH.${functionName}: Attempting to update original user image message (ID: ${userImageMessageOriginalId}) with description.`);
-                        const currentConvoRecord = conversationManager.getConversationById(currentEmbeddedChatTargetId!); // Re-fetch or use existing 'record' if safe
-                        if (currentConvoRecord && currentConvoRecord.messages) { // Ensure messages array exists
-                            const originalMsgIndex = currentConvoRecord.messages.findIndex(m => m.id === userImageMessageOriginalId);
-                            if (originalMsgIndex !== -1) {
-                                currentConvoRecord.messages[originalMsgIndex].imageSemanticDescription = extractedImageDescription;
-                                if (window.convoStore?.updateConversationProperty && window.convoStore.saveAllConversationsToStorage) {
-                                     window.convoStore.updateConversationProperty(currentEmbeddedChatTargetId!, 'messages', [...currentConvoRecord.messages]); // Send a new array to trigger updates if needed
-                                     window.convoStore.saveAllConversationsToStorage();
-                                     console.log(`TMH.${functionName}: Updated user image message ${userImageMessageOriginalId} with description in store.`);
-                                } else {
-                                    console.warn(`TMH.${functionName}: convoStore update methods not available to save image description.`);
-                                }
-                            } else {
-                                console.warn(`TMH.${functionName}: Could not find original user image message with ID ${userImageMessageOriginalId} to update description.`);
-                            }
-                        }
-                    }
-                } catch (e: any) {
-                    if (thinkingMsg?.remove) thinkingMsg.remove();
-                    uiUpdater.appendToEmbeddedChatLog?.(`Error with image: ${polyglotHelpers.sanitizeTextForDisplay(e.message)}`, 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName, connectorId: currentConnector.id });
-                } finally {
-                    if (aiRespondedSuccessfully) {
-                        const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
-                        if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && currentEmbeddedChatTargetId) {
-                            try {
-                                console.log(`TMH.${functionName}: Marking interaction (after successful AI image response) for ${currentEmbeddedChatTargetId} with user ${currentUserId}.`);
-                                await window.memoryService.markInteraction(currentEmbeddedChatTargetId, currentUserId);
-                            } catch (e) {
-                                console.error(`TMH.${functionName}: Error marking interaction for ${currentEmbeddedChatTargetId}:`, e);
-                            }
-                        }
-                    }
-                    uiUpdater.toggleEmbeddedSendButton?.(true);
-                    getChatOrchestrator()?.notifyNewActivityInConversation?.(currentEmbeddedChatTargetId!);
-                    if (target) target.value = '';
-                }
-            }; 
-        
-            reader.onerror = () => {
-                alert("Error reading image.");
-                if (target) target.value = '';
-                uiUpdater.toggleEmbeddedSendButton?.(true);
-            };
-        
-            reader.readAsDataURL(file);
+        try {
+            base64DataForAI = await polyglotHelpers.fileToBase64(options.imageFile);
+            mimeTypeForAI = options.imageFile.type;
+        } catch (e) {
+            console.error(`${functionName}: Error converting image to base64. AI will not 'see' the image.`, e);
         }
 
-        async function sendModalTextMessage(
-            textFromInput: string,
-            currentModalMessageTargetConnector: Connector | null,
-            options: {
-                skipUiAppend?: boolean;
-                isVoiceMemo?: boolean;
-                audioBlobDataUrl?: string | null;
-                messageId?: string;
-                timestamp?: number;
-                imageFile?: File | null;
-                captionText?: string | null;
-            } = {}
-        ): Promise<void> {
-  const uniqueTmhCallId = Math.random().toString(36).substring(7);
-    console.log(`TMH: sendModalTextMessage INVOKED (ID: ${uniqueTmhCallId}). Text: "${textFromInput}", Options:`, JSON.parse(JSON.stringify(options)));
+        console.info(`[TMH_Imgur] ${functionName} (${context}): Uploading image "${options.imageFile.name}" to Imgur...`);
+        const imgurUploadPromise = uploadImageToImgur(options.imageFile).catch(err => {
+            console.error(`[TMH_Imgur] ${functionName} (${context}): Imgur upload failed for "${options.imageFile?.name}".`, err);
+            return null;
+        });
 
-          const { checkAndIncrementUsage } = await import('./usageManager');
-const { openUpgradeModal } = await import('../ui/modalUtils');
+        showTypingIndicatorFor(conversationId, context);
+        const controller = interruptAndTrackAiOperation(connector.id); // Use connector.id for AI operation tracking
+        let aiConversationalReply = "I see you sent an image! What's on your mind about it?";
+        let aiSemanticDescription = "Image analysis was not performed or an error occurred.";
 
-const usageResult = await checkAndIncrementUsage('textMessages');
-if (!usageResult.allowed) {
-    console.log("TMH (Modal): User has reached text message limit. Showing upgrade modal.");
-    openUpgradeModal('text', usageResult.daysUntilReset);
-    if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-    return;
-}
-    // ==========================================================
-    // === FREEMIUM USAGE GATE - END ===
-    // ==========================================================
-            const { imageFile, captionText, isVoiceMemo, audioBlobDataUrl: optionsAudioBlobUrl, skipUiAppend } = options;
-            if (currentModalMessageTargetConnector?.id) clearTypingIndicatorFor(currentModalMessageTargetConnector.id); // <<< ADD THIS LINE
-        
-            const functionName = "sendModalTextMessage";
-            const text = textFromInput?.trim() || ""; // Ensure text is always a string
-    
-            const userMessageTimestamp = options.timestamp || Date.now();
-            const userMessageId = options.messageId || polyglotHelpers.generateUUID();
-    
-            if (!currentModalMessageTargetConnector?.id) {
-                console.error(`TMH.${functionName}: Missing targetConnector.id.`);
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                return;
-            }
-            const targetId = currentModalMessageTargetConnector.id;
-        
-            if (!isVoiceMemo && !imageFile && !text) {
-                console.warn(`TMH.${functionName}: Empty message (not voice memo, no image).`);
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                return;
-            }
-
-            const existingConvoCheck = conversationManager.getConversationById(targetId);
-            const isFirstMessageEver = !existingConvoCheck || (existingConvoCheck.messages?.length || 0) === 0;
-
-            if (isFirstMessageEver) {
-                console.log(`%cTMH: First message in modal for ${targetId}. This will make the conversation official.`, 'color: #17a2b8; font-weight: bold;');
-            }
-
-
-
-            const record = await conversationManager.ensureConversationRecord(targetId, currentModalMessageTargetConnector);
-            const convo = record.conversation as ConversationRecordInStore | null;
-            if (!convo || !convo.connector) {
-                console.error(`TMH.${functionName}: Invalid convo or connector for ID: ${targetId}`);
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                return;
-            }
-            const currentConnector: Connector = convo.connector;
-    
-            // --- Image processing for Modal ---
-            let imageUrlForDisplay_modal: string | undefined = undefined;
-            let imagePartsForGemini_modal: Array<{ inlineData: { mimeType: string; data: string; } }> | undefined = undefined;
-            let imageSemanticDescriptionForStore_modal: string | undefined = undefined;
-  
-            if (imageFile) {
-                console.log(`TMH.${functionName}: Processing image "${imageFile.name}" with caption "${captionText || ''}" for modal.`);
-                let base64StringForStore_modal: string; // Declare here
-
-                try {
-                    base64StringForStore_modal = await polyglotHelpers.fileToBase64(imageFile); // Assign here
-                    const base64DataForApi = base64StringForStore_modal.split(',')[1];
-                    imagePartsForGemini_modal = [{ inlineData: { mimeType: imageFile.type, data: base64DataForApi } }];
-                    console.log(`TMH.${functionName}: Modal image converted to base64 for AI. MimeType: ${imageFile.type}`);
-
-                    // imageUrlForDisplay_modal will now be the base64 string for storage.
-                    imageUrlForDisplay_modal = base64StringForStore_modal;
-                    // Generate description if no caption, similar to embedded version
-                    const descriptionPromptText = captionText || text || "Describe this image concisely.";
-                    if (aiService.generateTextFromImageAndText && convo.connector) {
-                        const desc = await aiService.generateTextFromImageAndText(
-                            base64DataForApi, 
-                            imageFile.type, 
-                            convo.connector, 
-                            [], 
-                            `Describe this image concisely in one sentence for context. Speak in ${convo.connector.language || 'English'}. Based on the image and the user's text: "${descriptionPromptText}"`,
-                            aiApiConstants.PROVIDERS.TOGETHER
-                        );
-                        if (desc && typeof desc === 'string' && !desc.startsWith("[")) {
-                            imageSemanticDescriptionForStore_modal = desc.trim();
-                            console.log(`TMH.${functionName}: AI generated image description (modal): "${imageSemanticDescriptionForStore_modal}"`);
-                        } else if (desc && typeof desc === 'string' && desc.startsWith("[")){
-                           console.warn(`TMH.${functionName}: AI description (modal) was a placeholder/error: "${desc}"`);
-                        }
-                      
-                    }
-                    console.log(`TMH.${functionName}: Adding a short delay before main AI reply to avoid rate limits...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2000 ms = 2 seconds
-
-                } catch (error) {
-                    console.error(`TMH.${functionName}: Error processing modal image:`, error);
-                    uiUpdater.appendToMessageLogModal?.("Error processing image.", 'connector-error', { isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                    if (imageUrlForDisplay_modal) URL.revokeObjectURL(imageUrlForDisplay_modal);
-                    if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                    return;
-                }
-            }
-          
-            // --- Define final content for UI and Store for Modal ---
-            let textForDisplayAndStore: string;
-            let typeForStore: string = 'text';
-            const finalMessageExtraData: Partial<MessageInStore> = { // Use a single, well-defined extraData object
-                id: userMessageId,
-                timestamp: userMessageTimestamp
-            };
-
-            if (imageFile) {
-                typeForStore = 'image';
-            
-                let userProvidedTextForImage_modal: string | null = null;
-                if (captionText) {
-                    userProvidedTextForImage_modal = captionText.trim();
-                } else if (text && imageFile) {
-                    userProvidedTextForImage_modal = text.trim();
-                }
-                
-                textForDisplayAndStore = userProvidedTextForImage_modal || ""; // <<< FIX: Default to empty string if null
-            
-                finalMessageExtraData.content_url = imageUrlForDisplay_modal;
-                finalMessageExtraData.imagePartsForGemini = imagePartsForGemini_modal;
-                if (imageSemanticDescriptionForStore_modal) {
-                    finalMessageExtraData.imageInitialDescription = imageSemanticDescriptionForStore_modal;
-                }
-            } else if (isVoiceMemo) {
-                typeForStore = 'voice_memo';
-                textForDisplayAndStore = text; // text is already string ("" if empty)
-                finalMessageExtraData.isVoiceMemo = true;
-                finalMessageExtraData.audioBlobDataUrl = optionsAudioBlobUrl;
-            } else { // Plain text message
-                textForDisplayAndStore = text; // text is already string ("" if empty)
-            }
-        
-            // Append User's Message to Modal UI (if not skipped)
-            if (!skipUiAppend) {
-                console.log(`TMH.${functionName}: Appending user message to UI (Modal). Text: "${textForDisplayAndStore.substring(0,30)}", Image: ${!!imageUrlForDisplay_modal}`);
-                uiUpdater.appendToMessageLogModal?.( // Corrected to appendToMessageLogModal
-                    textForDisplayAndStore,
-                    'user',
-                    {
-                        timestamp: userMessageTimestamp,
-                        messageId: userMessageId,
-                        imageUrl: imageUrlForDisplay_modal // Use modal specific image URL
-                    }
-                );
-            }
-    
-            // Add User's Message to Conversation Store
-            await conversationManager.addMessageToConversation(
-                targetId, // Correct target ID for modal
-                'user',
-                textForDisplayAndStore,
-                typeForStore,
-                userMessageTimestamp,
-                finalMessageExtraData // Use the consolidated extra data
-            );
-            if (isFirstMessageEver) {
-                console.log(`%cTMH: First message sent. Rendering active chat list to include new conversation.`, 'color: #28a745; font-weight: bold;');
-                getChatOrchestrator()?.renderCombinedActiveChatsList();
-            }
-            // UI updates for modal input (only if this function initiated the send)
-            if (!skipUiAppend) {
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = true;
-                uiUpdater.resetMessageModalInput?.();
-            }
-    
-            const thinkingMsgOptions: ChatMessageOptions = {
-                senderName: currentConnector.profileName?.split(' ')[0], avatarUrl: currentConnector.avatarModern, isThinking: true
-            };
-            // Ensure thinking message is appended to modal log
-            const thinkingMsg = uiUpdater.appendToMessageLogModal?.(`${thinkingMsgOptions.senderName || 'Partner'} is typing...`, 'connector-thinking', thinkingMsgOptions);
-
-            // =================== TWIN TAG: MODAL-USER ===================
-            if (window.conversationManager && window.memoryService?.processNewUserMessage) {
-                const userTextToProcess = textForDisplayAndStore || (captionText || "");
-                if (userTextToProcess.trim()) {
-                    console.log(`[CEREBRUM_WRITE] ✍️ Sending USER'S message to memory service for analysis (modal)...`);
-                    
-                    // Fetch history for modal context
-                    const convoRecord = await window.conversationManager.getConversationById(targetId);
-                    const recentHistory = convoRecord?.messages.slice(-10) || []; // Increased slice for better context
-            
-                    await window.memoryService.processNewUserMessage(
-                        userTextToProcess,
-                        targetId,
-                        'one_on_one',
-                        recentHistory
-                    );
-                    console.log(`[CEREBRUM_WRITE] ✅ USER'S message analysis complete (modal).`);
-                }
-            }
-
-
-
-
-            let aiRespondedSuccessfully = false;
-            const controller = interruptAndTrackAiOperation(targetId);
+        if (base64DataForAI && mimeTypeForAI) {
             try {
-                // Determine prompt for AI, considering potential image context
-                let promptForAI_modal: string;
-                let aiResponse: string | null | object; // Declare response object here
-
-                if (imageFile) { // User sent an image (with or without caption)
-                    const userProvidedTextWithImage_modal = captionText || text || "";
-                    const preamble = getMultimodalPreamble(currentConnector);
-                    
-                    // Construct promptForAI_modal for the 2-part image reply
-                    promptForAI_modal = `${preamble}
-                    
-                    The user has shared an image in our chat. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-                    
-                    Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
-                    - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                    - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction.
-                    - AVOID generic phrases like "That's a cool picture."
-                    - INSTEAD, try one of these persona-driven approaches:
-                      - Make a creative observation that reflects your personality.
-                      - Ask a question driven by your curiosity and interests.
-                      - Share a brief, relevant memory or thought from your own life experiences.
-                    - If the user wrote a caption ("${userProvidedTextWithImage_modal || 'none'}"), weave it into your comment naturally.
-                    
-                    Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
-                    [IMAGE_DESCRIPTION_START]
-                 A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
-                    [IMAGE_DESCRIPTION_END]
-                    
-                    Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-                    if (imagePartsForGemini_modal && imagePartsForGemini_modal[0]?.inlineData?.data) {
-                        console.log(`TMH.${functionName}: Calling AI (generateTextFromImageAndText) for IMAGE reply (modal).`);
-                        aiResponse = await (aiService.generateTextFromImageAndText as any)(
-                            imagePartsForGemini_modal[0].inlineData.data,
-                            imageFile.type,
-                            currentConnector,
-                            getHistoryForAiCall(undefined, true),    // EMPTY HISTORY for image reply
-                            promptForAI_modal,
-                            aiApiConstants.PROVIDERS.TOGETHER,
-                            controller.signal // <<< ADD THIS
-                        );
-                    } else {
-                        console.error(`TMH.${functionName}: imageFile present but imagePartsForGemini_modal data missing.`);
-                        throw new Error("Missing image data for AI call (modal)."); // Or handle gracefully
-                    }
-                } else { // User sent TEXT-ONLY
-                    promptForAI_modal = textForDisplayAndStore; // This is the user's text message
-                    console.log(`TMH.${functionName}: Calling AI (generateTextMessage) for TEXT reply (modal).`);
-                
-                    // --- THIS IS THE FIX: Rebuild history right before the AI call ---
-                    console.log(`%c[TMH Pre-AI] 🧠 Rebuilding prompt with latest memories for [${targetId}] (modal)...`, 'color: #6610f2; font-weight: bold;');
-                    let historyForAiCall = await conversationManager.getGeminiHistoryForConnector(targetId);
-                    console.log(`%c[TMH Pre-AI] ✅ Prompt rebuild complete (modal).`, 'color: #28a745; font-weight: bold;');
-                
-                    // Check if the PREVIOUS message in the store was a call event.
-                    if (convo.messages.length >= 2) {
-                        const secondToLastMessage = convo.messages[convo.messages.length - 2];
-                        if (secondToLastMessage && secondToLastMessage.type === 'call_event') {
-                            console.log("TMH (Modal): Call event detected as the PREVIOUS message. Injecting context into AI history.");
-                            historyForAiCall.push({
-                                role: 'user', 
-                                parts: [{ text: "[A voice call took place between you and the user.]" }]
-                            });
-                        }
-                    }
-                    // --- END: CONTEXT INJECTION FOR CALLS ---
-    
-                   // Change it to this in BOTH places
-aiResponse = await (aiService.generateTextMessage as any)(
-    promptForAI_modal,
-    currentConnector,
-    historyForAiCall,
-    null    , // <<< THE FIX. The coach is now in control.
-    false,
-    'one-on-one',
-    controller.signal
-);
-                }
-                const aiResponseText = typeof aiResponse === 'string' ? aiResponse : null;
-    
-                if (thinkingMsg?.remove) thinkingMsg.remove();
-    
-                const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseText || "");
-                const isBlockedResponse = typeof aiResponseText === 'string' && aiResponseText.startsWith("(My response was blocked:");
-    
-                if (aiResponseText === null) {
-                     uiUpdater.appendToMessageLogModal?.("Sorry, I couldn't get a response.", 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                } else if (isHumanError || isBlockedResponse) {
-                    uiUpdater.appendToMessageLogModal?.(aiResponseText, 'connector-error', { isError: true, isSystemLikeMessage: isHumanError, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                } else { // This is where the successful AI response is handled
-                    // Check if the user's message included an image file.
-                    if (imageFile && typeof aiResponseText === 'string') {
-                        // --- MODAL IMAGE PATH ---
-                        let conversationalReply_modal = aiResponseText;
-                        let extractedImageDescription_modal: string | undefined = undefined;
-                        const descStartTag = "[IMAGE_DESCRIPTION_START]";
-                        const descEndTag = "[IMAGE_DESCRIPTION_END]";
-                        const startIndex = aiResponseText.indexOf(descStartTag);
-                        const endIndex = aiResponseText.indexOf(descEndTag);
-                        
-                        if (startIndex !== -1 && endIndex > startIndex) {
-                            extractedImageDescription_modal = aiResponseText.substring(startIndex + descStartTag.length, endIndex).trim();
-                            conversationalReply_modal = aiResponseText.substring(0, startIndex).trim();
-                        }
-                
-                        const processedText = intelligentlySeparateText(conversationalReply_modal, currentConnector, { probability: 1.0 });
-                        const responseLines = processedText.split('\n').filter(line => line.trim());
-                        await playAiResponseScene(responseLines, currentConnector.id, currentConnector, 'modal');
-                
-                        // <<< FIX: All logic for updating the message is now self-contained and uses 'currentConnector.id'
-                        if (extractedImageDescription_modal && userMessageId) {
-                            const convoRecordForUpdate = conversationManager.getConversationById(currentConnector.id);
-                            if (convoRecordForUpdate?.messages) {
-                                // <<< FIX: Added explicit type 'MessageInStore' for parameter 'm'
-                                const msgIndex = convoRecordForUpdate.messages.findIndex((m: MessageInStore) => m.id === userMessageId);
-                                if (msgIndex !== -1) {
-                                    convoRecordForUpdate.messages[msgIndex].imageSemanticDescription = extractedImageDescription_modal;
-                                    window.convoStore?.updateConversationProperty(currentConnector.id, 'messages', [...convoRecordForUpdate.messages]);
-                                    window.convoStore?.saveAllConversationsToStorage();
-                                }
-                            }
-                        }
-                    } else if (aiResponseText) {
-
-                        //  =================== TWIN TAG: MODAL-AI ===================
-                        if (window.memoryService && window.memoryService.processNewUserMessage) {
-                            console.log(`[CEREBRUM_WRITE] ✍️ Sending AI's own response to memory service for analysis (modal)...`);
-                            window.memoryService.processNewUserMessage(
-                                aiResponseText,
-                                targetId, // Correct ID for modal
-                                'ai_invention'
-                            );
-                       }
-
-
-
-                        // --- MODAL TEXT-ONLY PATH ---
-                        console.log(`[Auto-Separator] Raw AI Text (Modal): "${aiResponseText}"`);
-                        const processedText = intelligentlySeparateText(aiResponseText, currentConnector, { probability: 1.0 });
-                        console.log(`[Auto-Separator] Processed Text (Modal): "${processedText.replace(/\n/g, '\\n')}"`);
-                        
-                        const responseLines = processedText.split('\n').filter(line => line.trim());
-                    
-                        // CORRECT: Use the connector's ID and 'modal' context
-                        await playAiResponseScene(responseLines, currentConnector.id, currentConnector, 'modal');
-                    }
-                
-                    aiRespondedSuccessfully = true;
-                }
-            } catch (e: any) {
-                clearTypingIndicatorFor(targetId); // <<< ADD THIS LINE
-                if (e.name === 'AbortError') {
-                    console.log(`%c[Interrupt] AI request for modal chat ${targetId} was successfully aborted.`, 'color: #ff9800;');
-                } else {
-                    console.error(`TMH.${functionName}: Error during AI response generation (modal):`, e);
-                    uiUpdater.appendToMessageLogModal?.(`Error: ${polyglotHelpers.sanitizeTextForDisplay(e.message)}`, 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                }
-                if (thinkingMsg?.remove) thinkingMsg.remove(); // Remove thinking message in both cases
-            } finally {
-                // Clean up the controller from the map
-                if (activeAiOperations.get(targetId) === controller) {
-                    activeAiOperations.delete(targetId);
+                const preamble = getMultimodalPreamble(connector);
+                let recentChatHistoryText = "";
+                // Get fresh conversation messages for AI context
+                const currentConversationMessages = conversationManager.getConversationById(conversationId)?.messages;
+                if (currentConversationMessages) {
+                    const recentMessages = currentConversationMessages.slice(-10);
+                    recentChatHistoryText = recentMessages.map(msg => {
+                        const speakerName = msg.sender === 'user' ? 'You' : (connector.profileName || 'Partner');
+                        const messageText = msg.text || (msg.type === 'image' ? '[image]' : (msg.type === 'voice_memo' ? '[voice memo]' : '[system event]'));
+                        return `[${speakerName}]: ${messageText}`;
+                    }).join('\n');
                 }
 
-                // The rest of your existing finally block
-                if (!skipUiAppend) {
-                    if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                }
-                if (aiRespondedSuccessfully) {
-                    const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
-                    if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && targetId) {
-                        try {
-                            await window.memoryService.markInteraction(targetId, currentUserId);
-                        } catch (e) { console.error(`TMH.${functionName}: Error marking interaction for ${targetId}:`, e); }
-                    }
-                }
-                getChatOrchestrator()?.notifyNewActivityInConversation?.(targetId);
-            }
-        } // End of sendModalTextMessage
-
-        async function handleModalImageUpload(event: Event, currentModalMessageTargetConnector: Connector | null): Promise<void> {
-            const functionName = "handleModalImageUpload";
-            const target = event.target as HTMLInputElement;
-            const file = target.files?.[0];
-            const targetId = currentModalMessageTargetConnector?.id;
-
-            if (!file) { if (target) target.value = ''; return; }
-            if (!targetId || !currentModalMessageTargetConnector) { console.error(`TMH.${functionName}: Missing targetId or connector.`); if (target) target.value = ''; return; }
-
-            const record = await conversationManager.ensureConversationRecord(targetId, currentModalMessageTargetConnector);
-            const convo = record.conversation as ConversationRecordInStore | null;
-            if (!convo || !convo.connector) {
-                console.error(`TMH.${functionName}: Invalid convo or connector for ID: ${targetId}`);
-                if (target) target.value = ''; return;
-            }
-            const currentConnector: Connector = convo.connector;
-
-            if (file.size > 4 * 1024 * 1024) { alert("Image too large (max 4MB)."); if (target) target.value = ''; return; }
-
-            const reader = new FileReader();
-
-            reader.onloadend = async () => {
-                const resultString = reader.result as string;
-                const base64DataForApi = resultString.split(',')[1];
-                const dataUrlForDisplay = resultString;
-                const imagePlaceholderTextForStore = "[User sent an image via direct upload]"; // Or similar
-
-                uiUpdater.appendToMessageLogModal?.("", 'user', { imageUrl: dataUrlForDisplay, timestamp: Date.now() });
-                
-                const imageMessageId = polyglotHelpers.generateUUID(); // ID for the user's image message being processed
-                const imageTimestamp = Date.now(); // Timestamp for the user's image message being processed
-
-                await conversationManager.addMessageToConversation(
-                    targetId, 'user', imagePlaceholderTextForStore, 'image', imageTimestamp,
-                    { 
-                        id: imageMessageId, // ensure 'id' field is used
-                        content_url: dataUrlForDisplay, 
-                        imagePartsForGemini: [{ inlineData: { mimeType: file.type, data: base64DataForApi } }] 
-                    }
-                );
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = true;
-                const thinkingMsgOptions: ChatMessageOptions = {
-                    senderName: currentConnector.profileName?.split(' ')[0], avatarUrl: currentConnector.avatarModern, isThinking: true
-                };
-                const thinkingMsg = uiUpdater.appendToMessageLogModal?.(`${thinkingMsgOptions.senderName || 'Partner'} is looking...`, 'connector-thinking', thinkingMsgOptions);
-                let aiRespondedSuccessfully = false; // Scoped to onloadend
-
-                try {
-                    // Re-using the detailed prompt from handleEmbeddedImageUpload for consistency and better descriptions
-                  // REPLACE WITH THIS BLOCK
-
-                  const preamble = getMultimodalPreamble(currentConnector);
-
-                  const PromptForImageAndDescription = `${preamble}
-                  
-                  The user has just sent an image with no accompanying text. Your response MUST have two distinct parts. Speak ONLY in ${currentConnector.language}.
-                  
-                  Part 1: Your Conversational Comment (as ${currentConnector.profileName}):
-                  - React to this image based on YOUR specific personality. You are: **${currentConnector.personalityTraits?.join(', ') || 'a unique individual'}**.
-                  - Let your interests (**${currentConnector.interests?.join(', ') || 'your passions'}**) guide your reaction.
-                  - AVOID generic phrases like "What's this?" or "Nice photo."
-                  - Your goal is to start a conversation. Try one of these persona-driven approaches:
-                    - Make a creative observation that reflects your personality.
-                    - Ask an open-ended question driven by your curiosity and interests.
-                    - Share a brief, relevant memory or thought from your own life experiences.
-
-Part 2: CRITICAL - After your conversational comment, you MUST include a special section formatted EXACTLY like this:
+                const promptForAI = `
+${preamble}
+**Recent Conversation Context (Last few messages):**
+${recentChatHistoryText || "[No recent messages before this image.]"}
+---
+A user has now sent you an image.
+The user's caption for this new image is: "${userMessageText || 'No caption provided.'}"
+**CRITICAL LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in ${connector.language}. Do not use any other language unless told by the user**
+**Your Current Task:**
+You must respond to this new image and caption. Your response MUST be structured precisely as follows:
+1.  First, provide your natural, in-character conversational reply. This reply should be based on the image content you've analyzed and the user's caption. It must reflect what your persona (${connector.profileName}) would actually say in the chat. Consider your persona's interests, personality, and the recent conversation context when crafting this reply.
+2.  After your conversational reply, you MUST include a separator line consisting of exactly three hyphens: \`---\`
+3.  Immediately following the "---" separator, you MUST provide a detailed, factual, and objective third-person description of the image in ENGLISH. This description is strictly for database and accessibility purposes.
+    This factual description MUST be enclosed in special tags: \`[IMAGE_DESCRIPTION_START]\` at the beginning and \`[IMAGE_DESCRIPTION_END]\` at the end.
+    Inside these tags, describe: Main Subject, Setting/Background, Key Objects/Elements, Colors & Lighting, and any identifiable People/Characters/Celebrities (e.g., Taylor Swift, Barack Obama, LeBron James, Bugs Bunny).
+**Critical Output Language Reminder:** Your conversational reply (Part 1) MUST be ONLY in ${connector.language}. The factual description (Part 3) MUST be in ENGLISH. Adherence to this is paramount.
+Example of the required output structure (if language was English):
+That's a stunning photo of the Grand Canyon! The way the light hits the canyon walls is just breathtaking. Makes me want to go hiking there. What time of day did you take this?
+---
 [IMAGE_DESCRIPTION_START]
-A concise, factual, and objective description of the visual content of the image itself. Describe only what you visually see in THIS SPECIFIC IMAGE. If there are recognizable people, landmarks, or specific types of places or famous person (e.g., "a Parisian cafe," "Times Square," "a basketball court", "Barack Obama"), try to identify them if you are reasonably confident. Do NOT refer to the user's caption or my previous description (if any) within this factual description part.
+A wide-angle photograph of the Grand Canyon at what appears to be late afternoon. The canyon walls show layers of red, orange, and brown rock. The sky is mostly clear with some wispy clouds. Shadows are beginning to lengthen across the canyon floor. No people are visible in this shot.
 [IMAGE_DESCRIPTION_END]
+IMPORTANT: Do NOT include the phrases "PART 1", "PART 2", or any instructional numbering (like "1.", "2.") in your actual output. Just follow the structure: conversational reply, then "---", then the tagged factual description.
+                `;
 
-Example: "Oh, I love the atmosphere in this photo! It feels so calming. [IMAGE_DESCRIPTION_START]A photo of a misty forest path with tall trees.[IMAGE_DESCRIPTION_END]"
-Your conversational comment (Part 1) MUST come before the [IMAGE_DESCRIPTION_START] tag.`;
-                    const relevantHistoryForAi = getHistoryForAiCall(undefined, true); // <<< CORRECTED
-                    const aiResponse = await (aiService.generateTextFromImageAndText as any)(
-                        base64DataForApi, 
-                        file.type, 
-                        currentConnector, 
-                        relevantHistoryForAi, 
-                        PromptForImageAndDescription, 
-                        aiApiConstants.PROVIDERS.TOGETHER
-                    );
-                    if (thinkingMsg?.remove) thinkingMsg.remove();
+                const rawAiResponse = await aiService.generateTextFromImageAndText(
+                    base64DataForAI, mimeTypeForAI, connector,
+                    getHistoryForAiCall(await conversationManager.getGeminiHistoryForConnector(conversationId), true),
+                    promptForAI,
+                    undefined, controller.signal
+                );
 
-                    let conversationalReply: string | null = null;
-                    let extractedImageDescription: string | undefined = undefined;
-
-                    if (typeof aiResponse === 'string') {
+                if (typeof rawAiResponse === 'string' && rawAiResponse.trim()) {
+                    const separator = "---";
+                    const separatorIndex = rawAiResponse.indexOf(separator);
+                    if (separatorIndex !== -1) {
+                        aiConversationalReply = rawAiResponse.substring(0, separatorIndex).trim();
+                        const descriptionPart = rawAiResponse.substring(separatorIndex + separator.length).trim();
                         const descStartTag = "[IMAGE_DESCRIPTION_START]";
                         const descEndTag = "[IMAGE_DESCRIPTION_END]";
-                        const startIndex = aiResponse.indexOf(descStartTag);
-                        const endIndex = aiResponse.indexOf(descEndTag);
-
-                        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-                            extractedImageDescription = aiResponse.substring(startIndex + descStartTag.length, endIndex).trim();
-                            conversationalReply = aiResponse.substring(0, startIndex).trim();
-                        } else {
-                            conversationalReply = aiResponse.trim();
-                        }
-                    }
-
-                    const aiResponseTextForDisplay = conversationalReply;
-                    const isHumanError = (aiApiConstants.HUMAN_LIKE_ERROR_MESSAGES || []).includes(aiResponseTextForDisplay || "");
-
-                    if (aiResponseTextForDisplay === null) {
-                        uiUpdater.appendToMessageLogModal?.("Sorry, I couldn't process the image.", 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName});
-                    } else if (isHumanError) {
-                        uiUpdater.appendToMessageLogModal?.(aiResponseTextForDisplay, 'connector-error', { isError: true, isSystemLikeMessage: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
+                        const descStartIndex = descriptionPart.indexOf(descStartTag);
+                        const descEndIndex = descriptionPart.lastIndexOf(descEndTag);
+                        if (descStartIndex !== -1 && descEndIndex > descStartIndex) {
+                            aiSemanticDescription = descriptionPart.substring(descStartIndex + descStartTag.length, descEndIndex).trim();
+                        } else { aiSemanticDescription = descriptionPart; }
                     } else {
-                        const processedText = intelligentlySeparateText(aiResponseTextForDisplay, currentConnector, { probability: 1.0 });
-                        const responseLines = processedText.split('\n').filter(line => line.trim());
-                        await playAiResponseScene(responseLines, targetId, currentConnector, 'modal');
-                        aiRespondedSuccessfully = true;
+                        aiConversationalReply = rawAiResponse.trim();
+                        aiSemanticDescription = "AI did not provide a structured description (no separator).";
                     }
-
-                    // Update original user image message with AI description (if extracted)
-                    if (extractedImageDescription) {
-                        const userImageMessageOriginalId = imageMessageId;
-                        const currentConvoRecord = conversationManager.getConversationById(targetId);
-                         if (currentConvoRecord && currentConvoRecord.messages) {
-                            const originalMsgIndex = currentConvoRecord.messages.findIndex(m => m.id === userImageMessageOriginalId);
-                            if (originalMsgIndex !== -1) {
-                                currentConvoRecord.messages[originalMsgIndex].imageSemanticDescription = extractedImageDescription;
-                                if (window.convoStore?.updateConversationProperty && window.convoStore.saveAllConversationsToStorage) {
-                                     window.convoStore.updateConversationProperty(targetId, 'messages', [...currentConvoRecord.messages]);
-                                     window.convoStore.saveAllConversationsToStorage();
-                                     console.log(`TMH.${functionName}: Updated user image message ${userImageMessageOriginalId} with description in store (modal).`);
-                                } else {
-                                    console.warn(`TMH.${functionName}: convoStore update methods not available to save image description (modal).`);
-                                }
-                            } else {
-                                 console.warn(`TMH.${functionName}: Could not find original user image message with ID ${userImageMessageOriginalId} to update description (modal).`);
-                            }
-                        }
-                    }
-
-                } catch (e: any) {
-                    if (thinkingMsg?.remove) thinkingMsg.remove();
-                    uiUpdater.appendToMessageLogModal?.(`Error with image: ${polyglotHelpers.sanitizeTextForDisplay(e.message)}`, 'connector-error', {isError: true, avatarUrl: currentConnector.avatarModern, senderName: currentConnector.profileName });
-                } finally {
-                    if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-                    if(aiRespondedSuccessfully) {
-                        const currentUserId = localStorage.getItem('polyglot_current_user_id') || 'default_user';
-                        if (window.memoryService && typeof window.memoryService.markInteraction === 'function' && targetId) {
-                             try {
-                                console.log(`TMH.${functionName}: Marking interaction (after successful AI image response) for ${targetId} with user ${currentUserId}.`);
-                                await window.memoryService.markInteraction(targetId, currentUserId);
-                            } catch (e) {
-                                console.error(`TMH.${functionName}: Error marking interaction for ${targetId}:`, e);
-                            }
-                        }
-                    }
-                    getChatOrchestrator()?.notifyNewActivityInConversation?.(targetId);
-                    if (target) target.value = '';
+                } else { aiConversationalReply = "I couldn't quite process that image right now."; }
+            } catch (error: any) {
+                if (error.name === 'AbortError') console.log(`${functionName}: AI image processing aborted.`);
+                else {
+                    console.error(`${functionName}: Error during AI image processing:`, error);
+                    aiConversationalReply = "Sorry, I had a bit of trouble looking at that image.";
                 }
-            }; 
+            }
+        } else { aiConversationalReply = "I couldn't quite make out the image you sent (processing error before AI)."; }
 
-            reader.onerror = () => {
-                alert("Error reading image.");
-                if (target) target.value = '';
-                if (domElements.messageSendBtn) (domElements.messageSendBtn as HTMLButtonElement).disabled = false;
-            };
+        resolvedImgurUrl = await imgurUploadPromise;
+        if (resolvedImgurUrl) console.log(`[TMH_Imgur] (${context}) Imgur upload complete for user image: ${resolvedImgurUrl}`);
+        else if (options.imageFile) console.warn(`[TMH_Imgur] (${context}) Imgur upload failed for "${options.imageFile.name}".`);
 
-            reader.readAsDataURL(file);
+        await conversationManager.addMessageToConversation(
+            conversationId, userMessageText, 'image',
+            { imageUrl: resolvedImgurUrl, imageSemanticDescription: aiSemanticDescription, messageIdToUse: optimisticMessageId }
+        );
+        console.log(`[TMH] (${context}) User's image message (AppID: ${optimisticMessageId}) with caption, Imgur URL, and AI description saved.`);
+
+        clearTypingIndicatorFor(conversationId);
+        if (aiConversationalReply) {
+            const responseLines = intelligentlySeparateText(aiConversationalReply, connector, { probability: 1.0 }).split('\n').filter(Boolean);
+            if (responseLines.length > 0) await playAiResponseScene(responseLines, conversationId, connector, context);
+            else if (base64DataForAI) await playAiResponseScene(["Understood.", "Interesting image!"], conversationId, connector, context);
         }
+        if (activeAiOperations.get(connector.id) === controller) activeAiOperations.delete(connector.id);
+        // ***** END OF IMAGE SENDING LOGIC *****
+
+    } else {
+        // ***** TEXT-ONLY or VOICE MEMO LOGIC *****
+        // voice_memo_handler.ts calls this function with:
+        // - targetIdentifier = connector.id
+        // - options.skipUiAppend = true (VMH already appended user's VM to UI)
+        // - options.isVoiceMemo = true
+        // - options.audioSrc = supabaseUrl (of user's recording)
+        // - textFromInput = transcript
+
+        if (!userMessageText.trim() && !options.isVoiceMemo) { // For pure text, don't send if empty
+            console.log(`[TMH] (${context}) User sent empty text message. Not saving, not calling AI.`);
+            return;
+        }
+        
+        // Save User's Text/Voice Memo Message to Firestore
+        // This is important for voice memos too, as VMH only does UI append.
+        let messageTypeForSave: 'text' | 'voice_memo' = 'text';
+        let extraDataForSave: { messageIdToUse: string; content_url?: string | null } = {
+            messageIdToUse: optimisticMessageId, // This links VMH's UI optimistic ID with the Firestore record
+        };
+
+        if (options.isVoiceMemo) {
+            messageTypeForSave = 'voice_memo';
+            if (options.audioSrc) {
+                extraDataForSave.content_url = options.audioSrc; // Supabase URL of user's VM
+            } else {
+                console.warn(`[TMH] (${context}) Voice memo sent but audioSrc missing. Transcript: "${userMessageText.substring(0,30)}"`);
+            }
+        }
+
+        // Only save if there's actual text content OR if it's a voice memo (which implies content via audioSrc)
+        if (userMessageText.trim() || messageTypeForSave === 'voice_memo') {
+            await conversationManager.addMessageToConversation(
+                conversationId, userMessageText, messageTypeForSave, extraDataForSave
+            );
+            console.log(`[TMH] (${context}) User's ${messageTypeForSave} (AppID: ${optimisticMessageId}) from TMH context saved to Firestore.`);
+        }
+        
+        if (userMessageText.trim() && window.memoryService?.processNewUserMessage) {
+            console.log(`[CEREBRUM_WRITE] ✍️ User spoke in 1-on-1. Sending to Scribe for analysis...`);
+            // We use a "fire and forget" approach here. We don't need to wait for the memory
+            // to be saved before getting the AI's reply.
+            window.memoryService.processNewUserMessage(
+                userMessageText,
+                connector.id, // The ID of the persona hearing the message
+                'one_on_one',
+                [] // History is optional for the Scribe's 1-on-1 analysis
+            );
+        }
+        // AI Response for Text/Voice Memo Transcript
+        showTypingIndicatorFor(conversationId, context);
+        const controller = interruptAndTrackAiOperation(connector.id);
+        try {
+            const historyForAI = await conversationManager.getGeminiHistoryForConnector(conversationId);
+            console.log(`[TMH] (${context}) Calling AI for ${messageTypeForSave}. History: ${historyForAI?.length || 0}, Input: "${userMessageText.substring(0,50)}"`);
+
+            const aiResponseText = await aiService.generateTextMessage(
+                userMessageText, connector, getHistoryForAiCall(historyForAI, false),
+                undefined, false, 'one-on-one', controller.signal
+            );
+            clearTypingIndicatorFor(conversationId);
+
+            if (aiResponseText && typeof aiResponseText === 'string') {
+                const voiceMsgStartTag = "[VOICE_MESSAGE_START]";
+                const voiceMsgEndTag = "[VOICE_MESSAGE_END]";
+
+                if (aiResponseText.includes(voiceMsgStartTag) && aiResponseText.includes(voiceMsgEndTag)) {
+                    // AI wants to send a voice message
+                    const startIndex = aiResponseText.indexOf(voiceMsgStartTag) + voiceMsgStartTag.length;
+                    const endIndex = aiResponseText.indexOf(voiceMsgEndTag);
+                    const textForTts = aiResponseText.substring(startIndex, endIndex).trim();
+                    console.log(`[TMH] (${context}) AI response is voice intent: "${textForTts.substring(0,50)}..."`);
+
+                    if (textForTts) {
+                        const geminiTts = window.geminiTtsService as GeminiTtsService | undefined;
+                        if (geminiTts && geminiTts.getTTSAudio) {
+                            showTypingIndicatorFor(conversationId, context);
+                    
+                            // --- MODIFICATION TO DETERMINE LANGUAGE CODE FOR TTS API ---
+                            let langCodeForTtsApi = connector.languageCode; // Default to the connector's primary language BCP-47 code
+                    
+                            // Check if there's a language-specific override for the current connector language
+                            if (connector.languageSpecificCodes && connector.languageSpecificCodes[connector.language]) {
+                                const langSpecifics = connector.languageSpecificCodes[connector.language];
+                                if (langSpecifics.liveApiSpeechLanguageCodeOverride) {
+                                    langCodeForTtsApi = langSpecifics.liveApiSpeechLanguageCodeOverride;
+                                    console.log(`[TMH] TTS: Using language override for API: ${langCodeForTtsApi} (Original: ${connector.languageCode}) for voice ${connector.liveApiVoiceName || 'default'}`);
+                                }
+                            }
+                            // --- END OF MODIFICATION ---
+                    
+                            const ttsResult = await geminiTts.getTTSAudio(
+                                textForTts, 
+                                langCodeForTtsApi, // Pass the potentially overridden language code
+                                connector.liveApiVoiceName || undefined // Pass the persona's voice name
+                                // stylePrompt is not used in the current Gemini TTS payload, so pass undefined or null
+                            );
+                            clearTypingIndicatorFor(conversationId);
+                    
+                            if (ttsResult?.audioBase64 && ttsResult.mimeType) {
+                                let audioBlobToUpload: Blob | null = null;
+                                let finalMimeTypeForUpload = ttsResult.mimeType;
+                                let finalFileExtension = 'bin'; 
+                            
+                                if (ttsResult.mimeType.toLowerCase().startsWith('audio/l16')) {
+                                    console.log(`[TMH] AI TTS returned L16 data. Attempting to convert to WAV. Original Mime: ${ttsResult.mimeType}`);
+                                    
+                                    // Step 1: Decode base64 to a Blob of L16
+                                    const rawL16Blob = base64ToBlob(ttsResult.audioBase64, ttsResult.mimeType); 
+                                    
+                                    // Step 2: Convert that Blob's ArrayBuffer to Uint8Array
+                                    const l16ArrayBuffer = await rawL16Blob.arrayBuffer();
+                                    const l16Uint8Array = new Uint8Array(l16ArrayBuffer);
+                            
+                                    // Step 3: Convert L16 Uint8Array to WAV Blob using the imported function
+                                    audioBlobToUpload = convertL16ToWavBlob(l16Uint8Array, ttsResult.mimeType); 
+                                    
+                                    if (audioBlobToUpload) {
+                                        finalMimeTypeForUpload = 'audio/wav';
+                                        finalFileExtension = 'wav';
+                                        console.log(`[TMH] Successfully converted L16 to WAV. New blob size: ${audioBlobToUpload.size}`);
+                                    } else {
+                                        console.error("[TMH] L16 to WAV conversion failed. Will attempt to upload raw L16 data.");
+                                        audioBlobToUpload = rawL16Blob; // Fallback to original L16 blob
+                                        const parts = ttsResult.mimeType.split(';')[0].split('/');
+                                        if (parts.length === 2 && parts[1]) finalFileExtension = parts[1].toLowerCase();
+                                    }
+                                } else {
+                                    console.log(`[TMH] AI TTS returned non-L16 data: ${ttsResult.mimeType}. Uploading as is.`);
+                                    audioBlobToUpload = base64ToBlob(ttsResult.audioBase64, ttsResult.mimeType);
+                                    const parts = ttsResult.mimeType.split(';')[0].split('/');
+                                    if (parts.length === 2 && parts[1]) finalFileExtension = parts[1].toLowerCase();
+                                }
+                            
+                                if (!audioBlobToUpload) {
+                                    console.error("[TMH] Failed to create audio blob for upload.");
+                                    throw new Error("Failed to prepare audio for upload.");
+                                }
+                            
+                                const aiMessageId = polyglotHelpers.generateUUID(); // Ensure polyglotHelpers is in scope
+                                const supabaseFilePath = `ai_voice_memos/${context}/${conversationId}/${aiMessageId}.${finalFileExtension}`;
+                                
+                                // Call uploadAudioToSupabase with the final blob and its explicit mime type
+                                const supabaseAudioUrl = await uploadAudioToSupabase(audioBlobToUpload, supabaseFilePath, finalMimeTypeForUpload);
+                            
+                                if (supabaseAudioUrl) {
+                                    console.log(`[TMH] (${context}) AI voice memo uploaded: ${supabaseAudioUrl} (Type: ${finalMimeTypeForUpload})`);
+                                    
+                                    const appendToLog = context === 'embedded' ? uiUpdater.appendToEmbeddedChatLog : uiUpdater.appendToMessageLogModal; // Ensure uiUpdater is in scope
+                                    if (appendToLog) {
+                                        const messageOptionsForUi: ChatMessageOptions = {
+                                            messageId: aiMessageId,
+                                            timestamp: Date.now(),
+                                            avatarUrl: connector.avatarModern, // Ensure connector is in scope
+                                            senderName: connector.profileName,
+                                            connectorId: connector.id,
+                                            speakerId: connector.id, 
+                                            isVoiceMemo: true,
+                                            audioSrc: supabaseAudioUrl,
+                                        };
+                                        appendToLog(textForTts, 'connector', messageOptionsForUi); // textForTts is the transcript
+                                    }
+                                    
+                                    await conversationManager.addMessageToConversation( // Ensure conversationManager is in scope
+                                        conversationId, 
+                                        textForTts, 
+                                        'voice_memo',
+                                        { 
+                                            content_url: supabaseAudioUrl, 
+                                            senderId: connector.id, 
+                                            messageIdToUse: aiMessageId,
+                                            mime_type: finalMimeTypeForUpload 
+                                        }
+                                    );
+                                    console.log(`[TMH] (${context}) AI voice memo (AppID: ${aiMessageId}) with transcript and URL saved to Firestore. Mime: ${finalMimeTypeForUpload}`);
+                            
+                                } else { 
+                                    console.error(`[TMH] (${context}) Supabase upload failed for AI voice memo. Sending as text.`);
+                                    throw new Error("Supabase upload failed for AI voice memo. Sending as text."); 
+                                }
+                            } else { 
+                                let errorReason = "TTS service did not return audio base64.";
+                                if (ttsResult && !ttsResult.mimeType) errorReason = "TTS service returned audio base64 but was missing mimeType.";
+                                console.error(`[TMH] (${context}) ${errorReason} Sending as text.`);
+                                throw new Error(errorReason); 
+                            }
+                        } else { // Fallback to text
+                            console.warn(`[TMH] (${context}) TTS service not found. Sending AI voice intent as text.`);
+                            const processedText = intelligentlySeparateText(textForTts, connector, { probability: 1.0 });
+                            await playAiResponseScene(processedText.split('\n').filter(Boolean), conversationId, connector, context);
+                        }
+                    } else { // Empty voice tag
+                        console.warn(`[TMH] (${context}) AI voice message tag was empty. Sending fallback text.`);
+                        await playAiResponseScene(["(AI tried to send an empty voice message.)"], conversationId, connector, context);
+                    }
+                } else { // Regular AI text response
+                    const processedText = intelligentlySeparateText(aiResponseText, connector, { probability: 1.0 });
+                    const responseLines = processedText.split('\n').filter(Boolean);
+                    if (responseLines.length > 0) await playAiResponseScene(responseLines, conversationId, connector, context);
+                    else console.log(`[TMH] (${context}) AI returned an empty text response after processing.`);
+                }
+            } else if (aiResponseText === null && !controller.signal.aborted) {
+                console.warn(`${functionName}: AI returned null (not aborted).`);
+                uiUpdater.appendToEmbeddedChatLog?.("I'm not quite sure how to respond to that.", 'connector-error', { messageId: polyglotHelpers.generateUUID(), isError: true, avatarUrl: connector.avatarModern, senderName: connector.profileName, connectorId: connector.id });
+            } else if (controller.signal.aborted) {
+                 console.log(`${functionName}: AI text/voice generation aborted.`);
+            }
+        } catch (error: any) {
+            clearTypingIndicatorFor(conversationId);
+            if (error.name !== 'AbortError') {
+                console.error(`${functionName}: Error during AI response or TTS (text/voice):`, error);
+                await playAiResponseScene([`My apologies, difficulty responding: ${error.message}`], conversationId, connector, context);
+            } else { console.log(`${functionName}: AI operation aborted after error or during processing.`); }
+        } finally {
+            clearTypingIndicatorFor(conversationId); // Final clear
+            if (activeAiOperations.get(connector.id) === controller) {
+                activeAiOperations.delete(connector.id);
+            }
+        }
+    } // ***** END OF TEXT-ONLY or VOICE MEMO LOGIC *****
+}
+
+async function handleEmbeddedImageUpload(event: Event, currentEmbeddedChatTargetId: string | null): Promise<void> {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file || !currentEmbeddedChatTargetId) return;
+
+    console.log("TMH: Image upload for embedded chat is not fully implemented with Firestore storage yet. Placeholder action.");
+    // TODO: Implement Firebase Storage upload here.
+    // 1. Upload file to Firebase Storage.
+    // 2. Get the download URL.
+    // 3. Call conversationManager.addMessageToConversation with type 'image' and the URL in extraData.
+
+    // For now, we just show an alert.
+    alert("Image upload to Firebase Storage is not yet implemented.");
+    target.value = ''; // Reset file input
+}
+
+async function handleModalImageUpload(event: Event, currentModalMessageTargetConnector: Connector | null): Promise<void> {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file || !currentModalMessageTargetConnector) return;
+
+    console.log("TMH: Image upload for modal chat is not fully implemented with Firestore storage yet. Placeholder action.");
+    alert("Image upload to Firebase Storage is not yet implemented.");
+    target.value = ''; // Reset file input
+}
+
+async function sendModalTextMessage(
+    textFromInput: string,
+    currentModalMessageTargetConnector: Connector | null, // Expects a full Connector object
+    options: {
+        skipUiAppend?: boolean;
+        isVoiceMemo?: boolean;
+        audioSrc?: string | null;      // URL of the user's voice memo (e.g., from Supabase)
+        messageId?: string;
+        timestamp?: number;
+        imageFile?: File | null;
+        captionText?: string | null;
+    } = {}
+): Promise<void> {
+    const functionName = "TMH.sendModalTextMessage";
+    const context = 'modal';
+
+    if (!currentModalMessageTargetConnector) {
+        console.warn(`${functionName}: No currentModalMessageTargetConnector provided. Aborting.`);
+        // deps?.uiUpdater.appendToMessageLogModal?.(/* error */); // If deps are available
+        return;
+    }
+
+    const deps = getSafeDeps(functionName);
+    if (!deps) {
+        console.error(`${functionName}: Critical dependencies missing for modal send. Aborting.`);
+        return;
+    }
+    const {
+        conversationManager,
+        aiService,
+        polyglotHelpers,
+        uiUpdater,
+    } = deps;
+
+    const connector = currentModalMessageTargetConnector; // Already a Connector object
+    const conversationId = await conversationManager.ensureConversationRecord(connector);
+
+    if (!conversationId) {
+        console.error(`${functionName}: Failed to ensure/get conversation ID for modal chat with ${connector.id}. Aborting.`);
+        uiUpdater.appendToMessageLogModal?.("Error: Could not initialize this chat session.", 'system-error', { isError: true, messageId: polyglotHelpers.generateUUID() });
+        return;
+    }
+    console.log(`[TMH] (${context}) Sending message. Connector: ${connector.profileName} (${connector.id}), ConversationID: ${conversationId}`);
+
+    const userMessageText = options.imageFile ? (textFromInput.trim() || (options.captionText || "").trim()) : textFromInput.trim();
+    const optimisticMessageId = options.messageId || polyglotHelpers.generateUUID();
+    const optimisticTimestamp = options.timestamp || Date.now();
+
+    // Optimistic UI Append (usually handled by modal's own logic, so skipUiAppend might be true)
+    if (!options.skipUiAppend) {
+        const uiAppendOptions: ChatMessageOptions = { messageId: optimisticMessageId, timestamp: optimisticTimestamp };
+        let messageContentForUI = userMessageText;
+
+        if (options.isVoiceMemo && options.audioSrc) {
+            uiAppendOptions.isVoiceMemo = true; uiAppendOptions.audioSrc = options.audioSrc;
+            messageContentForUI = userMessageText || "[Voice Memo]";
+        } else if (options.imageFile) {
+            uiAppendOptions.imageUrl = URL.createObjectURL(options.imageFile); uiAppendOptions.type = 'image';
+            messageContentForUI = userMessageText;
+        } else if (!userMessageText.trim() && !options.imageFile && !options.isVoiceMemo) {
+            console.log(`[TMH] (${context}) Modal message is empty text. Skipping UI append by TMH and send.`);
+            uiUpdater.resetMessageModalInput?.();
+            return;
+        }
+        if (messageContentForUI.trim() || uiAppendOptions.isVoiceMemo || uiAppendOptions.type === 'image') {
+            uiUpdater.appendToMessageLogModal?.(messageContentForUI, 'user', uiAppendOptions);
+        }
+    }
+
+    if (options.imageFile) {
+        // ***** IMAGE SENDING LOGIC for Modal (similar to embedded) *****
+        console.log(`${functionName}: Processing user image for ${context} chat ${conversationId}.`);
+        let base64DataForAI: string | null = null;
+        let mimeTypeForAI: string | null = null;
+        let resolvedImgurUrl: string | null = null;
+
+        try {
+            base64DataForAI = await polyglotHelpers.fileToBase64(options.imageFile);
+            mimeTypeForAI = options.imageFile.type;
+        } catch (e) {
+            console.error(`${functionName}: Error converting image to base64 (modal).`, e);
+            uiUpdater.appendToMessageLogModal?.("Error preparing image. Please try again.", 'system-error', { messageId: polyglotHelpers.generateUUID(), isError: true });
+        }
+
+        const imgurUploadPromise = uploadImageToImgur(options.imageFile).catch(err => {
+            console.error(`[TMH_Imgur] (${context}): Imgur upload failed for "${options.imageFile?.name}".`, err);
+            return null;
+        });
+
+        showTypingIndicatorFor(conversationId, context);
+        const controller = interruptAndTrackAiOperation(connector.id);
+        let aiConversationalReply = "Let me see that image...";
+        let aiSemanticDescription = "Image analysis was not performed or an error occurred.";
+
+        if (base64DataForAI && mimeTypeForAI) {
+            try {
+                // AI Prompt for image analysis (same as embedded)
+                const preamble = getMultimodalPreamble(connector);
+                let recentChatHistoryText = "";
+                const currentConversationMessages = conversationManager.getConversationById(conversationId)?.messages;
+                if (currentConversationMessages) {
+                    const recentMessages = currentConversationMessages.slice(-10);
+                    recentChatHistoryText = recentMessages.map(msg => {
+                        const speakerName = msg.sender === 'user' ? 'You' : (connector.profileName || 'Partner');
+                        const messageText = msg.text || (msg.type === 'image' ? '[image]' : (msg.type === 'voice_memo' ? '[voice memo]' : '[system event]'));
+                        return `[${speakerName}]: ${messageText}`;
+                    }).join('\n');
+                }
+                 const promptForAI = `
+${preamble}
+**Recent Conversation Context (Last few messages):**
+${recentChatHistoryText || "[No recent messages before this image.]"}
+---
+A user has now sent you an image.
+The user's caption for this new image is: "${userMessageText || 'No caption provided.'}"
+**CRITICAL LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in ${connector.language}. Do not use any other language unless told by the user**
+**Your Current Task:**
+You must respond to this new image and caption. Your response MUST be structured precisely as follows:
+1.  First, provide your natural, in-character conversational reply. This reply should be based on the image content you've analyzed and the user's caption. It must reflect what your persona (${connector.profileName}) would actually say in the chat. Consider your persona's interests, personality, and the recent conversation context when crafting this reply.
+2.  After your conversational reply, you MUST include a separator line consisting of exactly three hyphens: \`---\`
+3.  Immediately following the "---" separator, you MUST provide a detailed, factual, and objective third-person description of the image in ENGLISH. This description is strictly for database and accessibility purposes.
+    This factual description MUST be enclosed in special tags: \`[IMAGE_DESCRIPTION_START]\` at the beginning and \`[IMAGE_DESCRIPTION_END]\` at the end.
+    Inside these tags, describe: Main Subject, Setting/Background, Key Objects/Elements, Colors & Lighting, and any identifiable People/Characters/Celebrities (e.g., Taylor Swift, Barack Obama, LeBron James, Bugs Bunny).
+**Critical Output Language Reminder:** Your conversational reply (Part 1) MUST be ONLY in ${connector.language}. The factual description (Part 3) MUST be in ENGLISH. Adherence to this is paramount.
+Example of the required output structure (if language was English):
+That's a stunning photo of the Grand Canyon! The way the light hits the canyon walls is just breathtaking. Makes me want to go hiking there. What time of day did you take this?
+---
+[IMAGE_DESCRIPTION_START]
+A wide-angle photograph of the Grand Canyon at what appears to be late afternoon. The canyon walls show layers of red, orange, and brown rock. The sky is mostly clear with some wispy clouds. Shadows are beginning to lengthen across the canyon floor. No people are visible in this shot.
+[IMAGE_DESCRIPTION_END]
+IMPORTANT: Do NOT include the phrases "PART 1", "PART 2", or any instructional numbering (like "1.", "2.") in your actual output. Just follow the structure: conversational reply, then "---", then the tagged factual description.
+                `;
+
+                const rawAiResponse = await aiService.generateTextFromImageAndText(
+                    base64DataForAI, mimeTypeForAI, connector,
+                    getHistoryForAiCall(await conversationManager.getGeminiHistoryForConnector(conversationId), true),
+                    promptForAI, undefined, controller.signal
+                );
+                // ... (parse rawAiResponse for aiConversationalReply and aiSemanticDescription, same as embedded)
+                 if (typeof rawAiResponse === 'string' && rawAiResponse.trim()) {
+                    const separator = "---";
+                    const separatorIndex = rawAiResponse.indexOf(separator);
+                    if (separatorIndex !== -1) {
+                        aiConversationalReply = rawAiResponse.substring(0, separatorIndex).trim();
+                        const descriptionPart = rawAiResponse.substring(separatorIndex + separator.length).trim();
+                        const descStartTag = "[IMAGE_DESCRIPTION_START]";
+                        const descEndTag = "[IMAGE_DESCRIPTION_END]";
+                        const descStartIndex = descriptionPart.indexOf(descStartTag);
+                        const descEndIndex = descriptionPart.lastIndexOf(descEndTag);
+                        if (descStartIndex !== -1 && descEndIndex > descStartIndex) {
+                            aiSemanticDescription = descriptionPart.substring(descStartIndex + descStartTag.length, descEndIndex).trim();
+                        } else { aiSemanticDescription = descriptionPart; }
+                    } else {
+                        aiConversationalReply = rawAiResponse.trim();
+                        aiSemanticDescription = "AI did not provide a structured description (no separator).";
+                    }
+                } else { aiConversationalReply = "I couldn't quite process that image (modal)."; }
+
+            } catch (error: any) {
+                // ... (error handling, same as embedded)
+                if (error.name === 'AbortError') console.log(`${functionName}: AI image processing aborted (modal).`);
+                else {
+                    console.error(`${functionName}: Error during AI image processing (modal):`, error);
+                    aiConversationalReply = "Sorry, had trouble with that image (modal).";
+                }
+            }
+        } else { aiConversationalReply = "Couldn't make out the image (modal processing error)."; }
+
+        resolvedImgurUrl = await imgurUploadPromise;
+        // ... (log Imgur URL)
+
+        await conversationManager.addMessageToConversation(
+            conversationId, userMessageText, 'image',
+            { imageUrl: resolvedImgurUrl, imageSemanticDescription: aiSemanticDescription, messageIdToUse: optimisticMessageId }
+        );
+        // ... (log save)
+
+        clearTypingIndicatorFor(conversationId);
+        if (aiConversationalReply) {
+            // ... (playAiResponseScene, same as embedded)
+            const responseLines = intelligentlySeparateText(aiConversationalReply, connector, { probability: 1.0 }).split('\n').filter(Boolean);
+            if (responseLines.length > 0) await playAiResponseScene(responseLines, conversationId, connector, context);
+            else if (base64DataForAI) await playAiResponseScene(["Interesting image!"], conversationId, connector, context);
+        }
+        if (activeAiOperations.get(connector.id) === controller) activeAiOperations.delete(connector.id);
+
+    } else {
+        // ***** TEXT-ONLY or VOICE MEMO LOGIC for Modal (consistent with embedded) *****
+        if (!userMessageText.trim() && !options.isVoiceMemo && !options.imageFile) {
+            console.log(`[TMH] (${context}) Modal message empty. Aborting.`);
+            uiUpdater.resetMessageModalInput?.();
+            return;
+        }
+
+        let messageTypeForSave: 'text' | 'voice_memo' = 'text';
+        let extraDataForSave: { messageIdToUse: string; content_url?: string | null } = { messageIdToUse: optimisticMessageId };
+
+        if (options.isVoiceMemo) {
+            messageTypeForSave = 'voice_memo';
+            if (options.audioSrc) extraDataForSave.content_url = options.audioSrc;
+            else console.warn(`[TMH] (${context}) Modal voice memo no audioSrc.`);
+        }
+
+        if (userMessageText.trim() || messageTypeForSave === 'voice_memo') {
+            await conversationManager.addMessageToConversation(
+                conversationId, userMessageText, messageTypeForSave, extraDataForSave
+            );
+            console.log(`[TMH] (${context}) User's ${messageTypeForSave} (AppID: ${optimisticMessageId}) saved.`);
+        }  if (userMessageText.trim() && window.memoryService?.processNewUserMessage) {
+            console.log(`[CEREBRUM_WRITE] ✍️ User spoke in Modal. Sending to Scribe for analysis...`);
+            window.memoryService.processNewUserMessage(
+                userMessageText,
+                connector.id,
+                'one_on_one',
+                []
+            );
+        }
+        if (userMessageText.trim() && window.memoryService?.processNewUserMessage) {
+            console.log(`[CEREBRUM_WRITE] ✍️ User spoke in Modal. Sending to Scribe for analysis...`);
+            window.memoryService.processNewUserMessage(
+                userMessageText,
+                connector.id,
+                'one_on_one',
+                []
+            );
+        }
+        showTypingIndicatorFor(conversationId, context);
+        const controller = interruptAndTrackAiOperation(connector.id);
+        try {
+            const historyForAI = await conversationManager.getGeminiHistoryForConnector(conversationId);
+            const aiResponseText = await aiService.generateTextMessage(
+                userMessageText, connector, getHistoryForAiCall(historyForAI, false),
+                undefined, false, 'one-on-one', controller.signal
+            );
+            clearTypingIndicatorFor(conversationId);
+
+            if (aiResponseText && typeof aiResponseText === 'string') {
+                const voiceMsgStartTag = "[VOICE_MESSAGE_START]";
+                const voiceMsgEndTag = "[VOICE_MESSAGE_END]";
+
+                if (aiResponseText.includes(voiceMsgStartTag) && aiResponseText.includes(voiceMsgEndTag)) {
+                    // ... (AI Voice Memo handling: TTS, Supabase, save, same as embedded)
+                    const startIndex = aiResponseText.indexOf(voiceMsgStartTag) + voiceMsgStartTag.length;
+                    const endIndex = aiResponseText.indexOf(voiceMsgEndTag);
+                    const textForTts = aiResponseText.substring(startIndex, endIndex).trim();
+
+                    if (textForTts) {
+                        const geminiTts = window.geminiTtsService as GeminiTtsService | undefined;
+                        if (geminiTts && geminiTts.getTTSAudio) {
+                            showTypingIndicatorFor(conversationId, context);
+                    
+                            // --- MODIFICATION TO DETERMINE LANGUAGE CODE FOR TTS API ---
+                            let langCodeForTtsApi = connector.languageCode; // Default to the connector's primary language BCP-47 code
+                    
+                            // Check if there's a language-specific override for the current connector language
+                            if (connector.languageSpecificCodes && connector.languageSpecificCodes[connector.language]) {
+                                const langSpecifics = connector.languageSpecificCodes[connector.language];
+                                if (langSpecifics.liveApiSpeechLanguageCodeOverride) {
+                                    langCodeForTtsApi = langSpecifics.liveApiSpeechLanguageCodeOverride;
+                                    console.log(`[TMH] TTS: Using language override for API: ${langCodeForTtsApi} (Original: ${connector.languageCode}) for voice ${connector.liveApiVoiceName || 'default'}`);
+                                }
+                            }
+                            // --- END OF MODIFICATION ---
+                    
+                            const ttsResult = await geminiTts.getTTSAudio(
+                                textForTts, 
+                                langCodeForTtsApi, // Pass the potentially overridden language code
+                                connector.liveApiVoiceName || undefined // Pass the persona's voice name
+                                // stylePrompt is not used in the current Gemini TTS payload, so pass undefined or null
+                            );
+                            clearTypingIndicatorFor(conversationId);
+                    
+                            if (ttsResult?.audioBase64) {
+                                const audioBlob = base64ToBlob(ttsResult.audioBase64, ttsResult.mimeType);
+                                const aiMessageId = polyglotHelpers.generateUUID();
+                                const fileExtension = ttsResult.mimeType.split('/')[1]?.split(';')[0] || 'mp3';
+                                const supabaseFilePath = `ai_voice_memos/${context}/${conversationId}/${aiMessageId}.${fileExtension}`;
+                                const supabaseAudioUrl = await uploadAudioToSupabase(audioBlob, supabaseFilePath);
+                                if (supabaseAudioUrl) {
+                                    await conversationManager.addMessageToConversation(
+                                        conversationId, textForTts, 'voice_memo',
+                                        { content_url: supabaseAudioUrl, senderId: connector.id, messageIdToUse: aiMessageId }
+                                    );
+                                } else { 
+                                    console.error("Supabase upload failed for AI voice memo. Sending as text.");
+                                    throw new Error("Supabase upload failed for AI voice (modal)."); }
+                            } else { throw new Error("TTS failed for AI voice (modal)."); }
+                        } else { // Fallback to text
+                            const processedText = intelligentlySeparateText(textForTts, connector, { probability: 1.0 });
+                            await playAiResponseScene(processedText.split('\n').filter(Boolean), conversationId, connector, context);
+                        }
+                    } else { /* Empty tag, play fallback */ await playAiResponseScene(["(AI tried empty voice msg)"], conversationId, connector, context); }
+                } else { // Regular AI text response
+                    const processedText = intelligentlySeparateText(aiResponseText, connector, { probability: 1.0 });
+                    const responseLines = processedText.split('\n').filter(Boolean);
+                    if (responseLines.length > 0) await playAiResponseScene(responseLines, conversationId, connector, context);
+                }
+            } else if (aiResponseText === null && !controller.signal.aborted) {
+                // ... (handle null AI response, same as embedded)
+                 uiUpdater.appendToMessageLogModal?.("Not sure how to reply (modal).", 'connector-error', { /* ... */ });
+            } else if (controller.signal.aborted) { console.log(`${functionName}: AI modal text/voice aborted.`); }
+
+        } catch (error: any) {
+            // ... (error handling, same as embedded)
+            clearTypingIndicatorFor(conversationId);
+            if (error.name !== 'AbortError') {
+                await playAiResponseScene([`Apologies, error responding (modal): ${error.message}`], conversationId, connector, context);
+            }
+        } finally {
+            clearTypingIndicatorFor(conversationId);
+            if (activeAiOperations.get(connector.id) === controller) activeAiOperations.delete(connector.id);
+        }
+    }
+    uiUpdater.resetMessageModalInput?.();
+}
+
+
+     
 
         console.log("text_message_handler.ts: IIFE for actual methods FINISHED.");
         return {
@@ -1863,3 +1461,4 @@ if (tmhAllPreloadedAndVerified && tmhDepsMet === dependenciesForTMH_Functional.l
 }
 
 console.log("text_message_handler.ts: Script execution finished. Initialization is event-driven or direct.");
+// The 'textMessageHandlerReady' event dispatch is now solely handled within initializeActualTextMessageHandler upon success.

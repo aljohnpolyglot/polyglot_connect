@@ -1,0 +1,15 @@
+[
+    {
+      "origin": ["https://localhost:5173"],
+      "method": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "responseHeader": ["Content-Type", "Authorization", "X-Goog-Upload-Protocol", "X-Goog-Upload-Command", "X-Firebase-Storage-Version"],
+      "maxAgeSeconds": 3600
+    },
+    {
+      "origin": ["https://polyglot-connect-ffdcc.appspot.com"],
+      "method": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "responseHeader": ["Content-Type", "Authorization", "X-Goog-Upload-Protocol", "X-Goog-Upload-Command", "X-Firebase-Storage-Version"],
+      "maxAgeSeconds": 3600
+    }
+  
+  ]

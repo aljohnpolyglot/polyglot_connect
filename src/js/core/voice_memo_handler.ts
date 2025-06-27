@@ -10,10 +10,11 @@ import type {
     Connector,
     ConversationRecordInStore,
     GeminiChatItem,
-    ChatMessageOptions,      // <<< ADD THIS IMPORT
+    ChatMessageOptions, 
+         // <<< ADD THIS IMPORT
     GroupChatHistoryItem     // <<< ADD THIS IMPORT (or ensure it's correctly defined in global.d.ts)
 } from '../types/global.d.ts';
-
+import { uploadAudioToSupabase } from '../services/supabaseService'; // <<< ADD THIS LINE
 console.log("voice_memo_handler.ts: Script execution STARTED (TS Version).");
 
 export interface VoiceMemoHandlerModule {
@@ -150,192 +151,172 @@ async function processAndSendRecording(
 ): Promise<void> {
     const functionName = "VMH.processAndSendRecording";
 
-    if (!resolvedDeps) { // <<< ADD THIS CHECK
+    if (!resolvedDeps) {
         console.error(`${functionName}: resolvedDeps is null. Cannot proceed.`);
-        // Optionally, update mic button to idle or error state if applicable from this function
-        // updateMicButtonVisuals('error', 'Internal Error');
+        updateMicButtonVisuals('error', 'Internal Error');
         return;
     }
 
     const appendToLog = getLoggerForContext(uiContext);
-    const { polyglotHelpers: currentPolyglotHelpers, aiService, conversationManager } = resolvedDeps; // Destructure safely now
+    const { polyglotHelpers: currentPolyglotHelpers, aiService, conversationManager } = resolvedDeps;
 
-    console.log(`${functionName}: Processing for context '${uiContext}', targetId '${targetId}'. Blob size: ${audioBlob.size}`);
+    console.log(`[VMH] ${functionName}: Processing for context '${uiContext}', targetId '${targetId}'. Blob size: ${audioBlob.size} bytes.`);
 
-    let audioDataURL: string | null = null;
-    if (audioBlob && audioBlob.size > 0) { // Only create URL if blob is valid
-        try {
-            audioDataURL = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    if (typeof reader.result === 'string') {
-                        resolve(reader.result);
-                    } else {
-                        reject(new Error("FileReader did not return a string for audio blob."));
-                    }
-                };
-                reader.onerror = (err) => reject(new Error(`FileReader error for audio blob: ${err?.toString()}`));
-                reader.readAsDataURL(audioBlob);
-            });
-        } catch (e: any) {
-            console.error(`${functionName}: Error creating data URL from audio blob: ${e.message}`);
-            // audioDataURL will remain null
-        }
-    } else {
-        console.warn(`${functionName}: audioBlob is invalid or empty. Cannot create audioDataURL.`);
+    // Generate messageId first, as it might be used for filename
+    const messageId = currentPolyglotHelpers.generateUUID();
+    const messageTimestamp = Date.now();
+    let supabaseAudioUrl: string | null = null;
+    let audioDataURLForSTT: string | null = null; // For STT if needed, can be local base64
+
+    if (!audioBlob || audioBlob.size === 0) {
+        console.warn(`[VMH] ${functionName}: audioBlob is invalid or empty. Aborting.`);
+        updateMicButtonVisuals('error', 'Empty recording');
+        return;
     }
 
-
     try {
+        updateMicButtonVisuals('processing', 'Uploading...');
+        console.log(`[VMH] ${functionName}: Attempting to upload audio to Supabase.`);
+        const fileExtension = audioBlob.type.split('/')[1]?.split(';')[0] || 'webm';
+        const supabaseFilePath = `${uiContext}/${targetId}/${messageId}.${fileExtension}`;
+        
+        supabaseAudioUrl = await uploadAudioToSupabase(audioBlob, supabaseFilePath);
+
+        if (!supabaseAudioUrl) {
+            console.error(`[VMH] ${functionName}: Supabase upload failed or returned no URL.`);
+            throw new Error("Audio upload failed.");
+        }
+        console.log(`[VMH] ${functionName}: Supabase upload successful. URL: ${supabaseAudioUrl}`);
+        
+        // For STT, convert blob to base64 (if STT service requires it and can't take blob directly)
+        // This local conversion is fine as it doesn't block UI for long
         updateMicButtonVisuals('processing', 'Transcribing...');
+        audioDataURLForSTT = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => (typeof reader.result === 'string') ? resolve(reader.result) : reject(new Error("Invalid audio data from FileReader for STT"));
+            reader.onerror = (err) => reject(new Error(`FileReader error for STT: ${err?.toString()}`));
+            reader.readAsDataURL(audioBlob);
+        });
+        const base64AudioForSTT = audioDataURLForSTT.split(',')[1];
+
         if (!aiService?.transcribeAudioToText) {
             throw new Error("Transcription service (aiService.transcribeAudioToText) unavailable.");
         }
-
-        // Get base64 for STT (can use audioDataURL if available, or re-read blob)
-        const base64AudioForSTT = audioDataURL ? audioDataURL.split(',')[1] : await new Promise<string>((resolve, reject) => {
-            if (!audioBlob || audioBlob.size === 0) reject(new Error("No audio blob for STT"));
-            const reader = new FileReader();
-            reader.onloadend = () => (typeof reader.result === 'string') ? resolve(reader.result.split(',')[1]) : reject(new Error("Invalid audio data from FileReader for STT"));
-            reader.onerror = reject;
-            reader.readAsDataURL(audioBlob);
-        });
-
         if (!base64AudioForSTT) {
             throw new Error("Failed to get base64 audio data for transcription.");
         }
 
-        let transcript: string | null = null;
         let langHintForStt: string | undefined;
-
         if (uiContext === 'embedded' || uiContext === 'modal') {
-            if (!conversationManager?.ensureConversationRecord) throw new Error("ConversationManager not available for 1-on-1 chat context.");
-            const record = await conversationManager.ensureConversationRecord(targetId);
-            const convo = record.conversation as ConversationRecordInStore | null;
-            if (!convo || !convo.connector) throw new Error(`Invalid conversation or connector for target ID: ${targetId}`);
-            langHintForStt = convo.connector.language;
+            const connector = window.polyglotConnectors?.find(c => c.id === targetId);
+            if (!connector) throw new Error(`Could not find connector object for target ID: ${targetId}`);
+            await conversationManager.ensureConversationRecord(connector); // Ensure convo record exists
+            langHintForStt = connector.language;
         } else if (uiContext === 'group') {
             const groupData = getGroupDataManager()?.getCurrentGroupData?.();
             if (!groupData?.language) throw new Error("Current group data or language not available for transcription hint.");
             langHintForStt = groupData.language;
         }
 
-        transcript = await aiService.transcribeAudioToText(base64AudioForSTT, audioBlob.type, langHintForStt);
+        const transcript = await aiService.transcribeAudioToText(base64AudioForSTT, audioBlob.type, langHintForStt);
         const actualTranscriptText = transcript?.trim() || "";
-        const messageTimestamp = Date.now();
-        const messageId = currentPolyglotHelpers.generateUUID(); // Use currentPolyglotHelpers from IIFE scope
+        console.log(`[VMH] ${functionName}: Transcription: "${actualTranscriptText.substring(0, 50)}...".`);
 
-        if (!actualTranscriptText && !audioDataURL) {
-            const message = "Failed to process voice memo: No speech detected and audio player unavailable.";
-            console.warn(`${functionName}: ${message}`);
-            if (appendToLog) {
-                const errorOptions: ChatMessageOptions = { isError: true, timestamp: messageTimestamp, messageId };
-                if (uiContext === 'group') (appendToLog as Function)(message, USER_NAME_PLACEHOLDER, false, SYSTEM_SPEAKER_ID_GROUP, {...errorOptions, isSystemLikeMessage: true });
-                else (appendToLog as Function)(message, 'system-message', errorOptions);
-            }
-            updateMicButtonVisuals('idle');
-            return;
-        }
-        console.log(`${functionName}: Transcription: "${actualTranscriptText.substring(0, 50)}...". Audio URL available: ${!!audioDataURL}`);
-        
+        // Log message for successful upload and transcription
+        console.log(`[VMH] Voice memo uploaded to Supabase: ${supabaseAudioUrl}, Transcript: "${actualTranscriptText}"`);
+
         // --- Add to History & (conditionally) Update UI / Pass transcript for AI response ---
         if (uiContext === 'group') {
             const groupDataManager = getGroupDataManager();
-            if (groupDataManager?.addMessageToCurrentGroupHistory) {
-                groupDataManager.addMessageToCurrentGroupHistory({
-                    speakerId: USER_ID_PLACEHOLDER,
-                    speakerName: USER_NAME_PLACEHOLDER,
-                    text: actualTranscriptText, // The transcript
-                    timestamp: messageTimestamp,
-                    isVoiceMemo: !!audioDataURL,
-                    audioBlobDataUrl: audioDataURL, // The audio data
-                    messageId: messageId
+            const currentGroupData = groupDataManager?.getCurrentGroupData?.();
+            if (groupDataManager && currentGroupData?.id && groupDataManager.addMessageToFirestoreGroupChat) {
+                console.log(`[VMH] ${functionName}: Sending voice memo (Supabase URL & transcript) to Firestore for group: ${currentGroupData.id}`);
+                await groupDataManager.addMessageToFirestoreGroupChat(currentGroupData.id, {
+                    appMessageId: messageId,
+                    senderId: USER_ID_PLACEHOLDER,
+                    senderName: USER_NAME_PLACEHOLDER,
+                    text: actualTranscriptText, // Transcript
+                    type: 'voice_memo',
+                    content_url: supabaseAudioUrl, // <<< SAVE SUPABASE URL HERE
                 });
-                // This save *should* trigger a UI refresh that renders the new voice memo from history.
-                // group_ui_handler.showGroupChatView iterates history and renders voice memos correctly.
-                console.log(`${functionName}: Added to group history. Attempting to save and trigger UI refresh for group.`);
-                groupDataManager.saveCurrentGroupChatHistory?.(true); // Pass true to signal UI update needed
-            
-            // VVVVV ADD THIS BLOCK VVVVV
-            const currentGroupUiHandler = window.groupUiHandler as import('../types/global.d.ts').GroupUiHandler | undefined;
-            const currentGroupData = groupDataManager.getCurrentGroupData?.();
-            const currentGroupMembers = window.groupManager?.getFullCurrentGroupMembers?.() || []; // Get members
-            const updatedHistory = groupDataManager.getLoadedChatHistory?.() || [];
-
-            if (currentGroupUiHandler?.showGroupChatView && currentGroupData) {
-                console.log(`${functionName}: Explicitly calling groupUiHandler.showGroupChatView to refresh main chat log.`);
-                currentGroupUiHandler.showGroupChatView(currentGroupData, currentGroupMembers, updatedHistory);
+                console.log(`[VMH] ${functionName}: Voice memo (Supabase URL & transcript) sent to Firestore for group ${currentGroupData.id}.`);
             } else {
-                console.warn(`${functionName}: Could not explicitly refresh group chat view (groupUiHandler or groupData missing).`);
+                console.warn(`[VMH] ${functionName}: groupDataManager.addMessageToFirestoreGroupChat not available or no current group ID.`);
             }
-            // ^^^^^ ADD THIS BLOCK ^^^^^
-            
-            
-            } else {
-                console.warn(`${functionName}: groupDataManager.addMessageToCurrentGroupHistory not available.`);
-            }
-
+            // UI update for groups is handled by Firestore listener in group_manager.ts
+            // If GIL needs to react to the transcript:
             if (actualTranscriptText) {
                 const groupInteractionLogic = getGroupInteractionLogic();
                 if (groupInteractionLogic?.handleUserMessage) {
-                    console.log(`${functionName}: Passing transcript to groupInteractionLogic.handleUserMessage for group AI/relay.`);
-                    await groupInteractionLogic.handleUserMessage(actualTranscriptText);
-                } else {
-                    console.warn(`${functionName}: GroupInteractionLogic.handleUserMessage not available.`);
+                    console.log(`[VMH] ${functionName}: Passing transcript to groupInteractionLogic.handleUserMessage for group AI/relay.`);
+                    // Pass an empty object or specific options if GIL expects it
+                    await groupInteractionLogic.handleUserMessage(actualTranscriptText, {});
                 }
-            } else {
-                 console.warn(`${functionName}: No transcript obtained for group, AI response will not be triggered through groupInteractionLogic.`);
             }
-
         } else { // Embedded or Modal (1-on-1)
-            // For 1-on-1, we directly append the user's voice memo UI first.
-            if (appendToLog) {
+            // 1. Immediately append the user's voice memo to the UI
+            if (appendToLog) { // appendToLog is already defined for the context
                 const uiOptions: ChatMessageOptions = {
-                    timestamp: messageTimestamp,
                     messageId: messageId,
-                    isVoiceMemo: !!audioDataURL,
-                    audioSrc: audioDataURL || undefined,
+                    timestamp: messageTimestamp,
+                    isVoiceMemo: true,
+                    audioSrc: supabaseAudioUrl, // The Supabase URL for the player
+                    // Add other necessary fields like senderClass: 'user' if not handled by appendToLog
                 };
-                console.log(`${functionName}: Appending user voice memo directly to UI for context: ${uiContext}`);
+                console.log(`[VMH] Appending user's voice memo (transcript: "${actualTranscriptText.substring(0,30)}...") to UI for context: ${uiContext}`);
                 (appendToLog as Function)(actualTranscriptText, 'user', uiOptions);
+            } else {
+                console.warn(`[VMH] Logger function not found for UI context: ${uiContext}. Cannot append user's voice memo optimistically.`);
             }
 
-            // Then, pass to TextMessageHandler to handle history and AI response for 1-on-1.
+            // 2. Now, call TextMessageHandler to get the AI's response
+            //    and to save the user's voice memo to Firestore.
             const tmh = getChatOrchestrator()?.getTextMessageHandler?.();
             if (tmh) {
-                const textMessageOptions = {
-                    skipUiAppend: true, // TMH should not re-append the user's message UI
-                    isVoiceMemo: !!audioDataURL,
-                    audioBlobDataUrl: audioDataURL,
-                    messageId: messageId,
-                    timestamp: messageTimestamp
+                const textMessageOptionsForTMH = {
+                    skipUiAppend: true, // IMPORTANT: TMH should NOT re-append the user's message
+                    isVoiceMemo: true,
+                    // Pass the necessary data for TMH to save to Firestore via ConversationManager
+                    audioSrc: supabaseAudioUrl, // For ConversationManager to put in content_url
+                    messageId: messageId,     // For ConversationManager
+                    timestamp: messageTimestamp // For ConversationManager
                 };
+                console.log(`[VMH] Calling TextMessageHandler for AI response. Context: ${uiContext}, Transcript: "${actualTranscriptText.substring(0,30)}..."`);
+                
                 if (uiContext === 'embedded' && tmh.sendEmbeddedTextMessage) {
-                    console.log(`${functionName}: Passing to tmh.sendEmbeddedTextMessage for embedded context.`);
-                    await tmh.sendEmbeddedTextMessage(actualTranscriptText, targetId, textMessageOptions);
+                    // Pass `targetId` which is the connectorId for embedded 1-on-1
+                    await tmh.sendEmbeddedTextMessage(actualTranscriptText, targetId, textMessageOptionsForTMH);
                 } else if (uiContext === 'modal' && tmh.sendModalTextMessage) {
-                    const connectorForModal = conversationManager.getConversationById(targetId)?.connector;
+                    // For modal, targetId is also the connectorId. TMH needs the full connector object.
+                    const connectorForModal = window.polyglotConnectors?.find(c => c.id === targetId);
                     if (connectorForModal) {
-                        console.log(`${functionName}: Passing to tmh.sendModalTextMessage for modal context.`);
-                        await tmh.sendModalTextMessage(actualTranscriptText, connectorForModal, textMessageOptions);
+                        await tmh.sendModalTextMessage(actualTranscriptText, connectorForModal, textMessageOptionsForTMH);
                     } else {
-                        console.error(`${functionName}: Connector not found for modal voice memo to pass to TMH.`);
-                        throw new Error("Connector not found for modal voice memo.");
+                        console.error(`[VMH] Connector not found for modal voice memo (targetId: ${targetId}) to pass to TMH.`);
+                        throw new Error(`Connector not found for modal voice memo (targetId: ${targetId}).`);
                     }
                 } else {
-                     console.error(`${functionName}: Appropriate TextMessageHandler method not available for context: ${uiContext}`);
-                     throw new Error("Appropriate TextMessageHandler method not available.");
+                     console.error(`[VMH] Appropriate TextMessageHandler method not available for context: ${uiContext}`);
+                     throw new Error(`Appropriate TextMessageHandler method not available for context: ${uiContext}`);
                 }
             } else {
-                console.error(`${functionName}: TextMessageHandler not available for 1-on-1 chat context: ${uiContext}`);
-                throw new Error("TextMessageHandler not available for 1-on-1 chat context.");
+                console.error(`[VMH] TextMessageHandler not available for 1-on-1 chat context: ${uiContext}`);
+                throw new Error(`TextMessageHandler not available for 1-on-1 chat context.`);
             }
-        }} catch (error: any) {
-            // ... (existing catch block) ...
-            } finally {
-            updateMicButtonVisuals('idle');
-            }
-        }   
+        }
+    } catch (error: any) {
+        console.error(`[VMH] ${functionName}: Error during processing or sending: ${error.message}`, error);
+        updateMicButtonVisuals('error', 'Processing failed');
+        if (appendToLog) {
+            const errorOptions: ChatMessageOptions = { isError: true, timestamp: messageTimestamp, messageId };
+            const errorMessage = `Failed to process voice memo: ${error.message || "Unknown error"}`;
+            if (uiContext === 'group') (appendToLog as Function)(errorMessage, USER_NAME_PLACEHOLDER, false, SYSTEM_SPEAKER_ID_GROUP, {...errorOptions, isSystemLikeMessage: true });
+            else (appendToLog as Function)(errorMessage, 'system-error', errorOptions);
+        }
+    } finally {
+        updateMicButtonVisuals('idle');
+    }
+}
 
         async function startRecording(targetId: string, uiContext: 'embedded' | 'modal' | 'group', micButtonElement: HTMLButtonElement): Promise<void> {
             if (isCurrentlyRecording) { console.warn("VMH: Already recording."); return; }
@@ -469,7 +450,7 @@ function checkAndInitVMH(receivedEventName?: string) {
                 verified = !!(window.groupManager && typeof window.groupManager.getCurrentGroupData === 'function');
                 break;
             case 'groupDataManagerReady': // Check a key method
-                verified = !!(window.groupDataManager && typeof window.groupDataManager.addMessageToCurrentGroupHistory === 'function');
+            verified = !!(window.groupDataManager && typeof window.groupDataManager.addMessageToFirestoreGroupChat === 'function' && typeof window.groupDataManager.getCurrentGroupData === 'function');
                 break;
             default:
                 console.warn(`VMH_EVENT: Unknown event ${receivedEventName}`);
@@ -515,7 +496,7 @@ dependenciesForVMH_Functional.forEach((eventName: string) => {
             isVerified = !!(window.groupManager && typeof window.groupManager.getCurrentGroupData === 'function');
             break;
         case 'groupDataManagerReady':
-            isVerified = !!(window.groupDataManager && typeof window.groupDataManager.addMessageToCurrentGroupHistory === 'function');
+            isVerified = !!(window.groupDataManager && typeof window.groupDataManager.addMessageToFirestoreGroupChat === 'function' && typeof window.groupDataManager.getCurrentGroupData === 'function');
             break;
         default:
             console.warn(`VMH_PRECHECK: Unknown functional dependency: ${eventName}`);

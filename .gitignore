@@ -15,4 +15,7 @@ Thumbs.db
 *.log
 *.swp
 
-migrate_to_public.py
+migrate_to_public.
+
+#firebase
+polyglot-connect-firebase-adminsdk.json

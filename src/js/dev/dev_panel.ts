@@ -1,7 +1,8 @@
 // D:\polyglot_connect\src\js\dev\dev_panel.ts
 import '@/css/dev/dev_tools.css';
 import type { ApiKeyHealthStatus, ApiKeyHealthTrackerModule, DevPanelModule } from '../types/global.d.ts';
-
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from '../firebase-config';
 // Use a self-invoking function (IIFE) to create a private scope
 const devPanelController = ((): DevPanelModule => {
     'use strict';
@@ -68,20 +69,106 @@ const devPanelController = ((): DevPanelModule => {
     }
 
     // Renderer for Cerebrum Tab
-    function renderCerebrum() {
+    async function renderCerebrum() {
         if (!cerebrumOutput) return;
-        const memoryLedgerRaw = localStorage.getItem('polyglotCerebrum_user_default');
-        if (memoryLedgerRaw) {
-            try {
-                cerebrumOutput.textContent = JSON.stringify(JSON.parse(memoryLedgerRaw), null, 2);
-            } catch (e) {
-                cerebrumOutput.textContent = "Error parsing memory ledger.";
+        
+        // --- CREATIVE DEBUG: Show a "loading" state ---
+        cerebrumOutput.innerHTML = `<div class="dev-loading-state">🧠 Accessing Neural Link... Fetching from Firestore...</div>`;
+        
+        try {
+            const { getDoc, doc } = await import('firebase/firestore');
+            const { auth, db } = await import('../firebase-config');
+            
+            const user = auth.currentUser;
+            if (!user) {
+                cerebrumOutput.textContent = "Cerebrum Access Denied: No authenticated user.";
+                return;
             }
-        } else {
-            cerebrumOutput.textContent = "No memory ledger found.";
+    
+            const memoryDocRef = doc(db, "users", user.uid, "memory", "main_ledger");
+            const docSnap = await getDoc(memoryDocRef);
+    
+            if (docSnap.exists()) {
+                const memoryLedger = docSnap.data();
+                // --- CREATIVE DEBUG: Hand off to the new HTML builder ---
+                cerebrumOutput.innerHTML = buildCerebrumHtml(memoryLedger);
+            } else {
+                cerebrumOutput.textContent = "No Cerebrum data found for this user in Firestore.";
+            }
+        } catch (e: any) {
+            console.error("Dev Panel: Error fetching/rendering Cerebrum data.", e);
+            cerebrumOutput.textContent = `Error fetching Cerebrum data: ${e.message}`;
         }
     }
+// <<<--- PASTE THIS ENTIRE NEW HELPER FUNCTION --->>>
 
+/**
+ * Takes a raw memory ledger object and builds a beautiful,
+ * interactive HTML table for the dev panel.
+ * @param ledger - The CerebrumMemoryLedger object from Firestore.
+ * @returns An HTML string.
+ */
+function buildCerebrumHtml(ledger: any): string {
+    const renderFactTable = (facts: any[], bankType: string) => {
+        if (!facts || facts.length === 0) {
+            return '<tr><td colspan="5" class="dev-empty-cell">No facts in this bank.</td></tr>';
+        }
+        return facts.map(fact => `
+            <tr class="dev-fact-row dev-fact-${fact.type?.toLowerCase()}">
+                <td>${fact.key || 'N/A'}</td>
+                <td>${typeof fact.value === 'object' ? JSON.stringify(fact.value) : (fact.value || 'N/A')}</td>
+                <td class="dev-fact-type">${fact.type || 'N/A'}</td>
+                <td>${((fact.initialConfidence || 0) * 100).toFixed(0)}%</td>
+                <td><span title="${new Date(fact.timestamp).toLocaleString()}">${fact.source_context || 'N/A'}</span></td>
+                <td class="dev-persona-id">${fact.source_persona_id || 'N/A'}</td>
+                <td class="dev-persona-id">${Array.isArray(fact.known_by_personas) ? fact.known_by_personas.join(', ') : 'N/A'}</td>
+            </tr>
+        `).join('');
+    };
+
+    const renderMemoryBank = (bank: any, title: string) => {
+        if (!bank) return '';
+        return `
+            <details class="dev-details-group" open>
+                <summary class="dev-summary-title">${title}</summary>
+                <div class="dev-table-container styled-scrollbar">
+                                     <table class="dev-cerebrum-table">
+                        <thead>
+                            <tr>
+                                <th>Key</th>
+                                <th>Value</th>
+                                <th>Type</th>
+                                <th>Confidence</th>
+                                <th>Source Context</th>
+                                <th>Originating AI</th>
+                                <th>Known By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${renderFactTable(bank.core, 'core')}
+                            ${renderFactTable(bank.episodic, 'episodic')}
+                            ${renderFactTable(bank.fragile, 'fragile')}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        `;
+    };
+
+    let aiMemoryHtml = '';
+    if (ledger.ai_memory && Object.keys(ledger.ai_memory).length > 0) {
+        for (const personaId in ledger.ai_memory) {
+            aiMemoryHtml += renderMemoryBank(ledger.ai_memory[personaId], `🤖 AI Memory: ${personaId}`);
+        }
+    } else {
+        aiMemoryHtml = '<p class="dev-empty-cell">No AI-specific memories recorded.</p>';
+    }
+
+    return `
+        ${renderMemoryBank(ledger.user_memory, '👤 User Memory Bank')}
+        ${aiMemoryHtml}
+    `;
+}
     // Drag-and-drop logic
     function initializeDragAndDrop() {
         if (!header || !panelContainer) return;

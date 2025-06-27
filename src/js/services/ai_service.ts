@@ -9,15 +9,27 @@ import type {
     GeminiTextGenerationService,
     GeminiMultimodalService,
     AiRecapService,
-    PolyglotHelpersOnWindow
+    PolyglotHelpersOnWindow,
+    MessageInStore,
+    GroupChatHistoryItem,
 } from '../types/global.d.ts';
 
 console.log("ai_service.ts: Script execution STARTED (TS Facade).");
+
+
+
 export interface AiServiceModule {
+    initialize: (dependencies: {
+        aiTextGenerationService: GeminiTextGenerationService; // Use the specific types for deps
+        geminiTtsService?: GeminiTtsService;
+        geminiMultimodalService?: GeminiMultimodalService;
+        aiRecapService?: AiRecapService; // Assuming AiRecapService is the type from global.d.ts
+        // ... other dependencies expected by the global AIService.initialize method ...
+    }) => void;
     generateTextMessage: ( 
         promptOrText: string,
-        connector: Connector, 
-        history: GeminiChatItem[] | null | undefined, 
+        connector: Connector | null, // <<<< Check this against global AIService
+        history: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined, // <<<< CHANGE THIS LINE
         preferredProvider?: string,
         expectJson?: boolean,
         context?: 'group-chat' | 'one-on-one',
@@ -27,8 +39,9 @@ export interface AiServiceModule {
     generateTextFromImageAndText: ( 
         base64Data: string,
         mimeType: string, 
-        connector: Connector, 
-        history: GeminiChatItem[] | null | undefined, 
+        connector: Connector | null, // <<<< CHANGE THIS LINE
+      
+        history: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined, // <<<< THIS IS THE ONLY CHANGE IN THIS STEP
         prompt?: string, 
         preferredProvider?: string,
         abortSignal?: AbortSignal
@@ -43,13 +56,14 @@ export interface AiServiceModule {
     
     generateTextForCallModal?: ( 
         userText: string, 
-        connector: Connector, 
-        modalCallHistory: GeminiChatItem[] | null | undefined
+        connector: Connector | null, // <<<< CHANGE THIS LINE
+        modalCallHistory: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined // <<<< CHANGE THIS LINE
+        // We'll address the modalCallHistory type next if it's still an issue for this method after this fix
     ) => Promise<string | null>;
     
     generateSessionRecap: ( // <<< THIS IS THE CORRECTED SIGNATURE
         cleanedTranscriptText: string, 
-        connector: Connector
+        connector: Connector | null // <<< CORRECTED: Allow null
     ) => Promise<RecapData>; 
 
     transcribeAudioToText?: ( 
@@ -61,7 +75,7 @@ export interface AiServiceModule {
 
     cleanAndReconstructTranscriptLLM: (
         rawTranscript: TranscriptTurn[],
-        connector: Connector,
+        connector: Connector | null, // <<<< CORRECTED to Connector | null
         userName?: string
     ) => Promise<string>;
 }
@@ -83,7 +97,13 @@ window.aiService = {} as AiServiceModule; // Placeholder
 
 function initializeActualAiService(): void {
     console.log("ai_service.ts: initializeActualAiService called.");
-
+    const getRandomHumanErrorDummy = () => "(Service Error: Essential constants missing for AI Service)";
+    const defaultRecapStructureDummy = (): RecapData => ({
+        conversationSummary: getRandomHumanErrorDummy(), keyTopicsDiscussed: ["Error"],
+        newVocabularyAndPhrases: [], goodUsageHighlights: [], areasForImprovement: [],
+        suggestedPracticeActivities: [], overallEncouragement: "Error.",
+        sessionId: "error-dummy-" + Date.now(), date: new Date().toLocaleDateString(), duration: "N/A", startTimeISO: null
+    });
     const getDeps = (): AiServiceDeps => ({
         aiTextGenerationService: window.aiTextGenerationService, // <<< CORRECTED FROM window.geminiTextGenerationService
         geminiTtsService: window.geminiTtsService,
@@ -104,15 +124,11 @@ function initializeActualAiService(): void {
         !initialGlobalConstants.STANDARD_SAFETY_SETTINGS_GEMINI) { // Essential for LLM cleaning
         console.error("AI Service Facade (TS): CRITICAL - window.aiApiConstants or its essential properties are missing. Facade will use dummy methods.");
         
-        const getRandomHumanErrorDummy = () => "(Service Error: Essential constants missing for AI Service)";
-        const defaultRecapStructureDummy = (): RecapData => ({
-            conversationSummary: getRandomHumanErrorDummy(), keyTopicsDiscussed: ["Error"],
-            newVocabularyAndPhrases: [], goodUsageHighlights: [], areasForImprovement: [],
-            suggestedPracticeActivities: [], overallEncouragement: "Error.",
-            sessionId: "error-dummy-" + Date.now(), date: new Date().toLocaleDateString(), duration: "N/A", startTimeISO: null
-        });
-
+        
         const dummyService: AiServiceModule = {
+            initialize: (dependencies) => { // <<< ADDED INITIALIZE METHOD
+                console.error("Dummy AIService.initialize called due to missing critical constants. Dependencies:", dependencies);
+            },
             generateTextMessage: async () => getRandomHumanErrorDummy(),
             generateTextFromImageAndText: async () => getRandomHumanErrorDummy(),
             getTTSAudio: async () => { console.error("Dummy getTTSAudio called due to missing constants."); return null; },
@@ -136,6 +152,22 @@ function initializeActualAiService(): void {
 
     window.aiService = ((): AiServiceModule => {
         'use strict';
+        let currentAiTextGenerationService: GeminiTextGenerationService | null = null;
+        let currentGeminiMultimodalService: GeminiMultimodalService | null = null;
+        function initialize(dependencies: { // Signature matches your LOCAL AiServiceModule.initialize
+            aiTextGenerationService: GeminiTextGenerationService;
+            geminiTtsService?: GeminiTtsService;
+            geminiMultimodalService?: GeminiMultimodalService;
+            aiRecapService?: AiRecapService;
+            // ... other deps defined in your LOCAL AiServiceModule.initialize signature
+        }): void {
+            console.log("AIService (from local AiServiceModule): Initializing...");
+            currentAiTextGenerationService = dependencies.aiTextGenerationService;
+            currentGeminiMultimodalService = dependencies.geminiMultimodalService || null;
+            // ... store other dependencies
+            console.log("AIService (from local AiServiceModule): Initialization complete.");
+        }
+
 
         const constants = window.aiApiConstants!; 
 
@@ -235,15 +267,36 @@ function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, u
 
    
    
-      async function cleanAndReconstructTranscriptLLM_internal(
-        rawTranscript: TranscriptTurn[],
-        connector: Connector,
-        userName: string = "User"
-    ): Promise<string> {
-        const functionName = "[AI_Facade][cleanAndReconstructTranscriptLLM]";
-        console.groupCollapsed(`%c🧹 [Transcript Cleaner] S+ Request Started`, 'color: #6f42c1; font-weight: bold; font-size: 14px;');
-
-        const currentDeps = getDeps();
+async function cleanAndReconstructTranscriptLLM_internal(
+    rawTranscript: TranscriptTurn[],
+    connector: Connector | null, // <<< CORRECTED: Allow null to match AiServiceModule
+    userName: string = "User"
+): Promise<string> {
+    const functionName = "[AI_Facade][cleanAndReconstructTranscriptLLM]";
+    console.groupCollapsed(`%c🧹 [Transcript Cleaner] S+ Request Started`, 'color: #6f42c1; font-weight: bold; font-size: 14px;');
+    
+    
+    if (!connector) { // <<< ADDED: Handle null connector
+        console.warn(`${functionName}: Connector is null. Cannot effectively clean transcript without partner name. Performing basic format.`);
+        let preliminaryFormattedTranscript = "";
+        rawTranscript.forEach(turn => {
+            if (!turn || typeof turn.text !== 'string' || turn.text.trim() === "") return;
+            let speakerLabel = userName;
+            if (['connector', 'model', 'connector-spoken-output', 'connector-greeting-intent'].includes(turn.sender)) {
+                speakerLabel = "Partner (Generic)"; // Generic fallback
+            } else if (['user-audio-transcript', 'user-typed', 'user', userName].includes(turn.sender)) {
+                speakerLabel = userName;
+            } else {
+                speakerLabel = `Unknown (${turn.sender})`;
+            }
+            let textContent = turn.text.trim().replace(/\((?:En|In)\s+[\w\s]+\)\s*:?/gi, '').trim().replace(/\s\s+/g, ' ');
+            if (textContent) preliminaryFormattedTranscript += `${speakerLabel}: ${textContent}\n`;
+        });
+        console.groupEnd();
+        return preliminaryFormattedTranscript.trim() || "No conversation to clean (connector was null).";
+    }
+    
+    const currentDeps = getDeps();
         if (!rawTranscript || rawTranscript.length === 0) {
             console.log(`${functionName}: No conversation turns to clean.`);
             console.groupEnd();
@@ -363,6 +416,7 @@ function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, u
         }
 
         const service: AiServiceModule = {
+            initialize,
             cleanAndReconstructTranscriptLLM: cleanAndReconstructTranscriptLLM_internal,
             
           // Replace with this in ai_service.ts
@@ -371,111 +425,186 @@ function buildTranscriptCleaningPrompt(preliminaryFormattedTranscript: string, u
 // =================== REPLACE THE OLD generateTextMessage WITH THIS NEW VERSION ===================
 // =================== REPLACE THE OLD generateTextMessage WITH THIS NEW VERSION ===================
 generateTextMessage: async (
-    promptOrText: string, 
-    connector: Connector, 
-    history: GeminiChatItem[] | null | undefined, 
+    promptOrText: string,
+    connector: Connector | null,
+    history: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined, // <<< CORRECTED: Accept broader type
     preferredProvider?: string,
     expectJson: boolean = false,
     context: 'group-chat' | 'one-on-one' = 'one-on-one',
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    options?: { isTranslation?: boolean } // Our flag
 ): Promise<string | null | object> => {
-
-    // --- This is our new logging ---
-    console.log(`%c[AI_SERVICE] generateTextMessage called. Preferred Provider: [${preferredProvider}]`, 'color: orange; font-weight: bold;');
-    
+    console.log(`%c[AI_SERVICE] generateTextMessage called. Preferred Provider: [${preferredProvider}]. IsTranslation: ${!!options?.isTranslation}`, 'color: orange; font-weight: bold;');
     const currentDeps = getDeps();
     const subService = currentDeps.aiTextGenerationService;
 
     if (!subService?.generateTextMessage) {
         console.error("[AI_SERVICE_FAIL] aiTextGenerationService.generateTextMessage unavailable.");
-        return getRandomHumanError();
+        return options?.isTranslation ? "(Translation Error: Text service unavailable)" : getRandomHumanError();
     }
-    
-    // --- We wrap your original logic in try...catch ---
     try {
-        // This is your original, important line of code. It's still here.
-        const result = await subService.generateTextMessage(promptOrText, connector, history || [], preferredProvider, expectJson, context, abortSignal);
-        
-        // --- This is our new success log ---
-        console.log(`%c[AI_SERVICE] Sub-service returned a result:`, 'color: green;', result);
-        return result;
+        // Filter/transform history to GeminiChatItem[] if subService requires it
+        // This is a basic filter; a more robust transformation might be needed if structures differ significantly.
+        const geminiHistory = (history?.filter(
+            item => typeof item === 'object' && item !== null && 'role' in item && 'parts' in item
+        ) as GeminiChatItem[]) || [];
 
+        const result = await subService.generateTextMessage(
+            promptOrText,
+            connector,
+            geminiHistory, // <<< Pass the transformed/filtered history
+            preferredProvider,
+            expectJson,
+            context,
+            abortSignal,
+            options
+        );
+        console.log(`%c[AI_SERVICE] Sub-service returned a result:`, 'color: green;', result);
+
+        if (options?.isTranslation) {
+            if (typeof result === 'string') {
+                const lines = result.split('\n');
+                if (lines.length > 0) {
+                    const firstLine = lines[0];
+                    const prefixMatch = firstLine.match(/^([\w\s]+):\s*(.*)/);
+                    if (prefixMatch && prefixMatch[2] && prefixMatch[1].length < 30) {
+                        console.log(`[AI_SERVICE] Translation: Stripped prefix "${prefixMatch[1]}:"`);
+                        return prefixMatch[2].trim();
+                    }
+                }
+                return result.trim();
+            }
+            console.warn("[AI_SERVICE] Translation mode: Expected string result, got:", typeof result);
+            return null;
+        }
+        return result;
     } catch (error: any) {
-        // --- This is our new error log ---
         console.error(`%c[AI_SERVICE_FAIL] The call to subService.generateTextMessage FAILED for provider [${preferredProvider}].`, 'color: red; font-weight: bold;');
         console.error('[AI_SERVICE_FAIL] Error details:', error);
-        // This is important: it makes sure the fallback loop in the translation service works.
+        if (options?.isTranslation) {
+            return `(Translation Error: ${error.message || 'Service failure'})`;
+        }
         throw error;
     }
 },
 // ===========================================================================================
 
-            generateTextForCallModal: async (userText, connector, modalCallHistory) => {
-                const currentDeps = getDeps();
-                const subService = currentDeps.aiTextGenerationService;
-                if (!subService?.generateTextForCallModal) {
-                    console.error("AI Facade (TS): aiTextGenerationService.generateTextForCallModal unavailable.");
-                    return getRandomHumanError();
-                }
-                try {
-                    return await subService.generateTextForCallModal(userText, connector, modalCallHistory || []);
-                } catch (e: any) {
-                    console.error("AI Facade (TS): generateTextForCallModal failed:", e.message);
-                    return getRandomHumanError();
-                }
-            },
+generateTextForCallModal: async (
+    userText: string,
+    connector: Connector | null,
+    modalCallHistory: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined // <<< CORRECTED
+): Promise<string | null> => {
+    const currentDeps = getDeps();
+    const subService = currentDeps.aiTextGenerationService;
+    if (!subService?.generateTextForCallModal) {
+        console.error("AI Facade (TS): aiTextGenerationService.generateTextForCallModal unavailable.");
+        return getRandomHumanError();
+    }
+    try {
+        // Filter/transform history to GeminiChatItem[]
+        const geminiHistory = (modalCallHistory?.filter(
+            item => typeof item === 'object' && item !== null && 'role' in item && 'parts' in item
+        ) as GeminiChatItem[]) || [];
+        return await subService.generateTextForCallModal(userText, connector, geminiHistory); // <<< Pass transformed
+    } catch (e: any) {
+        console.error("AI Facade (TS): generateTextForCallModal failed:", e.message);
+        return getRandomHumanError();
+    }
+},
+generateTextFromImageAndText: async (
+    base64Data: string,
+    mimeType: string,
+    connector: Connector | null,
+    history: Array<MessageInStore | GroupChatHistoryItem | GeminiChatItem> | null | undefined,
+    prompt?: string,
+    preferredProvider?: string,
+    abortSignal?: AbortSignal
+): Promise<string | null | object> => {
+    const functionName = "[AI_Facade][ImageToText]";
+    console.groupCollapsed(`%c🖼️ [Image Analysis Router] Request Started`, 'color: #4caf50; font-weight: bold; font-size: 14px;');
 
-            generateTextFromImageAndText: async (base64Data, mimeType, connector, history, prompt, preferredProvider, abortSignal) => { // <<< ADD abortSignal
-                const functionName = "[AI_Facade][ImageToText]";
-                console.groupCollapsed(`%c🖼️ [Image Carousel] S+ Request Started`, 'color: #4caf50; font-weight: bold; font-size: 14px;');
+    const currentDeps = getDeps();
+    const mmService = currentDeps.geminiMultimodalService;
+    const openAiVisionService = currentDeps.aiTextGenerationService;
 
-                const currentDeps = getDeps();
-                const mmService = currentDeps.geminiMultimodalService;
-                const openAiVisionService = currentDeps.aiTextGenerationService;
+    const finalProviderPlan: string[] = [];
+    if (preferredProvider) finalProviderPlan.push(preferredProvider);
+    if (openAiVisionService?.generateTextFromImageAndTextOpenAI) finalProviderPlan.push('together');
+    if (mmService?.generateTextFromImageAndText) finalProviderPlan.push('gemini', 'gemini');
+    
+    const uniqueProviderPlan = [...new Set(finalProviderPlan)];
+    
+    if (uniqueProviderPlan.length === 0) {
+        console.error(`${functionName}: No image analysis services are available. Check dependencies.`);
+        console.groupEnd();
+        return getRandomHumanError();
+    }
 
-                const imageProviderSequence = [
-                 'gemini',
-    'gemini',
-    'gemini'
-                ];
-                console.log('%cImage Provider Plan:', 'color: #4caf50; font-weight: bold;', imageProviderSequence.join(' ➔ '));
+    console.log('%cImage Provider Plan:', 'color: #4caf50; font-weight: bold;', uniqueProviderPlan.join(' ➔ '));
+
+    const geminiHistoryForSubServices = (history?.filter(
+        item => typeof item === 'object' && item !== null && 'role' in item && 'parts' in item
+    ) as GeminiChatItem[]) || [];
+
+    for (const provider of uniqueProviderPlan) {
+        if (abortSignal?.aborted) {
+            console.log(`%c<-- ABORTED before trying [${provider}].`, 'color: #ff6347;');
+            throw new Error("Operation was aborted.");
+        }
+        
+        console.log(`%c--> ATTEMPTING image analysis with [${provider}]`, 'color: #007acc; font-weight: bold;');
+        
+        // <<< DEBUG LOG: Log the data being sent >>>
+        console.log(`[AI_SVC_DEBUG] For provider [${provider}], sending data:`, {
+            connectorId: connector?.id,
+            mimeType: mimeType,
+            prompt: prompt,
+            base64DataLength: base64Data.length,
+            base64DataPreview: base64Data.substring(0, 100) + '...'
+        });
+
+        try {
+            let response: string | null | object = null;
             
-                for (const provider of imageProviderSequence) {
-                    console.log(`%c--> ATTEMPTING image analysis with [${provider}]`, 'color: #007acc; font-weight: bold;');
-                    try {
-                        let response: string | null | object = null;
-                        
-                        // This logic now correctly uses your Together AI carousel first
-                        if (provider === 'together' && openAiVisionService?.generateTextFromImageAndTextOpenAI) {
-                            response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, history || [], prompt, 'together', abortSignal);
-                        
-                        // This is the fallback path
-                        } else if (provider === 'gemini' && mmService?.generateTextFromImageAndText) {
-                            response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, history || [], prompt, undefined, abortSignal);
-                        }
-            
-                        if (typeof response === 'string' && response.trim() !== "" && !response.includes("An unexpected AI error")) {
-                            console.log(`%c<-- SUCCESS from [${provider}]. Stopping carousel.`, 'color: #28a745; font-weight: bold;');
-                            console.groupEnd();
-                            return response;
-                        }
-                        throw new Error(`Provider [${provider}] returned null or an error message.`);
-            
-                    } catch (error: any) {
-                        // Check for AbortError specifically to stop the loop
-                        if (error.name === 'AbortError') {
-                            console.log(`%c<-- ABORTED by user. Image request for [${provider}] cancelled.`, 'color: #ff6347;');
-                            throw error; // Re-throw to exit the function immediately
-                        }
-                        console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
-                        console.log(`Error Details:`, error.message);
-                    }
-                }
+            if (provider === 'together' && openAiVisionService?.generateTextFromImageAndTextOpenAI) {
+                if (!connector) throw new Error("Connector is required for Together AI vision call.");
                 
-                console.error(`${functionName}: FINAL ERROR. All image providers failed.`);
+                // FIX: Pass the 'prompt' variable from the function's arguments.
+                response = await openAiVisionService.generateTextFromImageAndTextOpenAI(base64Data, mimeType, connector, geminiHistoryForSubServices, prompt, 'together', abortSignal);
+            }else if (provider === 'gemini' && mmService?.generateTextFromImageAndText) {
+                if (!connector) throw new Error("Connector is required for Gemini vision call.");
+                response = await mmService.generateTextFromImageAndText(base64Data, mimeType, connector, geminiHistoryForSubServices, prompt, 'gemini');
+            
+            } else {
+                throw new Error(`Provider [${provider}] is not configured or its service is unavailable.`);
+            }
+
+            // <<< DEBUG LOG: Log the raw response received >>>
+            console.log(`[AI_SVC_DEBUG] Raw response from [${provider}]:`, response);
+
+            if (typeof response === 'string' && response.trim() !== "" && !response.includes("An unexpected AI error")) {
+                console.log(`%c<-- SUCCESS from [${provider}].`, 'color: #28a745; font-weight: bold;');
                 console.groupEnd();
-                return getRandomHumanError();
-            },
+                return response;
+            }
+            throw new Error(`Provider [${provider}] returned null, an error message, or was not configured. Response: ${JSON.stringify(response)}`);
+
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log(`%c<-- ABORTED by user for [${provider}].`, 'color: #ff6347;');
+                console.groupEnd();
+                throw error;
+            }
+            // <<< DEBUG LOG: Log the specific error for this provider >>>
+            console.warn(`%c<-- FAILED. Provider [${provider}] threw an error. Trying next...`, 'color: #dc3545;');
+            console.error(`[AI_SVC_DEBUG] Error details for [${provider}]:`, error);
+        }
+    }
+
+    console.error(`${functionName}: FINAL ERROR. All configured image providers failed.`);
+    console.groupEnd();
+    return getRandomHumanError();
+},
             
           // src/js/services/ai_service.ts
 
@@ -484,7 +613,7 @@ generateTextMessage: async (
 
 generateSessionRecap: async (
     cleanedTranscriptText: string,
-    connector: Connector
+    connector: Connector | null // <<< THE FIX IS HERE: The function's own parameter
 ): Promise<RecapData> => {
     const functionName = "[AI_Facade][generateSessionRecap]";
     console.groupCollapsed(`%c📝 [Smart Recap Router] Request Started`, 'color: #007bff; font-weight: bold; font-size: 14px;');
@@ -529,17 +658,26 @@ generateSessionRecap: async (
             } else if (currentDeps.aiRecapService) {
                 recapResult = await currentDeps.aiRecapService.generateSessionRecap(cleanedTranscriptText, connector, provider);
             }
-
+            if (recapResult && recapResult.conversationSummary && window.memoryService?.processNewUserMessage && connector) {
+                console.log(`[CEREBRUM_LIVE_CALL_WRITE] ✍️ Post-recap. Sending full transcript to Scribe for analysis...`);
+                window.memoryService.processNewUserMessage(
+                    cleanedTranscriptText,
+                    connector.id, // The persona involved in the call
+                    'live_call',
+                    [] 
+                );
+            }
             if (recapResult && recapResult.conversationSummary) {
                 console.log(`%c<-- SUCCESS! Recap generated with [${provider}].`, 'color: #28a745; font-weight: bold;');
                 console.groupEnd();
                 return {
                     ...defaultRecapStructure(provider), ...recapResult,
-                    sessionId: `recap-${connector.id}-${Date.now()}`,
-                    connectorId: connector.id, connectorName: connector.profileName,
+                    sessionId: `recap-${connector?.id}-${Date.now()}`,
+                    connectorId: connector?.id, connectorName: connector?.profileName,
                     date: new Date().toLocaleDateString()
                 };
             }
+
             throw new Error(`Provider [${provider}] returned a null or invalid recap.`);
 
         } catch (error: any) {

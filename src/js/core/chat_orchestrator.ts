@@ -28,7 +28,7 @@ import type {
     ConversationManager,
     GroupManager,
     GroupDataManager, // <<< ENSURE THIS IS PRESENT
-    ChatSessionHandler,
+   
     ChatActiveTargetManager,
     TextMessageHandler,
     VoiceMemoHandler,
@@ -43,9 +43,12 @@ import type {
     ActiveOneOnOneChatItem,
     ActiveGroupListItem,
     ConversationItem,
-    GroupChatHistoryItem
+    GroupChatHistoryItem,
+    MessageInStore,
+    PolyglotHelpersOnWindow // <<< REPLACE PolyglotHelpers WITH THIS
 } from '../types/global'; // Path from src/js/core to src/js/types
-
+// In chat_orchestrator.ts
+import type { ChatSessionHandlerModule as ChatSessionHandler } from '../types/global';
 
 
 console.log('chat_orchestrator.ts: Script loaded, waiting for STRUCTURAL dependencies.');
@@ -114,7 +117,8 @@ function initializeActualChatOrchestrator(): void {
 
 
 
-   
+    console.log("CO_PRE_IIFE_DEBUG: window.chatSessionHandler at this point:", window.chatSessionHandler);
+    console.log("CO_PRE_IIFE_DEBUG: typeof window.chatSessionHandler?.openConversationInEmbeddedView:", typeof window.chatSessionHandler?.openConversationInEmbeddedView);
 
 
     window.chatOrchestrator = ((): ChatOrchestratorModule => {
@@ -140,20 +144,19 @@ function initializeActualChatOrchestrator(): void {
             { name: 'chatUiManager', getter: () => window.chatUiManager as ChatUiManager | undefined, keyFn: 'showEmbeddedChatInterface' },
        
             { name: 'tabManager', getter: () => window.tabManager as import('../types/global').TabManagerModule | undefined, keyFn: 'switchToTab' },
+            { name: 'polyglotHelpers', getter: () => window.polyglotHelpers as PolyglotHelpersOnWindow | undefined },
         ];
 
         type ResolvedDeps = {
             domElements?: YourDomElements; listRenderer?: ListRenderer; uiUpdater?: UiUpdater; modalHandler?: ModalHandler;
-            conversationManager?: ConversationManager; groupManager?: GroupManager; 
-            // --- START OF MODIFICATION CO.FIX.DEPS.2 ---
-            groupDataManager?: GroupDataManager; // <<< ADDED THIS LINE
-            // --- END OF MODIFICATION CO.FIX.DEPS.2 ---
+            conversationManager?: ConversationManager; groupManager?: GroupManager;
+            groupDataManager?: GroupDataManager;
             chatSessionHandler?: ChatSessionHandler;
             chatActiveTargetManager?: ChatActiveTargetManager; textMessageHandler?: TextMessageHandler; voiceMemoHandler?: VoiceMemoHandler;
             personaModalManager?: PersonaModalManager;
             tabManager?: import('../types/global').TabManagerModule;
             chatUiManager?: ChatUiManager;
-            
+            polyglotHelpers?: PolyglotHelpersOnWindow; // <<< Use the correct imported type name
         };
        // Inside ChatOrchestrator's IIFE
           // --- START OF MODIFICATION (CO.DEBUG.1a) ---
@@ -179,28 +182,22 @@ function initializeActualChatOrchestrator(): void {
         let co_isInitialized = false; // <<< ADD THIS LINE just before the function
 
         function initialize(): void {
-            if (co_isInitialized) { // <<< ADD THIS LINE
-                return;               // <<< ADD THIS LINE
-            }                         // <<< ADD THIS LINE
-            co_isInitialized = true;  // <<< ADD THIS LINE
+            if (co_isInitialized) {
+                return;
+            }
+            co_isInitialized = true;
+            console.log("ChatOrchestrator: Initializing event listeners for UI updates.");
         
-            console.log("ChatOrchestrator: Initialized and event listener attached."); // <<< REPLACE the old console.log with this one
-            
-            // The listener function officially accepts a generic 'Event'.
+            // This listener now redraws the chat list whenever a conversation
+            // is added, modified, or removed from the Firestore-backed cache.
             document.addEventListener('polyglot-conversation-updated', (e: Event) => {
-        
-        // Inside the function, we assert that this specific event IS a CustomEvent.
-        // This is a safe and direct way to tell TypeScript the object's true type.
-        const customEvent = e as CustomEvent; 
-
-        // Now, we can safely access .detail from our asserted 'customEvent' variable.
-        console.log("ChatOrchestrator: Received 'polyglot-conversation-updated' event. Refreshing sidebar.", customEvent.detail);
-        
-        requestAnimationFrame(() => {
-            renderCombinedActiveChatsList();
-        });
-    });
-}
+                const detail = (e as CustomEvent).detail;
+                console.log(`ChatOrchestrator: 'polyglot-conversation-updated' event received. Detail:`, detail);
+                setTimeout(() => { // Give cache a moment to settle
+                    requestAnimationFrame(renderCombinedActiveChatsList);
+                }, 50); // Small delay, e.g., 50ms
+            });
+        }
 
    function getCombinedActiveChats(): CombinedChatItem[] {
     console.log("CO_DEBUG: getCombinedActiveChats - START."); // <<< DEBUG LOG
@@ -219,15 +216,39 @@ function initializeActualChatOrchestrator(): void {
         console.log("CO_DEBUG: getCombinedActiveChats - Calling conversationManager.getActiveConversations()."); // <<< DEBUG LOG
         const rawConversations: ConversationItem[] = conversationManager.getActiveConversations();
         console.log("CO_DEBUG: getCombinedActiveChats - Raw conversations received:", JSON.parse(JSON.stringify(rawConversations || []))); // <<< DEBUG LOG
-        oneOnOneChatItems = rawConversations.map((convo: ConversationItem): ActiveOneOnOneChatItem => {
-            return {
-                id: convo.connector.id, 
-                isGroup: false,
-                connector: convo.connector,
-                messages: convo.messages, 
-                lastActivity: convo.lastActivity 
-            };
-        });
+      // in chat_orchestrator.ts
+
+
+      
+      oneOnOneChatItems = rawConversations.map((convo: ConversationItem): ActiveOneOnOneChatItem => {
+        // Ensure lastActivity is always a number.
+        const numericLastActivity = typeof convo.lastActivity === 'string'
+            ? parseInt(convo.lastActivity, 10)
+            : convo.lastActivity || 0;
+    
+        // Sanitize the messages array to conform to the strict MessageInStore type.
+        const cleanedMessages: MessageInStore[] = (convo.messages || []).map(msg => ({
+            ...msg,
+            id: msg.id || `fallback-id-${Math.random()}`,
+            messageId: msg.messageId || msg.id,
+            sender: msg.sender || 'unknown',
+            type: msg.type || 'text',
+            // This line ensures the timestamp is always a number.
+            timestamp: typeof msg.timestamp === 'string' ? parseInt(msg.timestamp, 10) : (msg.timestamp || 0),
+            text: msg.text || '',
+        }));
+    
+        // Construct the final, type-safe object.
+        return {
+            id: convo.connector.id,
+            isGroup: false,
+            connector: convo.connector,
+            messages: cleanedMessages, // Use the sanitized array
+            lastActivity: numericLastActivity,
+            lastMessage: (convo as any).lastMessage,
+            lastMessagePreview: convo.lastMessagePreview
+        };
+    });
     } else {
         console.warn("CO.getCombinedActiveChats: conversationManager or conversationManager.getActiveConversations not available at time of call."); // <<< IMPORTANT WARNING
         if (conversationManager) {
@@ -263,12 +284,17 @@ function initializeActualChatOrchestrator(): void {
 
 // REPLACE this entire function
 // =================== START: REPLACEMENT ===================
+
 function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
     console.log("CO_DEBUG: handleActiveChatItemClickInternal called with:", JSON.parse(JSON.stringify(itemData)));
-    const { chatSessionHandler, groupManager, tabManager } = getResolvedDeps();
-
-    if (!chatSessionHandler || !groupManager || !tabManager) {
-        console.error("CO: Critical dependency (CSH, GM, or TabManager) missing in handleActiveChatItemClickInternal.");
+    // <<<< ADD auth to the destructured dependencies if you get it via getResolvedDeps,
+    // otherwise, access window.auth directly if available globally.
+    // For this example, let's assume window.auth is available and configured.
+    const { chatSessionHandler, groupManager, tabManager, conversationManager } = getResolvedDeps();
+    console.log("CO_DEBUG: chatSessionHandler from getResolvedDeps():", chatSessionHandler);
+    console.log("CO_DEBUG: typeof chatSessionHandler?.openConversationInEmbeddedView:", typeof chatSessionHandler?.openConversationInEmbeddedView);
+    if (!chatSessionHandler || !groupManager || !tabManager || !conversationManager) {
+        console.error("CO: Critical dependency missing in handleActiveChatItemClickInternal.");
         return;
     }
 
@@ -278,27 +304,30 @@ function handleActiveChatItemClickInternal(itemData: CombinedChatItem): void {
         groupManager.joinGroup(group.id);
 
     } else {
+        // This is the updated logic for a 1-on-1 chat
         const oneOnOne = itemData as ActiveOneOnOneChatItem;
-        
-        if (groupManager.getCurrentGroupData?.()) {
-            console.log("ChatOrchestrator: Leaving active group to switch to 1-on-1 chat.");
-            groupManager.leaveCurrentGroup(false, false);
+        const partnerConnector = oneOnOne.connector;
+    
+        const user = window.auth?.currentUser;
+        const firebaseDisplayName = user?.displayName || undefined;
+    
+        if (firebaseDisplayName && window.memoryService && typeof window.memoryService.seedInitialUserFact === 'function') {
+            console.log(`[ChatOrchestrator] Seeding initial user fact (registeredUsername: ${firebaseDisplayName}) for persona ${partnerConnector.id}`);
+            window.memoryService.seedInitialUserFact(partnerConnector.id, 'user.registeredUsername', firebaseDisplayName)
+                .catch(err => console.error("Error seeding initial user fact:", err));
         }
+    
+        conversationManager.ensureConversationRecord(partnerConnector).then(conversationId => {
+            if (!conversationId) {
+                console.error(`Failed to ensure conversation record for ${partnerConnector.id}`);
+                return;
+            }
         
-        console.log("CO: Delegating 1-on-1 conversation to ChatSessionHandler for:", oneOnOne.connector.id);
-        chatSessionHandler.openConversationInEmbeddedView(oneOnOne.connector);
-        
-        // --- THIS IS THE FIX ---
-        // Only switch to the 'messages' tab if we are NOT already on it.
-        // This prevents the redundant and destructive call to handleMessagesTabActive.
-        if (tabManager.getCurrentActiveTab?.() !== 'messages') {
-            console.log("CO: Not on messages tab. Requesting tab switch to 'messages'.");
             tabManager.switchToTab('messages');
-        } else {
-            console.log("CO: Already on messages tab. Skipping redundant tab switch.");
-        }
-    }
-}
+            // MODIFIED CALL HERE
+            chatSessionHandler.openConversationInEmbeddedView(partnerConnector, firebaseDisplayName);
+        });
+    }}
 // ===================  END: REPLACEMENT  ===================
 
 
@@ -360,40 +389,15 @@ if (searchTerm) {
        // chat_orchestrator.ts
        // This function is INSIDE the IIFE returned by initializeActualChatOrchestrator
 // =================== START: REPLACEMENT 3 ===================
-function handleMessagesTabActive(): void {
-    if (co_isHandlingMessagesTabActive) {
-        console.warn("CO_DEBUG: handleMessagesTabActive - ALREADY PROCESSING. Preventing re-entry.");
-        return;
-    }
-    co_isHandlingMessagesTabActive = true;
-    console.log("CO_DEBUG: handleMessagesTabActive called and lock acquired.");
-    
-    const deps = getResolvedDeps();
 
-    // --- THIS IS THE FIX ---
-    // Before doing anything, check if the session handler is already opening a chat.
-    const alreadyOpening = deps.chatActiveTargetManager?.getEmbeddedChatTargetId();
-    if (alreadyOpening) {
-        console.log(`CO_DEBUG: A chat (${alreadyOpening}) is already being opened. The orchestrator will not interfere.`);
-        co_isHandlingMessagesTabActive = false; // Release lock
-        console.log("CO_DEBUG: handleMessagesTabActive - Lock released.");
-        return; // Do nothing
-    }
-    // --- END OF FIX ---
+// PASTE THIS NEW, SIMPLER FUNCTION in chat_orchestrator.ts
+
+function handleMessagesTabActive(): void {
+    console.log("CO: 'Messages' tab became active. Triggering a refresh of the sidebar list.");
     
-    try {
-        if (deps.chatSessionHandler && typeof deps.chatSessionHandler.handleMessagesTabBecameActive === 'function') {
-            console.log("CO_DEBUG: Delegating to chatSessionHandler.handleMessagesTabBecameActive()");
-            deps.chatSessionHandler.handleMessagesTabBecameActive(); 
-        } else {
-            // ... existing error handling ...
-        }
-    } finally {
-        setTimeout(() => {
-            co_isHandlingMessagesTabActive = false;
-            console.log("CO_DEBUG: handleMessagesTabActive - Lock released.");
-        }, 100); 
-    }
+    // This function's ONLY job should be to re-render the list of active chats.
+    // It should not interfere with the main chat view at all.
+    renderCombinedActiveChatsList();
 }
 // ===================  END: REPLACEMENT 3  ===================
 

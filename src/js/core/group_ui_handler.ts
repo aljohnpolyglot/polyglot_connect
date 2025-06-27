@@ -12,7 +12,7 @@ import type {
     
     ChatMessageOptions // <<< ADD THIS LINE
 } from '../types/global.d.ts';
-
+import { auth } from '../firebase-config'; // <<< ADD THIS LINE
 console.log('group_ui_handler.ts: Script loaded, waiting for core dependencies.');
 interface GroupUiHandlerModule {
     initialize: () => void;
@@ -21,7 +21,7 @@ interface GroupUiHandlerModule {
     hideGroupChatViewAndShowList: () => void;
     updateGroupTypingIndicator: (text: string, options?: ChatMessageOptions) => HTMLElement | null;
     clearGroupInput: () => void;
-    appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => void;
+    appendMessageToGroupLog: (text: string, senderName: string, isUser: boolean, speakerId: string, options?: ChatMessageOptions) => HTMLElement | null; // <<< MODIFIED
     clearGroupChatLog: () => void;
     openGroupMembersModal: () => void;
     openGroupInfoModal: (group: Group) => void; // ===== ADD THIS LINE =====
@@ -81,7 +81,7 @@ function initializeActualGroupUiHandler(): void {
             hideGroupChatViewAndShowList: () => console.error("GUH not init"),
             updateGroupTypingIndicator: () => { console.error("GUH not init"); return null; },
             clearGroupInput: () => console.error("GUH not init"),
-            appendMessageToGroupLog: () => console.error("GUH not init"),
+            appendMessageToGroupLog: () => { console.error("GUH not init"); return null; }, // <<< MODIFIED
             clearGroupChatLog: () => console.error("GUH not init"),
             openGroupMembersModal: () => console.error("GUH not init (members modal)"),
             openGroupInfoModal: () => console.error("GUH not init (info modal)") // ===== ADD THIS LINE =====
@@ -431,9 +431,15 @@ function showGroupChatView(
             if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
                 let textForDisplay = msg.text || "";
                 const messageOptions: ChatMessageOptions = {
-                    ...msg, // <<< THIS IS THE FIX. It copies all properties from history, including reactions.
+                    messageId: msg.messageId, // CRITICAL: Use the messageId from history
+                    id: msg.firestoreDocId, // Pass Firestore doc ID if available
                     timestamp: msg.timestamp,
-                    messageId: msg.messageId,
+                    reactions: msg.reactions,
+                    type: msg.type, // Pass the type from history
+                    imageUrl: msg.type === 'image' ? msg.imageUrl : undefined,
+                    audioSrc: msg.type === 'voice_memo' ? msg.audioBlobDataUrl : undefined, // Map audioBlobDataUrl to audioSrc
+                    imageSemanticDescription: msg.type === 'image' ? msg.imageSemanticDescription : undefined,
+                    // Ensure other relevant fields from GroupChatHistoryItem are mapped if needed
                 };
                 if (msg.isVoiceMemo && msg.audioBlobDataUrl) {
                     messageOptions.isVoiceMemo = true;
@@ -456,11 +462,12 @@ function showGroupChatView(
                 // --- FIX 3: Pass the explicit speakerId from the message to the renderer ---
                 // This is the most critical part. We are telling the UI updater exactly who
                 // spoke this specific message, preventing it from using any stale state.
+                console.log(`GUH.showGroupChatView (History): Rendering msgId ${msg.messageId}, type: ${msg.type}, audioSrc: ${messageOptions.audioSrc}, imageUrl: ${messageOptions.imageUrl}`);
                 currentUiUpdater.appendToGroupChatLog(
                     textForDisplay,
                     senderName,
                     isCurrentUserMessage,
-                    msg.speakerId, // <<< The ground truth for this message
+                    msg.speakerId,
                     messageOptions
                 );
             } else {
@@ -493,8 +500,10 @@ const hideGroupChatViewAndShowList = (): void => {
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
 // =================== START: REPLACE WITH THIS FUNCTION (in group_ui_handler.ts) ===================
 // Replace the old function with this new one.
-
-function updateGroupTypingIndicator(text: string): HTMLElement | null {
+function updateGroupTypingIndicator(
+    text: string,
+    options?: ChatMessageOptions // <<< ADDED options PARAMETER
+): HTMLElement | null {
     const { domElements, uiUpdater, polyglotConnectors } = resolvedDeps!;
 
     if (!domElements?.groupChatLogDiv || !uiUpdater || !polyglotConnectors) {
@@ -550,23 +559,25 @@ function updateGroupTypingIndicator(text: string): HTMLElement | null {
         }
 
        // group_ui_handler.ts -> initializeActualGroupUiHandler -> IIFE
-// Example for a method using uiUpdater:
-function appendMessageToGroupLog(text: string, senderName: string, isUser: boolean, speakerId: string,
-    options: ChatMessageOptions = {} // <<< THIS IS THE KEY ADDITION
-
-
-): void {
-    const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+       function appendMessageToGroupLog(
+        text: string, 
+        senderName: string, 
+        isUser: boolean, 
+        speakerId: string,
+        options: ChatMessageOptions = {} // Ensure ChatMessageOptions includes audioSrc, imageUrl, type, etc.
+    ): HTMLElement | null {
+        const currentUiUpdater = window.uiUpdater as UiUpdater | undefined;
+    
     const currentGroupDataManager = window.groupDataManager as GroupDataManager | undefined;
 
-    if (isUser && speakerId === "user_player" && currentGroupDataManager) {
+    if (isUser && (speakerId === "user_player" || speakerId === auth.currentUser?.uid) && currentGroupDataManager) {
         const groupHistory = currentGroupDataManager.getLoadedChatHistory?.();
         if (groupHistory && groupHistory.length > 0) {
             const lastUserVoiceMemo = groupHistory
                 .slice() // Create a copy to reverse without modifying original
                 .reverse()
                 .find(msg =>
-                    msg.speakerId === "user_self_001" && // VM uses user_self_001
+                    (msg.speakerId === "user_self_001" || msg.speakerId === auth.currentUser?.uid) && // Added auth check
                     msg.isVoiceMemo &&
                     msg.text === text // Compare transcript text
                 );
@@ -577,7 +588,7 @@ function appendMessageToGroupLog(text: string, senderName: string, isUser: boole
                 const timeDifferenceMs = Date.now() - lastUserVoiceMemo.timestamp;
                 if (timeDifferenceMs < 2000) { // 2 seconds threshold
                     console.log(`GUH.appendMessageToGroupLog: User text message ("${text.substring(0,20)}...") matches a recent voice memo transcript. Skipping duplicate UI append.`);
-                    return; // Skip appending this plain text version
+                    return null; // <<< ADDED return
                 }
             }
         }
@@ -585,17 +596,17 @@ function appendMessageToGroupLog(text: string, senderName: string, isUser: boole
 
   
     if (currentUiUpdater && typeof currentUiUpdater.appendToGroupChatLog === 'function') {
-        // Ensure the base options are passed through correctly
         const finalOptions: ChatMessageOptions = {
-            ...options, // This carries the imageUrl, messageId, etc.
+            ...options, // Carries type, imageUrl, audioSrc, imageSemanticDescription
             timestamp: options.timestamp || Date.now(),
-            speakerId: speakerId
+            speakerId: speakerId 
         };
-
-        console.log(`GUH.appendMessageToGroupLog: Passing to uiUpdater. Text: "${text.substring(0,30)}...", Sender: ${senderName}, speakerId: ${speakerId}`);
-        currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, finalOptions);
-    } else {
+        // Log what's being passed, especially type, audioSrc, imageUrl
+        console.log(`GUH.appendMessageToGroupLog: Passing to uiUpdater. Type: ${finalOptions.type}, Text: "${text.substring(0,30)}...", audioSrc: ${finalOptions.audioSrc}, imageUrl: ${finalOptions.imageUrl}`);
+        return currentUiUpdater.appendToGroupChatLog(text, senderName, isUser, speakerId, finalOptions);
+    }else {
         console.error("GUH.appendMessageToGroupLog: Functional uiUpdater or appendToGroupChatLog method not available at runtime.");
+        return null;
     }
 }
 

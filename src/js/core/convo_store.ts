@@ -44,20 +44,19 @@ function initializeActualConvoStore(): void {
         // but they will operate on an empty/non-functional store.
         const dummyMethods: ConvoStoreModule = {
             initializeStore: () => console.error("ConvoStore dummy: initializeStore called."),
-            saveAllConversationsToStorage: () => console.error("ConvoStore dummy: saveAll called."),
+            clearCache: () => console.error("ConvoStore dummy: clearCache called."),
+            cacheConversation: () => console.error("ConvoStore dummy: cacheConversation called."),
+            cacheMessage: () => console.error("ConvoStore dummy: cacheMessage called."),
+            removeConversationFromCache: () => console.error("ConvoStore dummy: removeConversationFromCache called."),
             getConversationById: () => { console.error("ConvoStore dummy: getConversationById called."); return null; },
             getAllConversationsAsArray: () => { console.error("ConvoStore dummy: getAllConversationsAsArray called."); return []; },
-            createNewConversationRecord: () => { console.error("ConvoStore dummy: createNew called."); return null; },
-            updateConversationProperty: () => { console.error("ConvoStore dummy: updateConversationProperty called."); return null; },
-            addMessageToConversationStore: () => { console.error("ConvoStore dummy: addMessage called."); return false; },
             getGeminiHistoryFromStore: () => { console.error("ConvoStore dummy: getGeminiHistory called."); return []; },
             updateGeminiHistoryInStore: () => { console.error("ConvoStore dummy: updateGeminiHistory called."); return false; },
-            // --- ADD THESE TWO DUMMY FUNCTIONS ---
             getGlobalUserProfile: () => { console.error("ConvoStore dummy: getGlobalUserProfile called."); return ""; },
             updateGlobalUserProfile: () => { console.error("ConvoStore dummy: updateGlobalUserProfile called."); },
-            updateUserProfileSummary: function (groupId: string, summary: string): void {
-                throw new Error('Function not implemented.');
-            }
+            updateUserProfileSummary: () => { console.error("ConvoStore dummy: updateUserProfileSummary called."); },
+            addOptimisticMessage: () => console.error("ConvoStore dummy: addOptimisticMessage called."),
+            saveAllConversationsToStorage: () => console.error("ConvoStore dummy: saveAll called."),
         };
         Object.assign(window.convoStore!, dummyMethods);
         document.dispatchEvent(new CustomEvent('convoStoreReady'));
@@ -65,272 +64,155 @@ function initializeActualConvoStore(): void {
         return;
     }
     console.log('convo_store.ts: Core functional dependencies (polyglotHelpers) appear ready.');
+const storeInstance = ((): ConvoStoreModule => {
+    'use strict';
+    console.log("ConvoStore: IIFE executing (Firestore-backed cache version).");
 
-    const storeInstance = ((): ConvoStoreModule => {
-        'use strict';
-        const { polyglotHelpers } = resolvedDeps!;
-        
-        // 'activeConversations' is now declared in the outer scope of the IIFE,
-        // but its type 'ActiveConversationsStore' needs to be visible here.
-        let activeConversations: ActiveConversationsStore = {}; // << This should now find the type
-        let globalUserProfile: { [userId: string]: string } = {}; // <<< ADD THIS LINE
-        const STORAGE_KEY = 'polyglotActiveConversations';
-        const USER_PROFILE_STORAGE_KEY = 'polyglotUserProfile'; // <<< ADD THIS LINE
-        function initializeStore(): void {
-            const saved = polyglotHelpers.loadFromLocalStorage(STORAGE_KEY);
-            if (saved && typeof saved === 'object') {
-                activeConversations = saved;
-                Object.keys(activeConversations).forEach(id => {
-                    const convo = activeConversations[id];
-                    if (!convo.messages || !Array.isArray(convo.messages)) convo.messages = [];
-                    if (!convo.geminiHistory || !Array.isArray(convo.geminiHistory)) convo.geminiHistory = [];
-                    if (!convo.id) convo.id = id; // Ensure ID consistency
-                });
-                console.log(`ConvoStore: Initialized. Loaded ${Object.keys(activeConversations).length} conversations from localStorage.`);
-            } else {
-                activeConversations = {};
-                console.log("ConvoStore: Initialized. No valid saved data. Starting fresh.");
-            }
-                    // --- ADD THIS NEW BLOCK ---
-                    const savedProfile = polyglotHelpers.loadFromLocalStorage(USER_PROFILE_STORAGE_KEY);
-                    if (savedProfile && typeof savedProfile === 'object') {
-                        globalUserProfile = savedProfile;
-                        console.log(`ConvoStore: Initialized. Loaded user profile data.`);
-                    } else {
-                globalUserProfile = {};
-                console.log("ConvoStore: Initialized. No saved user profile found.");
-            }
+    // This is now just an in-memory map. No more localStorage keys.
+    let conversationCache: { [conversationId: string]: ConversationRecordInStore } = {};
+    let userProfileCache: { [userId: string]: string } = {};
 
-            // --- Logic to check for and expire old images on load ---
-            const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
-            let wasImageExpired = false;
-
-            for (const convoId in activeConversations) {
-                const convo = activeConversations[convoId];
-                if (convo.messages) {
-                    for (const msg of convo.messages) {
-                        if (msg.content_url?.startsWith('data:image') && msg.timestamp < twentyFourHoursAgo) {
-                            console.log(`CS_INIT: Expiring image from msg '${msg.id}' (timestamp: ${new Date(msg.timestamp).toLocaleString()}) because it's older than 24 hours.`);
-                            msg.content_url = 'image_expired';
-                            wasImageExpired = true;
-                        }
-                    }
-                }
-            }
-            
-            // If we expired an image, we need to re-save the store to persist the change.
-            if (wasImageExpired) {
-                console.log("CS_INIT: An image was expired, re-saving the conversation store.");
-                saveAllConversationsToStorage(); // This will save the now-pruned data
-            }
-
-
-
-
-    // --- END NEW BLOCK ---
-        }
-
-      // Inside the storeInstance IIFE in convo_store.ts
-// Inside the storeInstance IIFE in convo_store.ts
-
-
-// =================== REPLACE THE ENTIRE FUNCTION WITH THIS ===================
-
-function saveAllConversationsToStorage(): void {
-    try {
-        const conversationsForStorage: ActiveConversationsStore = JSON.parse(JSON.stringify(activeConversations));
-
-        let latestImage: { timestamp: number, convoId: string, msgId: string } | null = null;
-        const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
-
-        // --- PASS 1: Find the absolute most recent image across ALL conversations ---
-        for (const convoId in conversationsForStorage) {
-            const convo = conversationsForStorage[convoId];
-            if (convo.messages) {
-                for (const msg of convo.messages) {
-                    if (msg.content_url?.startsWith('data:image') && msg.timestamp > (latestImage?.timestamp || 0)) {
-                        // Check if the image is NOT older than 24 hours
-                        if (msg.timestamp >= twentyFourHoursAgo) {
-                            latestImage = { timestamp: msg.timestamp, convoId, msgId: msg.id! };
-                        } else {
-                            // This image is already expired, mark it for removal immediately
-                            console.log(`CS_SAVE: Expiring old image on save: msg '${msg.id}'`);
-                            msg.content_url = 'image_expired';
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- PASS 2: Prune all other images and clean up ---
-        for (const convoId in conversationsForStorage) {
-            const convo = conversationsForStorage[convoId];
-            if (convo.messages) {
-                for (const msg of convo.messages) {
-                    // Prune large auxiliary data from ALL messages to save space
-                    if (msg.imagePartsForGemini) delete msg.imagePartsForGemini;
-                    if ((msg as any).base64ImageDataForAI) delete (msg as any).base64ImageDataForAI;
-
-                    // Now, handle the main image data
-                    if (msg.content_url?.startsWith('data:image')) {
-                        const isTheOneToKeep = latestImage && convoId === latestImage.convoId && msg.id === latestImage.msgId;
-                        if (!isTheOneToKeep) {
-                            // This is an older image or one that was just expired.
-                            // Mark it as expired for the UI renderer.
-                            msg.content_url = 'image_expired';
-                        }
-                    }
-                }
-            }
-        }
-
-        if (latestImage) {
-            console.log(`CS_SAVE: The single image being kept is msg '${latestImage.msgId}' in convo '${latestImage.convoId}'.`);
-        } else {
-            console.log("CS_SAVE: No recent images found to keep. All Base64 data will be pruned.");
-        }
-
-        polyglotHelpers.saveToLocalStorage(STORAGE_KEY, conversationsForStorage);
-
-    } catch (e: any) {
-        console.error(`ConvoStore: Critical error in saveAllConversationsToStorage.`, e);
-        if (e.name === 'QuotaExceededError') {
-            alert("Storage Error: Your browser storage is full, which may cause chat history to be lost. Please try clearing the site data.");
-        }
+    function initializeStore(): void {
+        // When initializing, we start with a clean slate.
+        conversationCache = {};
+        userProfileCache = {};
+        console.log("ConvoStore: In-memory cache initialized (cleared). Waiting for data from Firestore listener.");
     }
-}
-// ============================================================================
+    
+    // Clears all data from the cache. Called on logout.
+    function clearCache(): void {
+        conversationCache = {};
+        userProfileCache = {};
+        console.log("ConvoStore: Cache cleared successfully.");
+    }
 
-        function getConversationById(connectorId: string): ConversationRecordInStore | null {
-            return activeConversations[connectorId] || null;
-        }
+    // --- Cache Management Functions (called by ConversationManager) ---
 
-        function getAllConversationsAsArray(): ConversationRecordInStore[] {
-            return Object.values(activeConversations);
-        }
-
-        function createNewConversationRecord(connectorId: string, connectorData: Connector): ConversationRecordInStore | null {
-            if (activeConversations[connectorId]) {
-                return activeConversations[connectorId];
-            }
-            const newRecord: ConversationRecordInStore = {
-                id: connectorId,
-                connector: { ...connectorData }, // Store a copy
+    function cacheConversation(conversationId: string, data: Partial<ConversationRecordInStore>): void {
+        if (!conversationCache[conversationId]) {
+            // If it's the first time we're seeing this convo, create a default record.
+            conversationCache[conversationId] = {
+                id: conversationId,
                 messages: [],
-                lastActivity: Date.now(),
-                geminiHistory: [], // To be initialized by prompt builder via facade
-                userProfileSummary: "" // <<< ADD THIS NEW LINE
+                lastActivity: 0,
+                geminiHistory: [],
+                ...data,
             };
-            activeConversations[connectorId] = newRecord;
-            saveAllConversationsToStorage();
-            console.log(`ConvoStore: New conversation record CREATED for ${connectorId}.`);
-            return newRecord;
+             console.log(`ConvoStore: NEW conversation cached: ${conversationId}`);
+        } else {
+            // Otherwise, merge the new data into the existing cached record.
+            Object.assign(conversationCache[conversationId], data);
+            console.log(`ConvoStore: UPDATED cached conversation: ${conversationId}`);
         }
-
-        function updateConversationProperty(
-            connectorId: string,
-            propertyName: keyof ConversationRecordInStore,
-            value: any
-        ): ConversationRecordInStore | null {
-            if (!activeConversations[connectorId]) return null;
-            if (propertyName === 'id') return activeConversations[connectorId]; // ID shouldn't change
-            
-            (activeConversations[connectorId] as any)[propertyName] = value;
-            activeConversations[connectorId].lastActivity = Date.now();
-            // Save handled by higher-level functions usually
-            return activeConversations[connectorId];
-        }
-
-      // D:\polyglot_connect\src\js\core\convo_store.ts
-
-      function addMessageToConversationStore(connectorId: string, messageObject: MessageInStore): boolean {
-        if (!activeConversations[connectorId]) return false;
-        if (!activeConversations[connectorId].messages) activeConversations[connectorId].messages = [];
-        // VVVVV ADD THIS LOG VVVVV
-console.log(`CONVO_STORE_ADD_MSG for ${connectorId}: ID='${messageObject.id}', Text='${messageObject.text?.substring(0,30)}', isVoiceMemo='${messageObject.isVoiceMemo}', audioBlobDataUrl PRESENT='${!!messageObject.audioBlobDataUrl}', Type='${messageObject.type}'`);
-if (messageObject.isVoiceMemo) {
-    console.log(`CONVO_STORE_ADD_MSG_VOICE_URL for ${connectorId}: ${messageObject.audioBlobDataUrl?.substring(0,100)}...`);
-}
-// ^^^^^ ADD THIS LOG ^^^^^
-        // DEBUG LOG (as per your request)
-        console.log("CS_DEBUG addMessageToStore: messageObject being pushed:", JSON.parse(JSON.stringify(messageObject)));
-
-        activeConversations[connectorId].messages.push(messageObject);
-        activeConversations[connectorId].lastActivity = messageObject.timestamp || Date.now();
-        
-        // <<< START: THIS IS THE FIX >>>
-        // 1. Immediately save the entire state to localStorage. This prevents race conditions.
-        saveAllConversationsToStorage();
-
-        // 2. Dispatch a specific event to notify the UI to refresh the chat list.
-        document.dispatchEvent(new CustomEvent('polyglot-conversation-updated', {
-            detail: {
-                type: 'one-on-one',
-                id: connectorId
-            }
-        }));
-        console.log(`ConvoStore: Dispatched 'polyglot-conversation-updated' for 1-on-1 chat: ${connectorId}`);
-        // <<< END: THIS IS THE FIX >>>
-        
-        return true;
     }
 
-        function getGeminiHistoryFromStore(connectorId: string): GeminiChatItem[] {
-            const convo = activeConversations[connectorId];
-            return convo?.geminiHistory ? [...convo.geminiHistory] : []; // Return a copy
+    function cacheMessage(conversationId: string, message: MessageInStore): void {
+        if (!conversationCache[conversationId]) {
+            console.warn(`ConvoStore: Tried to cache message for non-existent conversation ${conversationId}.`);
+            // Optionally, you could create a placeholder convo here, but it's better if convos are cached first.
+            return;
         }
+        const existingMessages = conversationCache[conversationId].messages;
+        const messageExists = existingMessages.some(m => m.id === message.id);
 
-        function updateGeminiHistoryInStore(connectorId: string, newHistoryArray: GeminiChatItem[]): boolean {
-            if (!activeConversations[connectorId] || !Array.isArray(newHistoryArray)) return false;
-            activeConversations[connectorId].geminiHistory = newHistoryArray;
-            // Save handled by higher-level functions
+        if (!messageExists) {
+            existingMessages.push(message);
+            // Sort messages by timestamp just in case they arrive out of order
+            existingMessages.sort((a, b) => a.timestamp - b.timestamp);
+        }
+    }
+    
+    function removeConversationFromCache(conversationId: string): void {
+        if (conversationCache[conversationId]) {
+            delete conversationCache[conversationId];
+            console.log(`ConvoStore: Removed conversation ${conversationId} from cache.`);
+        }
+    }
+    
+    // --- Synchronous Getters for UI ---
+    
+    function getConversationById(conversationId: string): ConversationRecordInStore | null {
+        return conversationCache[conversationId] || null;
+    }
+
+    function getAllConversationsAsArray(): ConversationRecordInStore[] {
+        return Object.values(conversationCache);
+    }
+    
+    // --- Gemini History and Profile (remain local for now) ---
+    
+    function getGeminiHistoryFromStore(conversationId: string): GeminiChatItem[] {
+        return conversationCache[conversationId]?.geminiHistory ? [...conversationCache[conversationId].geminiHistory] : [];
+    }
+
+    function updateGeminiHistoryInStore(conversationId: string, newHistoryArray: GeminiChatItem[]): boolean {
+        if (conversationCache[conversationId]) {
+            conversationCache[conversationId].geminiHistory = newHistoryArray;
             return true;
         }
-        
-        function getGlobalUserProfile(userId: string = 'default_user'): string {
-            const profile = globalUserProfile[userId] || "";
-            console.log(`[CONVO_STORE] getGlobalUserProfile called for user '${userId}'. Returning summary:\n---`, profile || "[Empty]", "\n---");
-            return profile;
-        }
+        return false;
+    }
     
-        function updateGlobalUserProfile(newSummary: string, userId: string = 'default_user'): void {
-            console.log(`[CONVO_STORE] updateGlobalUserProfile called for user '${userId}'. Saving new summary:\n---`, newSummary, "\n---");
-            globalUserProfile[userId] = newSummary;
-            try {
-                polyglotHelpers.saveToLocalStorage(USER_PROFILE_STORAGE_KEY, globalUserProfile);
-                console.log(`[CONVO_STORE] Successfully saved global user profile to localStorage.`);
-            } catch (e: any) {
-                console.error(`[CONVO_STORE] FAILED to save global user profile to localStorage.`, e);
-            }
+    function updateUserProfileSummary(conversationId: string, summary: string): void {
+         if (conversationCache[conversationId]) {
+            conversationCache[conversationId].userProfileSummary = summary;
         }
-        function updateUserProfileSummary(connectorId: string, summary: string): void {
-            if (activeConversations[connectorId]) {
-                activeConversations[connectorId].userProfileSummary = summary;
-                console.log(`[CONVO_STORE] Updated user profile summary for conversation: ${connectorId}`);
-                // Note: We don't save to storage here. The calling function is responsible
-                // for triggering a save after making all necessary updates.
-            } else {
-                console.warn(`[CONVO_STORE] updateUserProfileSummary: No conversation found for ID: ${connectorId}`);
-            }
-        }
-        // Call initializeStore when the IIFE runs
-        initializeStore();
+    }
+    
+    function getGlobalUserProfile(userId: string = 'default_user'): string {
+        return userProfileCache[userId] || "";
+    }
 
-        return {
-            initializeStore, // Expose if re-initialization is ever needed, or make internal
-            saveAllConversationsToStorage,
-            getConversationById,
-            getAllConversationsAsArray,
-            createNewConversationRecord,
-            updateConversationProperty,
-            addMessageToConversationStore,
-            getGeminiHistoryFromStore,
-            updateGeminiHistoryInStore,
-            getGlobalUserProfile,
-            updateGlobalUserProfile,
-            updateUserProfileSummary
-        };
-    })();
+    function updateGlobalUserProfile(newSummary: string, userId: string = 'default_user'): void {
+        userProfileCache[userId] = newSummary;
+    }
+
+
+    // PASTE THIS NEW FUNCTION inside the convo_store.ts IIFE
+
+function addOptimisticMessage(conversationId: string, message: MessageInStore): void {
+    const conversation = conversationCache[conversationId];
+    if (!conversation) {
+        console.warn(`ConvoStore: Tried to add optimistic message to non-existent conversation ${conversationId}.`);
+        return;
+    }
+
+    // Add the new message to the start of the UI, but also to our local data model
+    conversation.messages.push(message);
+
+    // Also update the last activity and preview for immediate sorting
+    conversation.lastActivity = message.timestamp;
+    conversation.lastMessagePreview = `You: ${message.text}`; // Assuming it's a user message
+    
+    console.log(`ConvoStore: Optimistically added message and updated activity for ${conversationId}.`);
+}
+
+    // OBSOLETE, but kept to satisfy the old interface during transition. Does nothing.
+    function saveAllConversationsToStorage(): void {
+        // This function is now intentionally left blank.
+        // console.log("ConvoStore: `saveAllConversationsToStorage` called, but it's obsolete. Firestore is the source of truth.");
+    }
+
+    // Run the initializer
+    initializeStore();
+
+    return {
+        initializeStore,
+        clearCache,
+        cacheConversation,
+        cacheMessage,
+        removeConversationFromCache,
+        getConversationById,
+        getAllConversationsAsArray,
+        getGeminiHistoryFromStore,
+        updateGeminiHistoryInStore,
+        updateUserProfileSummary,
+        getGlobalUserProfile,
+        updateGlobalUserProfile,
+        addOptimisticMessage, // <<< ADD THIS LINE
+        saveAllConversationsToStorage // Keep for now to prevent breaking other files
+    };
+})();
 
     Object.assign(window.convoStore!, storeInstance);
 

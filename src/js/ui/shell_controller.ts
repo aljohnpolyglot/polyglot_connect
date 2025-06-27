@@ -57,6 +57,7 @@ function initializeActualShellController(): void {
             sidebarPanelManager: window.sidebarPanelManager as import('../types/global').SidebarPanelManagerModule | undefined,
             filterController: window.filterController as import('../types/global').FilterController | undefined,
             personaModalManager: window.personaModalManager as import('../types/global').PersonaModalManager | undefined,
+            tabManager: window.tabManager as import('../types/global').TabManagerModule | undefined,
             conversationManager: window.conversationManager as import('../types/global').ConversationManager | undefined,
             groupDataManager: window.groupDataManager as import('../types/global').GroupDataManager | undefined 
       
@@ -285,7 +286,7 @@ if (domElements.searchSessionHistoryInput && polyglotHelpers?.debounce && sessio
                     else if (groupManager?.userIsTyping) groupManager.userIsTyping();
                 });
             }
-            if (domElements.leaveGroupBtn) domElements.leaveGroupBtn.addEventListener('click', () => groupManager?.leaveCurrentGroup?.());
+            // if (domElements.leaveGroupBtn) domElements.leaveGroupBtn.addEventListener('click', () => groupManager?.leaveCurrentGroup?.());
 
             if (domElements.embeddedMessageAttachBtn && domElements.embeddedMessageImageUpload) {
                 domElements.embeddedMessageAttachBtn.addEventListener('click', () => {
@@ -405,9 +406,31 @@ function setupMasterViewCoordinator(initialTab: string) {
         }
     });
 
-    // Immediately handle the initial tab load
-    console.log(`[Shell Coordinator] Performing initial coordination for tab: '${initialTab}'`);
-    handleViewChange(initialTab);
+     // --- MODIFY THIS LISTENER SECTION ---
+     const reEvaluateGroupsViewIfNeeded = () => {
+        console.log("[Shell Coordinator] Re-evaluating groups view due to GDM update.");
+        const { tabManager } = getDeps(); 
+        if (tabManager?.getCurrentActiveTab() === 'groups') {
+            console.log("[Shell Coordinator] Currently on 'groups' tab. Re-triggering handleViewChange('groups').");
+            handleViewChange('groups'); // This will use the latest GDM state
+        }
+    };
+ // Listen for GDM being initially ready
+ document.addEventListener('groupDataManagerReady', () => {
+    console.log("[Shell Coordinator] Event 'groupDataManagerReady' received.");
+    reEvaluateGroupsViewIfNeeded();
+}, { once: true }); // Listen only once for the initial ready state
+
+// Listen for subsequent updates to joined groups (e.g., after auth resolves)
+document.addEventListener('polyglot-joined-groups-updated', () => {
+    console.log("[Shell Coordinator] Event 'polyglot-joined-groups-updated' received.");
+    reEvaluateGroupsViewIfNeeded();
+});
+// --- END MODIFICATION ---
+
+// Immediately handle the initial tab load
+console.log(`[Shell Coordinator] Performing initial coordination for tab: '${initialTab}'`);
+handleViewChange(initialTab);
 }
 
 

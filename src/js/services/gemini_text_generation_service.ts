@@ -10,19 +10,23 @@ console.log("gemini_text_generation_service.ts: Script execution STARTED (TS Ver
 
 // Define the interface for the module this file will create on window
 // This should align with GeminiTextGenerationService in global.d.ts
+
 export interface GeminiTextGenerationServiceModule {
     generateTextMessage: (
-        userText: string, 
-        connector: Connector, 
+        userText: string,
+        connector: Connector | null, // <<< CORRECTED
         existingGeminiHistory: GeminiChatItem[],
-        preferredProvider?: string, // Added to match potential facade calls, even if not used by Gemini-specific
-        expectJson?: boolean        // Added to match potential facade calls
-    ) => Promise<string | null>; // Or string | object | null if expectJson can change return
+        preferredProvider?: string,
+        expectJson?: boolean,
+        context?: 'group-chat' | 'one-on-one', // <<< ADDED to match global
+        abortSignal?: AbortSignal,              // <<< ADDED to match global
+        options?: { isTranslation?: boolean; [key: string]: any } // <<< ADDED to match global
+    ) => Promise<string | null | object>; // <<< CORRECTED to match global
 
-    generateTextForCallModal: (
-        userText: string, 
-        connector: Connector, 
-        modalCallHistory: GeminiChatItem[] // Assuming it always receives an array
+    generateTextForCallModal?: (
+        userText: string,
+        connector: Connector | null, // <<< Correct from your provided code
+        modalCallHistory: GeminiChatItem[] // Correct from your provided code
     ) => Promise<string | null>;
 }
 
@@ -67,52 +71,78 @@ function initializeActualGeminiTextGenerationService(): void {
         'use strict';
 
         async function generateTextMessage(
-            userText: string, 
-            connector: Connector, 
+            userText: string,
+            connector: Connector | null, // <<< CORRECTED
             existingGeminiHistory: GeminiChatItem[],
             preferredProvider?: string, // Will be ignored if this service is Gemini-only
-            expectJson?: boolean        // Will be ignored if this service is Gemini-only
-        ): Promise<string | null> {
-            if (!connector) {
+            expectJson?: boolean,
+            context?: 'group-chat' | 'one-on-one', // Parameter received
+            abortSignal?: AbortSignal,             // Parameter received
+            options?: { isTranslation?: boolean; [key: string]: any } // Parameter received
+        ): Promise<string | null | object> { // <<< CORRECTED
+            if (!connector) { // This check now correctly handles the allowed null
                 console.error("GTGS (TS): generateTextMessage - Connector info missing.");
                 throw new Error("Connector info missing for generateTextMessage.");
             }
-            // userText can be an empty string for a "continue" command.
             if (typeof userText !== 'string') {
                 console.error("GTGS (TS): generateTextMessage - User text is not a string.");
                 throw new Error("User text is invalid for generateTextMessage.");
             }
-
+        
             let currentHistory: GeminiChatItem[] = [...existingGeminiHistory];
-            currentHistory.push({ role: "user", parts: [{ text: userText }] });
-
+            
+            // --- Translation Logic Handling (Conceptual) ---
+            let effectiveUserText = userText;
+            if (options?.isTranslation) {
+                // Example: Modify prompt for translation.
+                // This depends on how you want to instruct Gemini for translation.
+                // It might involve wrapping userText or adding a system message if the API supports it well here.
+                // For simplicity, let's assume the promptOrText in ai_service already contains translation instructions.
+                // If not, this is where you'd prepend "Translate the following to [target_language]: "
+                // Or, if the connector has target language info, use that.
+                console.log("GTGS (TS): Translation requested. Ensure prompt is structured for translation.");
+                // effectiveUserText = `Translate to ${connector.language || 'English'}: ${userText}`; // Example
+            }
+            currentHistory.push({ role: "user", parts: [{ text: effectiveUserText }] });
+            // --- End Translation Logic Handling ---
+        
+        
             const payload = {
                 contents: currentHistory,
-                safetySettings: STANDARD_SAFETY_SETTINGS_GEMINI, // Use destructured constant
-                generationConfig: { temperature: 0.75, topP: 0.95, topK: 40 } // Example config
+                safetySettings: STANDARD_SAFETY_SETTINGS_GEMINI,
+                generationConfig: { temperature: 0.75, topP: 0.95, topK: 40 }
             };
-
-            const modelToUse = GEMINI_MODELS?.TEXT || "gemini-1.5-flash-latest"; // Fallback model
-
+            const modelToUse = GEMINI_MODELS?.TEXT || "gemini-1.5-flash-latest";
+        
             try {
-                // console.log(`GTGS (TS): Requesting text message for connector '${connector.id}' using model ${modelToUse}`);
-                const response = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
-                return typeof response === 'string' ? response : null; // Ensure string or null is returned
+                const responseText = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
+        
+                if (typeof responseText !== 'string') return null;
+        
+                if (expectJson) {
+                    try {
+                        return JSON.parse(responseText);
+                    } catch (e) {
+                        console.warn(`GTGS (TS): Expected JSON for connector '${connector.id}', but parsing failed. Returning raw text. Error:`, e);
+                        return responseText; // Return raw string if JSON parsing fails
+                    }
+                }
+                return responseText;
             } catch (error: any) {
                 console.error(`GTGS (TS): generateTextMessage Error for ${connector.profileName || connector.name}:`, error.message);
-                // Return null on error, facade can provide human-like message
-                return null; 
+                return null;
             }
         }
 
         async function generateTextForCallModal(
-            userText: string, 
-            connector: Connector, 
+            userText: string,
+            connector: Connector | null, // << FIX: Allow null to match the interface
             modalCallHistory: GeminiChatItem[]
         ): Promise<string | null> {
-            if (!connector?.language || !connector.profileName || !connector.modernTitle) {
-                console.error("GTGS (TS): generateTextForCallModal - Connector info missing.");
-                throw new Error("Connector info missing for generateTextForCallModal.");
+            // Updated null check for connector
+            if (!connector || !connector.language || !connector.profileName || !connector.modernTitle) {
+                console.error("GTGS (TS): generateTextForCallModal - Connector info missing or incomplete.");
+                throw new Error("Connector info missing or incomplete for generateTextForCallModal.");
             }
             if (typeof userText !== 'string' || userText.trim() === "") { // Also check for empty trim
                 console.error("GTGS (TS): generateTextForCallModal - User text missing or empty.");

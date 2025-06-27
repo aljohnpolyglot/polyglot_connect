@@ -1,18 +1,134 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2025, 7, 22);
+
+    //==================================
+    //         USER PROFILES
+    //==================================
+    // A user can only read and write to their own profile document.
+    // This prevents users from reading each other's private information like email.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // --- Sub-collections for User-Specific Data ---
+
+      // SESSION HISTORY (Recaps, Transcripts for calls)
+      // A user can only manage their own session history.
+      match /sessions/{sessionId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // AI MEMORY (What the AI remembers about the user)
+      // A user can only access the memory documents stored under their own profile.
+      match /memory/{personaId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
+
+
+    //==================================
+    //      1-ON-1 CONVERSATIONS
+    //==================================
+    // Rules for the 'conversations' collection where 1-on-1 chats are stored.
+    match /conversations/{conversationId} {
+
+      // --- HELPER FUNCTION ---
+      // This function checks if the logged-in user's ID is part of the conversation document's ID.
+      // e.g., for a conversationId of "user1_user2", it returns true if the user is "user1" or "user2".
+      function isParticipant() {
+        return request.auth.uid in conversationId.split('_');
+      }
+
+      // --- PERMISSIONS ---
+
+      // GET: Allow a user to get a single document if they are a participant.
+      // This is used for loading a specific chat.
+      allow get: if request.auth != null && isParticipant();
+
+      // LIST (QUERY): Allow a logged-in user to query the conversations collection.
+      // **THIS IS THE KEY FIX.** It permits the client-side query:
+      // `where("participants", "array-contains", request.auth.uid)`
+      // This query is secure because the client can only ask for conversations it is a part of.
+      allow list: if request.auth != null;
+
+      // CREATE: Allow a user to create a conversation document IF:
+      // 1. They are logged in.
+      // 2. Their own UID is included in the `participants` array of the new document.
+      // 3. The `participants` array contains exactly 2 members for a 1-on-1 chat.
+      allow create: if request.auth != null
+                      && request.auth.uid in request.resource.data.participants
+                      && request.resource.data.participants.size() == 2;
+
+      // UPDATE: Allow a user to update a conversation (e.g., lastActivity timestamp) if they are a participant.
+      allow update: if request.auth != null && isParticipant();
+
+      // DELETE: Disable deleting conversations from the client-side for data integrity.
+      allow delete: if false;
+
+
+      // --- MESSAGES SUB-COLLECTION ---
+      // Rules for the messages nested inside each conversation.
+      match /messages/{messageId} {
+        // Allow a user to read and write messages only if they are a participant
+        // in the parent conversation document.
+        allow read, write: if request.auth != null && isParticipant();
+      }
+    }
+ //==================================
+    //         GROUP CHATS
+    //==================================
+      match /groups/{groupId} {
+      // Allow any authenticated user to read the basic group info.
+      allow read: if request.auth != null;
+
+      // Prevent client-side creation/deletion of group docs for now.
+      allow create, delete: if false;
+
+      // TEMPORARILY ALLOW ANY AUTHENTICATED USER TO UPDATE THE PARENT GROUP DOCUMENT
+      // This is to test if the updateDoc(groupDocRef, ...) call in GDM is the problem point.
+      allow update: if request.auth != null; // <<< KEY CHANGE FOR THIS DEBUG STEP
+
+      // --- Group Members Sub-collection ---
+      match /members/{memberId} {
+        allow read: if request.auth != null;
+        // User can only manage their own membership document
+        allow create, update, delete: if request.auth != null && request.auth.uid == memberId;
+      }
+
+      // --- Group Messages Sub-collection ---
+      match /messages/{messageId} {
+        // Secure read: only members can read
+        allow read: if request.auth != null &&
+                         exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+
+        // Secure write (for now, assuming only members should write messages)
+        // Your previous debug rule was `allow write: if request.auth != null;`
+        // Let's use the more secure one for messages, as the addDoc to messages WAS working.
+        // The problem is the update to the PARENT group.
+        allow write: if request.auth != null &&
+                         exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      }
+    }
+
+
+
+    //==================================
+    //      GLOBAL/PUBLIC DATA
+    //==================================
+    // This could be data like your AI "Connectors" or personas.
+    match /connectors/{connectorId} {
+      // Allow any authenticated user to read the list of available AI personas.
+      allow read: if request.auth != null;
+      // Prevent any client from writing to this collection. Manage it from the Firebase Console or backend.
+      allow write: if false;
+    }
+
+    // Community Stats: Allow any authenticated user to read. Only your backend can write.
+    match /community_stats/{docId} {
+        allow read: if request.auth != null;
+        allow write: if false;
+    }
+
   }
 }

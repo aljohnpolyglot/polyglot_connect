@@ -1,0 +1,58 @@
+<!-- D:\polyglot_connect\landing\landing-navbar.html -->
+
+<style>
+    /* Styling for the landing page navbar */
+    .landing-navbar {
+        position: fixed; top: 0; left: 0; width: 100%; z-index: 1000;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 15px 5%; box-sizing: border-box;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0));
+        transition: background-color 0.3s ease;
+        font-family: 'Roboto', sans-serif;
+    }
+    
+    .landing-navbar.scrolled {
+        background-color: rgba(18, 18, 18, 0.95);
+        backdrop-filter: blur(5px);
+    }
+
+    .landing-navbar-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+    .landing-navbar-logo { height: 36px; }
+    .landing-navbar-title { color: #fff; font-size: 1.4em; font-weight: 700; }
+    .landing-navbar-links { display: flex; gap: 25px; }
+    .landing-navbar-links a { color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500; }
+    .landing-navbar-links a:hover { color: #fff; }
+
+    .landing-navbar-actions a {
+        background-color: #5865F2; color: white; text-decoration: none;
+        padding: 10px 20px; border-radius: 6px; font-weight: 700;
+        transition: background-color 0.2s;
+    }
+    .landing-navbar-actions a:hover { background-color: #4752C4; }
+
+    @media (max-width: 820px) { .landing-navbar-links { display: none; } }
+</style>
+
+<nav id="landing-navbar" class="landing-navbar">
+    <a href="/" class="landing-navbar-brand">
+        <img src="/images/polyglot_connect_logo.png" alt="Logo" class="landing-navbar-logo">
+        <span class="landing-navbar-title">Polyglot Connect</span>
+    </a>
+
+    <div class="landing-navbar-links">
+        <!-- The href now correctly points to the landing page hash for features -->
+        <a href="/#section-features">Features</a>
+        <a href="/updates.html">What's New</a> <!-- <<< YOUR NEW LINK -->
+        <a href="/pricing.html">Pricing</a>
+        <a href="/terms.html">Terms</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/join-us.html">Join Us</a> <!-- <<< YOUR NEW LINK -->
+    </div>
+    
+    <!-- Add this script block right after the navbar HTML, or at the end of the file -->
+   
+
+    <div id="landing-navbar-actions" class="landing-navbar-actions">
+        <!-- JS will populate this with 'Enter App' or 'Sign In' -->
+    </div>
+</nav>

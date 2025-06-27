@@ -169,46 +169,51 @@ function initializeActualGeminiMultimodalService(): void {
             connector: Connector,
             existingGeminiHistory: GeminiChatItem[],
             optionalUserText?: string,
-            preferredProvider?: string, // <<< ADD THIS (even if unused, to match the call signature)
-            abortSignal?: AbortSignal   // <<< ADD THIS
+            preferredProvider?: string, // To match the call signature from ai_service
+            abortSignal?: AbortSignal
         ): Promise<string | null> {
-
+        
             const functionName = "GeminiMultimodalService.generateTextFromImageAndText";
             
-            if (!connector?.profileName || !connector.language) { /* ... error handling ... */ throw new Error("Connector info missing.");}
-            if (!base64ImageString) { /* ... error handling ... */  throw new Error("Image data missing."); }
-            if (!mimeType) { /* ... error handling ... */ throw new Error("MimeType missing."); }
-
+            if (!connector?.profileName || !connector.language) { throw new Error("Connector info missing."); }
+            if (!base64ImageString) { throw new Error("Image data missing."); }
+            if (!mimeType) { throw new Error("MimeType missing."); }
+        
             const userProvidedQueryText = (optionalUserText && optionalUserText.trim() !== "") 
                 ? optionalUserText.trim() 
                 : `The user sent this image. Please describe it or ask a relevant question about it in ${connector.language}.`;
-
-                const currentTurnParts: Array<{text: string} | {inlineData: {mimeType: string, data: string}}> = [
-                    { text: userProvidedQueryText } 
-                ];
-                currentTurnParts.push({ 
-                    inlineData: { 
-                        mimeType: mimeType,
-                        data: base64ImageString 
-                    } 
-                });
             
-                const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT || "gemini-1.5-flash-latest";
-
-                // <<< START OF REPLACEMENT >>>
-                const payload = {
-                    contents: [{ role: "user", parts: currentTurnParts }], // This correctly sends ONLY the current image and text query.
-                    generationConfig: { 
-                        temperature: 0.4,
-                    }
-                    // Safety settings will be applied by the _geminiInternalApiCaller, so not strictly needed here.
-                };
-            console.log(`${functionName} PAYLOAD for ${connector.id} (Model: ${modelToUse}):`, JSON.stringify(payload, null, 2));
-            // ... rest of the try/catch
-
+            // --- THIS IS THE FIX ---
+            // The Gemini API expects a raw base64 string, not a full data URL.
+            // We must strip the "data:image/[type];base64," prefix.
+            const cleanBase64Data = base64ImageString.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+        
+            const currentTurnParts: Array<{text: string} | {inlineData: {mimeType: string; data: string}}> = [
+                { text: userProvidedQueryText } 
+            ];
+            currentTurnParts.push({ 
+                inlineData: { 
+                    mimeType: mimeType,
+                    data: cleanBase64Data // Use the cleaned data
+                } 
+            });
+        
+            const modelToUse = GEMINI_MODELS.MULTIMODAL || GEMINI_MODELS.TEXT || "gemini-1.5-flash-latest";
+        
+            // This payload construction is now correct. The history is intentionally omitted
+            // to force the AI to focus solely on the image and the immediate prompt.
+            const payload = {
+                contents: [{ role: "user", parts: currentTurnParts }],
+                generationConfig: { 
+                    temperature: 0.4,
+                }
+            };
+            
+            console.log(`${functionName} PAYLOAD for ${connector.id} (Model: ${modelToUse}):`, JSON.stringify(payload, (k, v) => k === 'data' ? v.substring(0, 50) + '...' : v, 2));
+        
             try {
                 const { response, nickname } = await _geminiInternalApiCaller(payload, modelToUse, "generateContent");
-                console.log(`%c...call modal response by: ${nickname}!`, 'color: #34A853;');
+                console.log(`%c...image analysis by: ${nickname}!`, 'color: #34A853;');
                 
                 if (typeof response === 'string' && response.trim() !== "") {
                     return response;
@@ -222,9 +227,9 @@ function initializeActualGeminiMultimodalService(): void {
             } catch (error: any) {
                 if (error.name === 'AbortError') {
                     console.log(`%c[Interrupt] Gemini vision request for ${connector.profileName} was cancelled.`, 'color: #ff9800;');
-                    throw error; // Re-throw so the calling service knows to stop
+                    throw error;
                 }
-                console.error(`${functionName} Error for ${connector.profileName}: ${error.message}`, error);
+                console.error(`${functionName} Error for ${connector.profileName}:`, error);
                 throw error; 
             }
         }

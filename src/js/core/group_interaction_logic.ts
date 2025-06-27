@@ -24,6 +24,7 @@ import { DOTTED_EXCEPTIONS } from '../constants/separate_text_keywords.js';
 
 // WITH THIS:
 import { getGroupPersonaSummary } from './persona_prompt_parts.js';
+import { auth } from '../firebase-config.js';
 // Add this line
 
 console.log('group_interaction_logic.ts: (Hybrid V2) Script loaded.');
@@ -606,33 +607,62 @@ function enhanceGroupChatSplitting(lines: string[], members: Connector[]): { enh
 // In src/js/core/group_interaction_logic.ts
 // In src/js/core/group_interaction_logic.ts
 
-async function playScene(lines: string[], isGrandOpening: boolean): Promise<void> {
-    console.log(`%c[Group ScenePlayer] BATCH START. isGrandOpening: ${isGrandOpening}. Messages: ${lines.length}`, 'color: #8a2be2; font-weight: bold;');
+async function playScene(
+    linesOrMessages: string[] | Array<{
+        speakerName: string;
+        text: string;
+        messageId: string; // Pre-generated ID
+        speakerId?: string; // Optional but good to have
+    }>,
+    isGrandOpening: boolean
+): Promise<void> {
+    console.log(`%c[Group ScenePlayer] BATCH START. isGrandOpening: ${isGrandOpening}. Messages: ${linesOrMessages.length}`, 'color: #8a2be2; font-weight: bold;');
     isRenderingScene = true;
     const cancellationToken = { isCancelled: false };
     currentSceneCancellationToken = cancellationToken;
-
-    const { groupDataManager, groupUiHandler, activityManager } = getDeps();
-    let lastSpeakerIdInBatch: string | null = null;
     
-    // --- THIS IS THE FIX for 'remove' on type 'never' ---
+    const { groupDataManager, groupUiHandler, activityManager, polyglotHelpers } = getDeps(); // Added polyglotHelpers
+    let lastSpeakerIdInBatch: string | null = null;
+    // FIX: A local variable is used instead of a module-level one.
     let indicatorElement: HTMLElement | null | void = null;
-
-    for (const [index, line] of lines.entries()) {
+    
+    // Determine if we have lines or structured messages
+    const isStructuredMessages = typeof linesOrMessages[0] === 'object' && linesOrMessages[0] !== null && 'messageId' in linesOrMessages[0];
+    
+    for (const [index, item] of linesOrMessages.entries()) {
         if (cancellationToken.isCancelled) {
             console.log("%c[Group ScenePlayer] Scene cancelled by user.", 'color: #ff6347;');
-            break; 
+            break;
         }
-
-        const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
-        if (!match) continue;
-        
-        const speakerName = match[1].trim();
-        let responseText = match[2].trim();
-        const speaker = members.find(m => m.profileName === speakerName);
-
-        if (!speaker || !responseText) continue;
-        
+    
+        let speakerName: string;
+        let responseText: string;
+        let messageIdForUI: string;
+        let speakerFromItem: Connector | undefined;
+    
+        if (isStructuredMessages) {
+            const structuredMsg = item as { speakerName: string; text: string; messageId: string; speakerId?: string };
+            speakerName = structuredMsg.speakerName;
+            responseText = structuredMsg.text;
+            messageIdForUI = structuredMsg.messageId;
+            if (structuredMsg.speakerId) {
+                speakerFromItem = members.find(m => m.id === structuredMsg.speakerId);
+            }
+        } else {
+            const line = item as string;
+            const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+            if (!match) continue;
+            speakerName = match[1].trim();
+            responseText = match[2].trim();
+            messageIdForUI = polyglotHelpers.generateUUID(); // Generate if not provided
+        }
+    
+        const speaker = speakerFromItem || members.find(m => m.profileName === speakerName);
+    
+        if (!speaker || !responseText) {
+             console.warn(`[Group ScenePlayer] Skipping message: No speaker or no text. SpeakerName: ${speakerName}, Text: "${responseText}"`);
+             continue;
+            }
         if (responseText.length < 12 && responseText.endsWith('.') && !responseText.endsWith('..')) {
             responseText = responseText.slice(0, -1);
         }
@@ -658,7 +688,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         }
         
         console.log(
-            `%c[Group ScenePlayer] Speaker: ${speaker.profileName} | Msg ${index + 1}/${lines.length} | Words: ${wordCount} | Thinking: ${(thinkingPauseMs / 1000).toFixed(1)}s, Disappear: ${(disappearDurationMs / 1000).toFixed(1)}s, Typing: ${(typingDurationMs / 1000).toFixed(1)}s | Text: "${responseText.substring(0, 40)}..."`,
+            `%c[Group ScenePlayer] Speaker: ${speaker.profileName} | Msg ${index + 1}/${linesOrMessages.length} | Words: ${wordCount} | Thinking: ${(thinkingPauseMs / 1000).toFixed(1)}s, Disappear: ${(disappearDurationMs / 1000).toFixed(1)}s, Typing: ${(typingDurationMs / 1000).toFixed(1)}s | Text: "${responseText.substring(0, 40)}..."`,
             'color: #28a745;'
         );
 
@@ -666,6 +696,7 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
         if (cancellationToken.isCancelled) break;
 
         const indicatorText = `${speaker.profileName} is typing...`;
+        // FIX: A new indicator is created and assigned to the local variable on every iteration.
         indicatorElement = groupUiHandler.updateGroupTypingIndicator(indicatorText);
 
         if (disappearDurationMs > 0) {
@@ -685,21 +716,16 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
 
         if (indicatorElement) {
             indicatorElement.remove();
+            // FIX: The local variable is nulled out at the end of the loop,
+            // ensuring the next iteration starts with a clean slate.
             indicatorElement = null;
         }
 
-        // --- THIS IS THE FIX ---
-        // Generate a unique ID for this message bubble and pass it in the options.
-        const messageId = getDeps().polyglotHelpers.generateUUID();
-        groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id, { messageId: messageId });
-        
-        const historyItem: GroupChatHistoryItem = { messageId: messageId, speakerId: speaker.id, speakerName: speaker.profileName, text: responseText, timestamp: Date.now() };
+        groupUiHandler.appendMessageToGroupLog(responseText, speaker.profileName, false, speaker.id, { messageId: messageIdForUI });
        
-       
-        lastMessageTimestamp = historyItem.timestamp;
+        lastMessageTimestamp = Date.now();
         if (window.memoryService && typeof window.memoryService.processNewUserMessage === 'function') {
             console.log(`[CEREBRUM_SELF_WRITE] ✍️ Sending [${speaker.profileName}]'s own message for self-analysis...`);
-            // Now this call is safely inside the check
             window.memoryService.processNewUserMessage(
                 responseText,
                 speaker.id,
@@ -707,11 +733,8 @@ async function playScene(lines: string[], isGrandOpening: boolean): Promise<void
                 []
             );
         }
-     // --- THIS IS THE BAND-AID FIX ---
-// @ts-ignore - We are forcing this call because we know the function signature in group_data_manager is correct, even if TS is stuck.
-groupDataManager.addMessageToCurrentGroupHistory(historyItem, { triggerListUpdate: true });
 
-lastSpeakerIdInBatch = speaker.id;
+        lastSpeakerIdInBatch = speaker.id;
     }
     
     if (indicatorElement) indicatorElement.remove();
@@ -719,7 +742,9 @@ lastSpeakerIdInBatch = speaker.id;
     isRenderingScene = false;
     currentSceneCancellationToken = null;
     
-    groupDataManager.saveCurrentGroupChatHistory(false);
+    if (groupDataManager && typeof groupDataManager.saveCurrentGroupChatHistory === 'function') {
+        groupDataManager.saveCurrentGroupChatHistory(false);
+    }
     
     console.log(`%c[Group ScenePlayer] BATCH FINISHED (or was cancelled).`, 'color: #8a2be2; font-weight: bold;');
 }
@@ -737,96 +762,61 @@ lastSpeakerIdInBatch = speaker.id;
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 // <<< CHANGE THE RETURN TYPE >>>
 
-
-
 async function generateAiTextResponse(
-    engineTriggered: boolean = false, 
-    isGrandOpening: boolean = false, 
-    isReEngagement: boolean = false, 
-    userText: string | undefined = undefined,
-    abortSignal?: AbortSignal // <<< ADD THIS
+    engineTriggered: boolean = false,
+    isGrandOpening: boolean = false,
+    isReEngagement: boolean = false,
+    userOrInstructionText: string | undefined = undefined, // Can be user's text or a specific instruction
+    abortSignal?: AbortSignal
 ): Promise<string[]> {
-   
-    if (!conversationFlowActive) return [];
-    const { groupDataManager, polyglotHelpers, aiService, tutor } = getDeps();
+    if (!conversationFlowActive && !isGrandOpening && !isReEngagement) {
+        if (!engineTriggered && !isGrandOpening && !isReEngagement) return [];
+    }
+
+    const { groupDataManager, polyglotHelpers, aiService, tutor: currentTutor } = getDeps();
     const currentGroup = groupDataManager.getCurrentGroupData();
-    if (!currentGroup || !tutor) {
+
+    if (!currentGroup || !currentTutor) {
         console.error("GIL: generateAiTextResponse called but currentGroup or tutor is missing.");
         return [];
     }
-    
-    // --- UNIFIED PROMPT BUILDING ---
-    // 1. Always build the full master prompt at the start. This triggers the Thalamus.
+
     const masterPrompt = await buildMasterPrompt(currentGroup, members, polyglotHelpers);
     let systemPrompt = '';
     let instructionText = '';
 
-
-
-
-    const MAX_RECENT_HISTORY = 40; // <<< Let's set a much smaller limit
-
+    const MAX_RECENT_HISTORY = 40;
     const groupHistory = groupDataManager.getLoadedChatHistory();
-    
-    // Slice only the last few messages to prevent the echo chamber effect
     const recentHistory = groupHistory.slice(-MAX_RECENT_HISTORY);
-
-    // Now, create the text string from this shorter history
     const recentHistoryText = recentHistory.map(msg => {
-        // Fallback for older history items that might be missing a name
-        const speaker = msg.speakerName || 'Unknown'; 
+        const speaker = msg.speakerName || (msg.speakerId === 'user_player' || msg.speakerId === 'user_self_001' ? 'You' : 'Unknown');
         return `${speaker}: ${msg.text}`;
     }).join('\n');
 
-    // --- STATE-BASED PROMPT SELECTION ---
-
+    // --- YOUR ORIGINAL STATE-BASED PROMPT SELECTION LOGIC ---
     if (isGrandOpening || isReEngagement) {
-        // --- PROMPT FOR SCENES: "You are a creative writer." ---
-        // This is a simple, focused prompt for generating initial scenes.
-        // 1. Get the detailed persona summaries and specialized rules.
-    const personaSections = members.map(member => getGroupPersonaSummary(member, currentGroup.language)).join('\n');
-    let specializedRules = '';
-    switch (currentGroup.category) {
-        case 'Language Learning':
-            specializedRules = buildLanguageLearningRules(members, currentGroup);
-            break;
-        case 'Community Hangout':
-            specializedRules = buildCommunityHangoutRules(members, currentGroup);
-            break;
-        case 'Sports Fan Club':
-            specializedRules = buildSportsClubRules(members, currentGroup);
-            break;
-        default:
-            specializedRules = `\n# GENERAL CONVERSATION RULES\n- Keep the conversation flowing naturally.`;
-    }
+        const personaSections = members.map(member => getGroupPersonaSummary(member, currentGroup.language)).join('\n');
+        let specializedRules = '';
+        switch (currentGroup.category) {
+            case 'Language Learning': specializedRules = buildLanguageLearningRules(members, currentGroup); break;
+            case 'Community Hangout': specializedRules = buildCommunityHangoutRules(members, currentGroup); break;
+            case 'Sports Fan Club': specializedRules = buildSportsClubRules(members, currentGroup); break;
+            default: specializedRules = `\n# GENERAL CONVERSATION RULES\n- Keep the conversation flowing naturally.`;
+        }
+        systemPrompt = `You are a creative dialogue writer for a chat simulation. Your primary goal is to write a realistic, in-character scene.\n--- CRITICAL RULES ---\n1. LANGUAGE: You MUST write the entire dialogue ONLY in ${currentGroup.language}.\n2. FORMAT: Every line MUST be in the format: [CharacterName]: message.\n3. PERSONA: You MUST adhere to the character personalities, roles, and allegiances described below.\n--- CHARACTERS & SPECIALIZED RULES ---\n${personaSections}\n${specializedRules}`;
 
-    // 2. Build the new system prompt.
-    systemPrompt = `You are a creative dialogue writer for a chat simulation. Your primary goal is to write a realistic, in-character scene.
-
---- CRITICAL RULES ---
-1.  **LANGUAGE:** You MUST write the entire dialogue ONLY in **${currentGroup.language}**.
-2.  **FORMAT:** Every line MUST be in the format: [CharacterName]: message.
-3.  **PERSONA:** You MUST adhere to the character personalities, roles, and allegiances described below. For example, a Real Madrid fan must act like one.
-
---- CHARACTERS & SPECIALIZED RULES ---
-${personaSections}
-${specializedRules}
-`;
-if (isGrandOpening) {
-    // This block is now ONLY for generating the "other members" introductions.
-    // The tutor and 1-on-1 logic is handled by the conversationEngineLoop.
-    console.log("GIL: Building prompt for 'other members' Grand Opening introductions.");
-    if (tutor) {
-        const otherMembers = members.filter(m => m.id !== tutor!.id);
-        const otherMemberNames = polyglotHelpers.formatReadableList(otherMembers.map(m => m.profileName), "and");
-        
-        instructionText = `
-        The host, **${tutor.profileName}**, has just welcomed everyone to the new chat group, "${currentGroup.name}".
+        if (isGrandOpening) {
+            if (currentTutor) {
+                const otherMembers = members.filter(m => m.id !== currentTutor!.id);
+                const otherMemberNames = polyglotHelpers.formatReadableList(otherMembers.map(m => m.profileName), "and");
+                // YOUR ORIGINAL GRAND OPENING INSTRUCTION
+                instructionText = `
+        The host, **${currentTutor.profileName}**, has just welcomed everyone to the new chat group, "${currentGroup.name}".
         Your task is to write the immediate follow-up scene where the other members react and introduce themselves.
         --- CHARACTERS FOR THIS SCENE ---
         ${otherMemberNames}
         --- SCENE REQUIREMENTS ---
-        1. DO NOT include the host (${tutor.profileName}) in your response. They have already spoken.
+        1. DO NOT include the host (${currentTutor.profileName}) in your response. They have already spoken.
         2. Have 2-4 of the other members introduce themselves briefly.
         3. The VERY LAST message MUST be from one of the members, asking the user a direct question.
         --- GOOD EXAMPLE ---
@@ -835,26 +825,15 @@ if (isGrandOpening) {
         [Kenji]: Hello everyone, I'm Kenji.
         [Manon]: Hi! What about you? Are you also excited to learn Italian?
         `;
-    }
-} else if (isReEngagement) {
-    // --- NEW TIME-AWARE RE-ENGAGEMENT LOGIC ---
-    const history = groupDataManager.getLoadedChatHistory();
-    const lastMessage = history.length > 0 ? history[history.length - 1] : null;
-    let timeSinceLastMessageMs = Infinity;
-
-    if (lastMessage?.timestamp) {
-        timeSinceLastMessageMs = Date.now() - lastMessage.timestamp;
-    }
-
-    const oneHour = 60 * 60 * 1000;
-    const twelveHours = 12 * oneHour;
-
-    console.log(`%c[Re-engagement] Time since last message: ${(timeSinceLastMessageMs / 1000 / 60).toFixed(1)} minutes.`, 'color: #17a2b8;');
-
-    if (timeSinceLastMessageMs < oneHour) {
-        // --- STRATEGY 1: IMMEDIATE CONTINUATION (Short Break) ---
-        console.log(`[Re-engagement] Verdict: Short break. Generating a natural continuation.`);
-        instructionText = `
+            }
+        } else if (isReEngagement) {
+            // YOUR ORIGINAL RE-ENGAGEMENT INSTRUCTION LOGIC
+            const lastMessage = groupHistory.length > 0 ? groupHistory[groupHistory.length - 1] : null;
+            let timeSinceLastMessageMs = Infinity;
+            if (lastMessage?.timestamp) { timeSinceLastMessageMs = Date.now() - lastMessage.timestamp; }
+            const oneHour = 3600000, twelveHours = 12 * oneHour;
+            if (timeSinceLastMessageMs < oneHour) {
+                instructionText = `
         The user has just returned to the chat after a short break. The last topic is still fresh.
         Your task is to create a natural, seamless continuation of the conversation.
         --- SCENE REQUIREMENTS ---
@@ -868,11 +847,8 @@ if (isGrandOpening) {
         [Fabio]: Maybe not, Lorenzo, but it's what makes the game beautiful to watch! I'd rather see a passionate loss than a boring 1-0 win.
         [Chiara]: I'm with Fabio on this one. The emotion is everything!
         `;
-
-    } else if (timeSinceLastMessageMs < twelveHours) {
-        // --- STRATEGY 2: RELATED NEW TOPIC (Medium Break) ---
-        console.log(`[Re-engagement] Verdict: Medium break. Starting a related new topic.`);
-        instructionText = `
+            } else if (timeSinceLastMessageMs < twelveHours) {
+                instructionText = `
         The user has returned to the chat after several hours. The previous conversation has gone cold.
         Your task is to start a NEW, but RELATED, conversation thread. It should feel like someone saw the old messages and it sparked a completely new thought.
         --- SCENE REQUIREMENTS ---
@@ -885,11 +861,8 @@ if (isGrandOpening) {
         [Olivia]: Hey everyone. Seeing all that talk about Tuscany earlier has me dreaming of a vacation. Has anyone ever been to Florence? I'm trying to plan a trip.
         [Giorgio]: Oh, Florence is amazing, Olivia! You absolutely must visit the Uffizi Gallery, but book your tickets way in advance.
         `;
-
-    } else {
-        // --- STRATEGY 3: FRESH START (Long Break) ---
-        console.log(`[Re-engagement] Verdict: Long break. Generating a completely fresh start.`);
-        instructionText = `
+            } else {
+                instructionText = `
         The chat has been silent for a long time (over 12 hours). The previous conversation is completely stale and irrelevant.
         Your task is to start a brand new, fresh conversation, as if it's a new day.
         --- SCENE REQUIREMENTS ---
@@ -903,40 +876,27 @@ if (isGrandOpening) {
         [Isa]: Morning! I saw something, but I don't believe it. They have no money! 😂
         [Javi M.]: Exactly. It's just media noise.
         `;
-    }
-}
-
-    
-    } else {
-        // --- PROMPT FOR ONGOING CONVERSATION: "You are a master puppeteer." ---
-        // This is our advanced, rule-heavy prompt for when the conversation is already flowing.
-        systemPrompt = await buildMasterPrompt(currentGroup, members, polyglotHelpers);
-        
-        if (engineTriggered) {
-            // This is for when the user has been idle and the AI needs to talk.
-            if (members.length <= 1) {
-                // Special case: 1-on-1 idle "prod"
-                console.log("GIL: Building a 1-on-1 'USER PROD' prompt because the user is idle.");
-                instructionText = `
-You are **${tutor.profileName}**. You are in a one-on-one chat with the user. You have already asked them a question, but they have been silent for a while.
-
+            }
+        }
+    } else if (engineTriggered) { // AI initiated turn (idle user)
+        systemPrompt = masterPrompt;
+        if (members.length <= 1 && currentTutor) {
+            // YOUR ORIGINAL 1-ON-1 IDLE PROD INSTRUCTION
+            instructionText = `
+You are **${currentTutor.profileName}**. You are in a one-on-one chat with the user. You have already asked them a question, but they have been silent for a while.
 Your task is to gently "prod" or "nudge" them for a response without being pushy.
-
 --- SCENE REQUIREMENTS ---
 1.  **Acknowledge the Pause:** You can start with a soft re-engagement phrase like "Então...", "So...", "Bueno...", etc.
 2.  **Re-ask or Re-phrase:** You can either re-ask the previous question in a slightly different way, or ask a new, simpler follow-up question related to the last topic.
 3.  **Keep it Short & Friendly:** This should be a single, short message.
-4.  **Output Format:** Your ENTIRE response MUST be a SINGLE line in the format \`[${tutor.profileName}]: message\`.
-
+4.  **Output Format:** Your ENTIRE response MUST be a SINGLE line in the format \`[${currentTutor.profileName}]: message\`.
 --- GOOD EXAMPLE (Last message was "what are you interested in?") ---
 [Mateus]: Então, alguma ideia? Ou talvez queira que eu sugira um tópico para começarmos?
 `;
-            } else { 
-                // Normal case: Group idle chatter
-                console.log("GIL: Building MASTER prompt for an IDLE USER conversation block.");
+        } else {
+            // YOUR ORIGINAL GROUP IDLE CHATTER INSTRUCTION
             instructionText = `
 The user has been silent. Generate a realistic "Conversation Block" (5-15 messages) to continue the chat based on the last topic.
-
 --- CRITICAL RULES ---
 - MUST BE AN ORIGINAL CONTINUATION:
 --- SCENE REQUIREMENTS ---
@@ -947,34 +907,9 @@ The user has been silent. Generate a realistic "Conversation Block" (5-15 messag
 5.  **DO NOT MENTION THE USER'S SILENCE.**
 6.  **CRITICAL** — Use Multiple Message Bubbles (2–3 in a row) from the Same Speaker to Simulate Real Thinking and Pacing:
 This is essential for achieving believable, human-like chat dialogue. People often split their thoughts across messages, pause mid-conversation, or add emotional filler. Writers must reflect that by letting characters send short, staggered messages in succession. These should vary in tone and structure:
-
-✅ Good Examples:
-
-[Aira]: Hmm.
-[Aira]: That’s actually a good point.
-
-[Jason]: 🤔
-[Jason]: Not sure if that would work though.
-
-[Leah]: Yes, I agree.
-[Leah]: LOL.
-[Leah]: That took me a second.
-
-[Rico]: Wait.
-[Rico]: Are you saying we lost the file??
-
-[Sam]: Okay...
-[Sam]: That’s kind of messed up.
-
-[Luis]: I love that.
-[Luis]: Seriously.
-[Luis]: Like, so much.
-
-❌ Avoid combining these into one message. The pause between bubbles creates realism—people type fast, revise, or react emotionally in real time. This technique adds rhythm, humanity, and authenticity. It’s not optional—it’s foundational.
-Avoid cramming these into one long message; the pacing and rhythm created by split messages is crucial to emotional realism and engagement."
-
+✅ Good Examples: [Aira]: Hmm. [Aira]: That’s actually a good point. ... (Your other examples)
+❌ Avoid combining these into one message. ... (Your explanation)
 -ABSOLUTE CRITICAL: Do not use the EXACT PHRASES IN THE EXAMPLES BELOW. Use your own words.
-
 --- GOOD EXAMPLE ---
 Last message was "[Chiara]: I think Juventus will still be the team to beat."
 YOUR RESPONSE:
@@ -982,50 +917,39 @@ YOUR RESPONSE:
 [Lorenzo]: I don't know, Fabio, their experience is a huge advantage.
 [Fabio]: Experience doesn't score goals!
 [Chiara]: 😂 True, but it saves them.
-
 --- BAD EXAMPLE (Starts a new, unrelated topic) ---
 [Fabio]: Speaking of other things, what's everyone's favorite pizza topping?
 --- GOOD EXAMPLE (Advances the topic) ---
 History includes a debate about PSG vs Real Madrid.
-
 YOUR RESPONSE:
 [Isa]: Speaking of big club money, I wonder if the new financial rules will actually level the playing field this year.
 [Mateo]: I doubt it, the top clubs always find a way around the rules.
 [Javi M.]: Exactly. It's about history and prestige, not just who has the newest money.
-
 --- BAD EXAMPLE (Repeats a previous topic) ---
 History includes a debate about PSG vs Real Madrid.
 YOUR RESPONSE:
 [Santi]: You know, Barcelona also has a great team. Let's talk about them.
 [Isa]: Yeah, their defense is solid this year!
-
 --- BAD EXAMPLE (Repeats the last message) ---
 [Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
 [Vale]: ¡Genial, amigos! Me alegra ver que todos están ansiosos por compartir. ¿Nuestro nuevo miembro quiere unirse a la conversación? ¿Cuál es tu interés o pasatiempo favorito?
-
 --- GOOD EXAMPLE (History ends with "Community gardens are a good idea") ---
 [Matthieu]: A good idea, maybe, but where? I work for the city planning office, and finding available plots in Paris is a nightmare. The paperwork alone...
 [Camille]: That's the cynical view, Matthieu! What if we partner with a university? They often have land. Léa, didn't you say you were studying there?
-
 --- BAD EXAMPLE (Just agreeing) ---
 [Élodie]: Yes, community gardens are great for the environment.
-
-
-
-`;}
-} else { // Responding directly to the user
-    console.log("GIL: Building MASTER prompt for a direct RESPONSE to the user.");
-            instructionText = `
+`;
+        }
+    } else { // Direct response to user's message (userOrInstructionText is user's text)
+        systemPrompt = masterPrompt;
+        // YOUR ORIGINAL USER RESPONSE INSTRUCTION
+        instructionText = `
 The user has just sent a message. Your task is to generate a realistic, in-character response based on the following logic.
-
 --- RESPONSE LOGIC ---
-
 1.  **Analyze the User's Message:** : First, determine the user's intent. Are they talking to a specific person? Are they making a general statement? Or are they making a controversial, rival, or off-topic comment?
-
 2.  **IF the user addresses ONE person** (e.g., "en serio rafa?", "ciao sofia, come stai?"):
     -   That specific person (**Rafa** or **Sofia**) MUST give the reply.
     -   Your output must be a SINGLE line in the format \`[SpeakerName]: message\`.
-
 3.  **IF the user asks a GENERAL question OR makes a statement to the group** (e.g., "di dove siete?", "messi lol"):
     -   Generate a "response block" where 1-4 different members react.
     -   **CRITICAL SUB-RULE:** At least ONE of the speakers in your response block MUST directly acknowledge, react to, or build upon the user's message. This makes the user feel heard.
@@ -1036,20 +960,16 @@ The user has just sent a message. Your task is to generate a realistic, in-chara
 CRITICAL: At least ONE persona MUST react directly to this comment, often with a dismissive, teasing, or confrontational tone that fits their personality.
 This is where the fan passion comes out. They should not ignore the comment. They should challenge it, make fun of it, or express mock outrage.
 Other members can then jump in to agree with the first speaker or to change the subject back to what they care about.
-
-
 --- GOOD EXAMPLE (Direct Question) ---
 User's message: "ciao sofia, come stai?"
 YOUR RESPONSE:
 [Sofia]: Ciao! Tutto bene, grazie. E tu?
-
 --- GOOD EXAMPLE (General Question) ---
 User's message: "di dove siete?"
 YOUR RESPONSE:
 [Sofia]: Io sono di Roma! La città eterna.
 [Giorgio]: Vengo da Milano, il cuore della moda.
 [Alessio]: Io invece sono siciliano!
-
 --- GOOD EXAMPLE (User Makes a Statement) ---
 History:
 ...
@@ -1058,7 +978,6 @@ History:
 YOUR RESPONSE:
 [Roberto]: I respect Messi, but for me, Pelé is still the king. What do you think, Larissa?
 [Larissa]: Pelé for sure! His legacy is untouchable.
-
 --- BAD EXAMPLE (Ignoring the User's Statement) ---
 History:
 ...
@@ -1067,13 +986,11 @@ History:
 YOUR RESPONSE:
 [Roberto]: Speaking of Ronaldo, did you see his goal last week?
 [Larissa]: Oh yeah, that was amazing!
-
 --- GOOD EXAMPLE (Forward Momentum) ---
 History includes a debate about globalization vs. tradition.
 YOUR RESPONSE:
 [Liselotte]: This is a fascinating debate. It reminds me of the arguments between the Frankfurt School thinkers, like Adorno, who were very critical of the "culture industry" which is a form of globalization. He would probably agree with you, Markus.
 [Jonas]: That's a bit academic, isn't it? On a practical level, my bike co-op uses global supply chains to get parts, but our goal is purely local: less traffic in our city. It's a mix, right?
-
 --- GOOD EXAMPLE (Rival Comment) ---
 History:
 ...
@@ -1089,23 +1006,16 @@ History:
 [You]: hola a todos yo soy un fan de PSG jajajajajaja
 YOUR RESPONSE:
 [Santi]: Hablando de defensas, creo que la del Barça es mejor este año.
-
-
-
 `;
-}
     }
 
-    // --- FINAL PROMPT ASSEMBLY AND API CALL ---
-
     const finalPromptInstruction = `
-    ${masterPrompt} 
-    ${systemPrompt}
+        ${systemPrompt}
 
 Conversation History (if any):
 ---
 ${recentHistoryText || "(No history yet. This is the first message.)"}
-${userText ? `\n[You]: ${userText}` : ''} 
+${userOrInstructionText && !engineTriggered && !isGrandOpening && !isReEngagement ? `\n[You]: ${userOrInstructionText}` : ''}
 ---
 
 IMMEDIATE TASK:
@@ -1113,36 +1023,25 @@ You MUST now follow this instruction precisely. This is your only goal.
 
 ${instructionText}
 
-FINAL CHECK: Your entire output MUST only be the dialogue in the format [SpeakerName]: message. Do not add any other text, reasoning, or preamble.
-`;
+FINAL CHECK: Your entire output MUST only be the dialogue in the format [SpeakerName]: message. Do not add any other text, reasoning, or preamble.`;
 
-    // --- API Call and Rendering Logic (this part should be correct from our last step) ---
-  // <<< REPLACE THE ENTIRE try...catch BLOCK WITH THIS >>>
-// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
-// <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
-// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
-// <<< REPLACE THE try...catch BLOCK in generateAiTextResponse WITH THIS >>>
-// <<< REPLACE THE try...catch in generateAiTextResponse WITH THIS SIMPLIFIED VERSION >>>
-try {
-    // This function now ONLY gets the text and returns the lines.
-    // --- THIS IS THE FIX: The 'openrouter' argument has been removed. ---
-    const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, tutor!, [], undefined, false, 'group-chat', abortSignal);
-    
-    if (typeof rawResponse !== 'string' || !rawResponse) {
-        throw new Error("AI service returned empty or invalid response.");
+    try {
+        const rawResponse = await aiService.generateTextMessage(finalPromptInstruction, currentTutor!, [], undefined, false, 'group-chat', abortSignal);
+        if (typeof rawResponse !== 'string' || !rawResponse) {
+            console.warn("GIL: AI service returned empty or invalid response for text generation.");
+            return [];
+        }
+        console.log(`%c[GIL AI Text Gen] Raw AI Response:\n${rawResponse}`, 'color: dodgerblue');
+        return rawResponse.split('\n').filter(line => line.trim() !== '');
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.log(`%c[Group Interrupt] AI text generation was successfully aborted by abortSignal.`, 'color: #ff9800;');
+            return [];
+        }
+        console.error("GIL: Error getting conversation block from AI:", error);
+        return [];
     }
-    
-    console.log(`[Scene Getter] Raw Conversation Block from AI:\n${rawResponse}`);
-    return rawResponse.split('\n').filter(line => line.trim() !== '');
-} catch (error: any) { // <<< ADD type annotation
-    if (error.name === 'AbortError') {
-        console.log(`%c[Group Interrupt] AI text generation was successfully aborted.`, 'color: #ff9800;');
-        return []; // Return empty on abort
-    }
-    // --- END OF ADDED BLOCK ---
-    console.error("GIL (Hybrid): Error getting conversation block from AI:", error);
-    return [];
-}
+
 }
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
 // ===================  END: PASTE THIS ENTIRE BLOCK  ===================
@@ -1160,138 +1059,403 @@ try {
  * Stage 2: Other members then react to the first comment and the image description,
  *          creating a dynamic and grounded follow-up scene.
  */
-async function generateAiImageResponse(members: Connector[], imageBase64Data: string, imageMimeType: string, userCaption: string, abortSignal?: AbortSignal): Promise<boolean> { // <<< ADD abortSignal
-    if (!conversationFlowActive) return false;
 
-    console.log("%c[Group Image] Starting multi-stage image response...", 'color: #17a2b8; font-weight: bold;');
-    const { groupDataManager, polyglotHelpers, aiService, groupUiHandler } = getDeps();
-    
+// IN: src/js/core/group_interaction_logic.ts
+// REPLACE the entire function with this debug-enhanced version.
+// IN: src/js/core/group_interaction_logic.ts
+// REPLACE the entire function with this debug-enhanced version.
+
+async function generateAiImageResponse(
+    membersList: Connector[],
+    imageBase64Data: string,
+    imageMimeType: string,
+    userCaption: string,
+    abortSignal?: AbortSignal
+): Promise<{
+    firstSpeakerMessage: {
+        speakerId: string;
+        speakerName: string;
+        text: string; // AI's comment
+        imageSemanticDescription: string;
+        messageId: string;
+        type: 'image'; // This type indicates it's the AI's primary comment on user's image
+    } | null;
+    followUpMessages: Array<{
+        speakerId: string;
+        speakerName: string;
+        text: string;
+        messageId: string;
+        type: 'text';
+    }>;
+}> {
+    if (!conversationFlowActive) return { firstSpeakerMessage: null, followUpMessages: [] };
+
+    console.groupCollapsed("%c[GIL Image Gen] Starting multi-stage image response...", 'color: #17a2b8; font-weight: bold;');
+    const { polyglotHelpers, aiService, tutor: currentTutor } = getDeps();
     let firstSpeaker: Connector | undefined;
-    let indicatorElement: HTMLElement | null = null;
     
+    // <<< FIX: Clean the Base64 data ONCE at the very beginning. >>>
+    const cleanBase64Data = imageBase64Data.startsWith('data:') 
+        ? imageBase64Data.substring(imageBase64Data.indexOf(',') + 1)
+        : imageBase64Data;
+
     try {
-        // --- STAGE 1: CHOOSE THE FIRST, MOST RELEVANT SPEAKER ---
-        const memberProfiles = members.map(m => `- ${m.profileName}: Primarily interested in ${polyglotHelpers.formatReadableList(m.interests, 'and')}.`).join('\n');
-        const speakerChoicePrompt = `Based on the content of the attached image and the following member profiles, who is the MOST qualified or likely person to comment first?
-
-Group Members:
-${memberProfiles}
-User's caption with the image: "${userCaption || 'none'}"
-Your task: Respond with ONLY the name of the best person to speak next.`;
-
-const speakerNameResponse = await aiService.generateTextFromImageAndText(
-    imageBase64Data, imageMimeType, members[0], [], speakerChoicePrompt, 'groq', abortSignal // <<< ADD abortSignal
-);
-        if (!speakerNameResponse || typeof speakerNameResponse !== 'string') throw new Error("Speaker choice AI returned no response.");
+        // --- STAGE 1: CHOOSE FIRST SPEAKER ---
+        console.log("[GIL Image Gen] STAGE 1: Choosing first speaker.");
+        const memberProfiles = membersList.map(m => `- ${m.profileName}: Primarily interested in ${polyglotHelpers.formatReadableList(m.interests, 'and')}.`).join('\n');
+        const speakerChoicePrompt = `Based on the content of the attached image and the following member profiles, who is the MOST qualified or likely to comment first?\n\nGroup Members:\n${memberProfiles}\nUser's caption: "${userCaption || 'none'}"\nYour task: Respond with ONLY the name of the best person to speak next.`;
         
+        // <<< DEBUG: Log Stage 1 call >>>
+        console.log("[GIL Image Gen DEBUG] Stage 1 - Calling AI to choose speaker. Provider: groq. Prompt:", speakerChoicePrompt);
+        const speakerNameResponse = await aiService.generateTextFromImageAndText(cleanBase64Data, imageMimeType, membersList[0], null, speakerChoicePrompt, 'groq', abortSignal);
+        if (abortSignal?.aborted) throw new Error("AbortError: Speaker choice aborted");
+        // <<< DEBUG: Log Stage 1 response >>>
+        console.log("[GIL Image Gen DEBUG] Stage 1 - AI Response (Speaker Name):", speakerNameResponse);
+        if (!speakerNameResponse || typeof speakerNameResponse !== 'string') throw new Error("Speaker choice AI returned no/invalid response.");
+
         const chosenSpeakerName = speakerNameResponse.trim();
-        firstSpeaker = members.find(m => m.profileName === chosenSpeakerName) || members.find(m => m.id === tutor!.id) || members[0];
-        if (!firstSpeaker) throw new Error("Could not determine a first speaker.");
+        firstSpeaker = membersList.find(m => m.profileName === chosenSpeakerName) || membersList.find(m => m.id === currentTutor!.id) || membersList[0];
+        if (!firstSpeaker) throw new Error("Could not determine a first speaker from AI response.");
+        console.log(`[GIL Image Gen] Stage 1 SUCCESS: AI selected '${firstSpeaker.profileName}'.`);
 
-        console.log(`[Group Image] Stage 1: AI selected '${firstSpeaker.profileName}' as the first responder.`);
-        indicatorElement = groupUiHandler.updateGroupTypingIndicator(`${firstSpeaker.profileName} is typing...`);
-
-        // --- STAGE 2: GENERATE THE FIRST SPEAKER'S COMMENT AND THE DETAILED DESCRIPTION ---
+        // --- STAGE 2: GET FIRST COMMENT & DESCRIPTION ---
+        console.log("[GIL Image Gen] STAGE 2: Generating first comment and description.");
         const firstResponsePrompt = `You are ${firstSpeaker.profileName}. A user shared an image with the caption: "${userCaption || 'none'}".
         Your personality is: **${firstSpeaker.personalityTraits?.join(', ')}**.
-        
         Your task is to generate two things, in this exact order:
-        
-        1.  **Your Comment:** First, write a natural, in-character comment about the image, based on your personality and interests. Ask a question to engage the user.
-        2.  **The Description:** Immediately after your comment, you MUST include a special section formatted EXACTLY like this, with no extra words before or after the tags:
+        1.  **Your Comment:** First, write a natural, in-character comment about the image.
+        2.  **The Description:** Immediately after your comment, you MUST include a special section formatted EXACTLY like this:
             [IMAGE_DESCRIPTION_START]
-            A factual, objective description of what is visually in the image.
+           A detailed, factual description of the image goes here. For example: A close-up action shot of Stephen Curry, wearing his Golden State Warriors jersey (blue, number 30), shooting a basketball on an indoor court. The lighting is bright, typical of an NBA arena.
             [IMAGE_DESCRIPTION_END]
-        
-        --- EXAMPLE ---
-        Oh, that looks delicious! What kind of soup is it?
-        [IMAGE_DESCRIPTION_START]
-        A close-up photo of a bowl of noodle soup with chopsticks resting on the side.
-        [IMAGE_DESCRIPTION_END]
-        
         --- YOUR RESPONSE (in ${firstSpeaker.language}) ---`;
-                
-                // Find the AI call right after this prompt
-                const firstResponseRaw = await aiService.generateTextFromImageAndText(
-    imageBase64Data, imageMimeType, firstSpeaker, [], firstResponsePrompt, 'together', abortSignal // <<< ADD abortSignal
-);   if (indicatorElement) indicatorElement.remove();
-        if (typeof firstResponseRaw !== 'string' || !firstResponseRaw) throw new Error("Stage 2 AI returned empty response.");
 
+        // <<< DEBUG: Log Stage 2 call >>>
+        console.log(`[GIL Image Gen DEBUG] Stage 2 - Calling AI for comment. Provider: together. Prompt for ${firstSpeaker.profileName}:`, firstResponsePrompt);
+        const firstResponseRaw = await aiService.generateTextFromImageAndText(cleanBase64Data, imageMimeType, firstSpeaker, null, firstResponsePrompt, 'together', abortSignal);
+        if (abortSignal?.aborted) throw new Error("AbortError: First image response aborted");
+        // <<< DEBUG: Log Stage 2 response >>>
+        console.log("[GIL Image Gen DEBUG] Stage 2 - Raw AI Response:", firstResponseRaw);
+        if (typeof firstResponseRaw !== 'string' || !firstResponseRaw) throw new Error("Stage 2 AI (image comment) returned empty response.");
+        
         let conversationalReply = firstResponseRaw;
-        let extractedImageDescription = "An image was shared."; // Default description
+        let extractedImageDescription = "An image was shared.";
         const descStartTag = "[IMAGE_DESCRIPTION_START]";
         const descEndTag = "[IMAGE_DESCRIPTION_END]";
         const startIndex = firstResponseRaw.indexOf(descStartTag);
-        const endIndex = firstResponseRaw.indexOf(descEndTag);
-
-        if (startIndex !== -1 && endIndex > startIndex) {
-            extractedImageDescription = firstResponseRaw.substring(startIndex + descStartTag.length, endIndex).trim();
-            conversationalReply = firstResponseRaw.substring(0, startIndex).trim();
-            console.log(`[Group Image] Stage 2: Successfully extracted semantic description.`);
+        if (startIndex !== -1) {
+            const endIndex = firstResponseRaw.indexOf(descEndTag, startIndex);
+            if (endIndex > startIndex) {
+                extractedImageDescription = firstResponseRaw.substring(startIndex + descStartTag.length, endIndex).trim();
+                conversationalReply = firstResponseRaw.substring(0, startIndex).trim();
+                console.log(`[GIL Image Gen] Stage 2 SUCCESS: Extracted comment and description.`);
+            }
+        } else {
+            console.warn(`[GIL Image Gen] Stage 2 WARNING: Could not find description tags. Using full response as comment.`);
         }
 
-        // --- Append the first speaker's message and SAVE the description to history ---
-        const firstHistoryItem: GroupChatHistoryItem = {
+        const firstSpeakerMessageData = {
             speakerId: firstSpeaker.id,
             speakerName: firstSpeaker.profileName,
             text: conversationalReply,
-            timestamp: Date.now(),
-            imageSemanticDescription: extractedImageDescription // <-- CRITICAL SAVE
+            imageSemanticDescription: extractedImageDescription,
+            messageId: polyglotHelpers.generateUUID(),
+            type: 'image' as 'image'
         };
-        groupDataManager.addMessageToCurrentGroupHistory(firstHistoryItem);
-        groupUiHandler.appendMessageToGroupLog(conversationalReply, firstSpeaker.profileName, false, firstSpeaker.id);
-        console.log(`[Group Image] Stage 2: Appended first response from ${firstSpeaker.profileName} and saved description to history.`);
 
-        // --- STAGE 3: GENERATE A FOLLOW-UP SCENE WITH OTHER MEMBERS ---
-        const otherMembers = members.filter(m => m.id !== firstSpeaker!.id);
-        if (otherMembers.length > 0) {
-            console.log(`[Group Image] Stage 3: Generating follow-up scene with ${otherMembers.length} other members.`);
-            
-            const followUpPrompt = `
-You are a creative dialogue writer for a chat simulation.
-The group is currently reacting to an image.
+        // --- STAGE 3: GENERATE FOLLOW-UP SCENE ---
+        let followUpMessagesData: Array<{ speakerId: string; speakerName: string; text: string; messageId: string; type: 'text'}> = [];
+        const otherMembersList = membersList.filter(m => m.id !== firstSpeaker!.id);
+        if (otherMembersList.length > 0) {
+            console.log(`[GIL Image Gen] STAGE 3: Generating follow-up scene with ${otherMembersList.length} other members.`);
+            const followUpPrompt = `You are a creative dialogue writer for a chat simulation.
+            CONTEXT: The user shared an image described as: "${extractedImageDescription}". The first person, ${firstSpeaker.profileName}, said: "${conversationalReply}"
+            TASK: Write a short, realistic follow-up scene (2-4 messages) where other members react to BOTH the image description AND ${firstSpeaker.profileName}'s comment.
+            - The speakers MUST be from this list: ${otherMembersList.map(m => m.profileName).join(', ')}.
+            - Their reactions MUST be consistent with their own personalities.
+            - The entire response MUST be in the format [SpeakerName]: message.`;
 
---- CONTEXT ---
-The user shared an image.
-The image's content is: "${extractedImageDescription}"
-The first person to react, ${firstSpeaker.profileName}, said: "${conversationalReply}"
+            // <<< DEBUG: Log Stage 3 call >>>
+            console.log("[GIL Image Gen DEBUG] Stage 3 - Calling AI for follow-up scene. Prompt:", followUpPrompt);
+            const generatedLines = await generateAiTextResponse(false, false, false, followUpPrompt, abortSignal);
+            if (abortSignal?.aborted) throw new Error("AbortError: Follow-up scene generation aborted");
+             // <<< DEBUG: Log Stage 3 response >>>
+            console.log("[GIL Image Gen DEBUG] Stage 3 - Raw AI Response (Lines):", generatedLines);
 
---- YOUR TASK ---
-Write a short, realistic follow-up scene (2-4 messages) where other members of the group react to BOTH the image description AND ${firstSpeaker.profileName}'s comment.
-
-- The speakers MUST be from this list: ${otherMembers.map(m => m.profileName).join(', ')}.
-- Their reactions MUST be consistent with their own personalities and interests.
-- Keep the messages short and chat-like.
-- The entire response MUST be in the format [SpeakerName]: message, with each message on a new line.
-- The entire response MUST be in the group's primary language.`;
-
-            // Use a text-only model for this, as it's reacting to text context.
-            const followUpSceneLines = await generateAiTextResponse(false, false, false, followUpPrompt, abortSignal); // <<< ADD abortSignal
-            if (followUpSceneLines && followUpSceneLines.length > 0) {
-                console.log(`[Group Image] Stage 3: Follow-up scene generated. Playing scene...`);
-                await playScene(followUpSceneLines, false);
+            if (generatedLines && generatedLines.length > 0) {
+                generatedLines.forEach(line => {
+                    const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+                    if (match) {
+                        const speakerName = match[1].trim();
+                        const text = match[2].trim();
+                        const speaker = otherMembersList.find(m => m.profileName === speakerName);
+                        if (speaker) {
+                            followUpMessagesData.push({ speakerId: speaker.id, speakerName: speaker.profileName, text, messageId: polyglotHelpers.generateUUID(), type: 'text' });
+                        }
+                    }
+                });
+                console.log(`[GIL Image Gen] Stage 3 SUCCESS: Parsed into ${followUpMessagesData.length} messages.`);
             }
         }
-        
-        groupDataManager.saveCurrentGroupChatHistory(true);
-        return true;
 
-    } catch (error: any) { // <<< ADD type annotation
-        // --- ADD THIS BLOCK ---
+        console.groupEnd();
+        return { firstSpeakerMessage: firstSpeakerMessageData, followUpMessages: followUpMessagesData };
+
+    } catch (error: any) {
         if (error.name === 'AbortError') {
-            console.log(`%c[Group Interrupt] AI image generation was successfully aborted.`, 'color: #ff9800;');
-            return false;
+            console.log(`%c[Group Interrupt] AI image response generation was aborted by user.`, 'color: #ff9800;');
+        } else {
+            // <<< DEBUG: Log any error that happens during the process >>>
+            console.error("GIL (Hybrid): Error during multi-stage AI image response generation:", error);
         }
-
-
-
-        console.error("GIL (Hybrid): Error during multi-stage AI image response generation:", error);
-        if (indicatorElement) indicatorElement.remove();
-        const speaker = firstSpeaker || tutor;
-        groupUiHandler.appendMessageToGroupLog("(I had a little trouble seeing that image, sorry!)", speaker!.profileName, false, speaker!.id);
-        return false;
+        
+        console.groupEnd();
+        return {
+            firstSpeakerMessage: {
+                speakerId: firstSpeaker?.id || currentTutor?.id || 'system',
+                speakerName: firstSpeaker?.profileName || currentTutor?.profileName || 'System',
+                text: "(I had a little trouble processing that image, sorry!)",
+                imageSemanticDescription: "Error processing image.",
+                messageId: polyglotHelpers.generateUUID(),
+                type: 'image'
+            },
+            followUpMessages: []
+        };
     }
 }
+
+async function handleUserMessage(
+
+    
+    text: string | undefined,
+    options?: {
+        userSentImage?: boolean;
+        imageBase64Data?: string;
+        imageMimeType?: string;
+    }
+): Promise<{ // <<< MATCH THE INTERFACE RETURN TYPE
+    aiMessagesToPersist: Array<{
+        speakerId: string;
+        speakerName: string;
+        text: string | null;
+        type: 'text' | 'image';
+        messageId: string;
+        imageSemanticDescription?: string;
+    }>
+} | null> {console.log('[DEBUG_GIL_HMSG] Called with text:', text ? `"${text.substring(0, 50)}..."` : undefined, 'options:', options ? JSON.stringify(options) : undefined);
+
+    const { checkAndIncrementUsage } = await import('./usageManager');
+    const { openUpgradeModal } = await import('../ui/modalUtils');
+    const usageTypeForManager: 'textMessages' | 'voiceCalls' = options?.userSentImage ? 'textMessages' : 'textMessages'; // Or however you want to map image usage
+   
+    const usageKey = options?.userSentImage ? 'imageMessages' : 'textMessages';
+    const usageResult = await checkAndIncrementUsage(usageKey);
+
+    if (!usageResult.allowed) {
+        console.log(`GIL: User has reached ${usageKey} limit. Opening upgrade modal.`);
+        openUpgradeModal(usageKey === 'imageMessages' ? 'image' : 'text', usageResult.daysUntilReset);
+        return null;
+    }
+
+    if (!conversationFlowActive) {
+        console.log("GIL: Conversation flow not active. Ignoring user message.");
+        return null;
+    }
+
+    const { groupDataManager, polyglotHelpers } = getDeps(); // groupUiHandler is used by playScene
+    const currentGroup = groupDataManager.getCurrentGroupData();
+    if (!currentGroup) {
+        console.error("GIL: No current group data. Cannot handle user message.");
+        return null;
+    }
+
+    console.log("GIL: User message received. Cancelling any active AI operations.");
+    const controller = interruptAndTrackGroupOperation(currentGroup.id);
+
+    if (currentSceneCancellationToken) {
+        currentSceneCancellationToken.isCancelled = true;
+        currentSceneCancellationToken = null;
+        if (groupDataManager && typeof groupDataManager.saveCurrentGroupChatHistory === 'function') {
+            groupDataManager.saveCurrentGroupChatHistory(true); // Save local cache
+        }
+        console.log("GIL: Saved partial local cache due to user interruption during playScene.");
+    }
+
+    if (conversationLoopId) {
+        clearTimeout(conversationLoopId);
+        conversationLoopId = null;
+    }
+
+    lastMessageTimestamp = Date.now();
+    hasProddedSinceUserSpoke = false;
+    const userMessageText = text?.trim() || "";
+
+    // 1. Update memory (this logic is fine)
+    // Update memory with the user's new message - convoStore part
+    if (userMessageText && window.memoryService?.processNewUserMessage) {
+        const { groupDataManager } = getDeps();
+        // Look at the last 10 messages to see which AI personas were active.
+        const recentHistory = groupDataManager.getLoadedChatHistory().slice(-10); 
+        const involvedAiIds = new Set<string>();
+
+        recentHistory.forEach(msg => {
+            // 'user' is the human, so we care about the other (AI) speakers.
+            if (msg.speakerId !== 'user' && msg.speakerId) {
+                involvedAiIds.add(msg.speakerId);
+            }
+        });
+
+        // If no AI spoke recently, assume at least the tutor is listening.
+        if (involvedAiIds.size === 0 && tutor) {
+            involvedAiIds.add(tutor.id);
+        }
+
+        if (involvedAiIds.size > 0) {
+            const audienceIds = Array.from(involvedAiIds);
+            console.log(`[CEREBRUM_GROUP_WRITE] ✍️ User spoke in group. Audience: [${audienceIds.join(', ')}]. Sending to Scribe...`);
+            
+            // Tell the memory service what the user said AND which AIs heard it.
+            await window.memoryService.processNewUserMessage(
+                userMessageText,
+                audienceIds, // Pass the array of AIs who were "listening"
+                'group',
+                []
+            );
+            console.log(`[CEREBRUM_GROUP_WRITE] ✅ Targeted memory analysis complete.`);
+        }
+    }
+
+
+    // 2. Generate AI response data & Prepare for Firestore
+    const aiMessagesToPersist: Array<{
+        speakerId: string;
+        speakerName: string;
+        text: string | null;
+        type: 'text' | 'image';
+        messageId: string;
+        imageSemanticDescription?: string;
+    }> = [];
+    console.log('[DEBUG_GIL_HMSG] Initialized aiMessagesToPersist. Length:', aiMessagesToPersist.length);
+    // This array will hold lines for `playScene`
+    let linesToPlayInScene: string[] = [];
+
+    if (options?.userSentImage && options.imageBase64Data && options.imageMimeType) {
+        const imageResponsePayload = await generateAiImageResponse(
+            members, // module-level 'members'
+            options.imageBase64Data,
+            options.imageMimeType,
+            userMessageText, // User caption
+            controller.signal
+        );
+        console.log('[DEBUG_GIL_HMSG] Raw imageResponsePayload from generateAiImageResponse:', imageResponsePayload ? JSON.stringify(imageResponsePayload) : 'null/undefined');
+        if (controller.signal.aborted) {
+             console.log("GIL: AI image response generation aborted by user.");
+             return null;
+        }
+
+        if (imageResponsePayload.firstSpeakerMessage) {
+            // <<< ADD TO aiMessagesToPersist >>>
+
+            console.log('[DEBUG_GIL_HMSG] Preparing to push firstSpeakerMessage to aiMessagesToPersist:', JSON.stringify(imageResponsePayload.firstSpeakerMessage));
+            aiMessagesToPersist.push({
+                speakerId: imageResponsePayload.firstSpeakerMessage.speakerId,
+                speakerName: imageResponsePayload.firstSpeakerMessage.speakerName,
+                text: imageResponsePayload.firstSpeakerMessage.text,
+                type: 'image', // AI's first response to user image is typed as 'image'
+                messageId: imageResponsePayload.firstSpeakerMessage.messageId,
+                imageSemanticDescription: imageResponsePayload.firstSpeakerMessage.imageSemanticDescription
+            });
+            if (imageResponsePayload.firstSpeakerMessage.text) { // Ensure text is not null before adding
+                 linesToPlayInScene.push(`[${imageResponsePayload.firstSpeakerMessage.speakerName}]: ${imageResponsePayload.firstSpeakerMessage.text}`);
+            }
+        }
+        if (imageResponsePayload.followUpMessages.length > 0) {
+            imageResponsePayload.followUpMessages.forEach(msg => {
+                // <<< ADD TO aiMessagesToPersist >>>
+                console.log('[DEBUG_GIL_HMSG] Preparing to push followUpMessage to aiMessagesToPersist:', JSON.stringify(msg));
+                aiMessagesToPersist.push({
+                    speakerId: msg.speakerId,
+                    speakerName: msg.speakerName,
+                    text: msg.text,
+                    type: 'text',
+                    messageId: msg.messageId
+                    // No imageSemanticDescription for these text follow-ups
+                });
+                if (msg.text) { // Ensure text is not null
+                    linesToPlayInScene.push(`[${msg.speakerName}]: ${msg.text}`);
+                }
+            });
+        }
+    } else if (userMessageText) {
+        const rawResponseLines = await generateAiTextResponse(false, false, false, userMessageText, controller.signal);
+        console.log('[DEBUG_GIL_HMSG] Raw rawResponseLines from generateAiTextResponse:', rawResponseLines ? JSON.stringify(rawResponseLines) : 'null/undefined');
+     
+        if (controller.signal.aborted) {
+            console.log("GIL: AI text response generation aborted by user.");
+            return null;
+        }
+
+        if (rawResponseLines && rawResponseLines.length > 0) {
+            linesToPlayInScene.push(...rawResponseLines);
+            rawResponseLines.forEach(line => {
+                const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+                if (match) {
+                    const speakerName = match[1].trim();
+                    const textContent = match[2].trim();
+                    const speaker = members.find(m => m.profileName === speakerName);
+                    if (speaker && textContent) {
+                        // <<< ADD TO aiMessagesToPersist >>>
+                        const textAiMessage = {
+                            speakerId: speaker.id,
+                            speakerName: speaker.profileName,
+                            text: textContent,
+                            type: 'text' as 'text' | 'image', // Ensure type consistency
+                            messageId: polyglotHelpers.generateUUID()
+                        };
+                        console.log('[DEBUG_GIL_HMSG] Preparing to push text AI message to aiMessagesToPersist:', JSON.stringify(textAiMessage));
+                        aiMessagesToPersist.push(textAiMessage);
+                    }
+                }
+            });
+        }
+    }
+
+    // 3. Optimistically update UI using playScene
+    if (linesToPlayInScene.length > 0) {
+        console.log(`GIL: AI generated ${linesToPlayInScene.length} lines. Enhancing and playing scene optimistically.`);
+        const { enhancedLines } = enhanceGroupChatSplitting(linesToPlayInScene, members);
+         // `playScene` uses `groupUiHandler` internally.
+        // It's important that `playScene` is designed to take the `messageId` from `aiMessagesToPersist`
+        // (or a structured message object) and pass it to `groupUiHandler.appendMessageToGroupLog`.
+        // For this step, we assume `playScene` correctly uses the `messageId` if available,
+        // or generates one that matches what's in `aiMessagesToPersist` for UI consistency.
+        // The GUIDANCE IS: `playScene` appends to UI. `group_manager` saves to Firestore using IDs from `aiMessagesToPersist`.
+        // The Firestore listener will then see these messages. If the UI message already exists (matched by messageId),
+        // it might just update its `data-firestore-message-id`.
+        // Given current playScene, it will generate its own UUIDs for UI. The link will be made by group_manager.
+        await playScene(enhancedLines, false);
+    }
+
+
+    // Cleanup abort controller
+    if (activeGroupAiOperation.get(currentGroup.id) === controller) {
+        activeGroupAiOperation.delete(currentGroup.id);
+    }
+
+    console.log("GIL: AI response generated and optimistic UI update initiated. Returning data for persistence. Restarting idle check.");
+    conversationEngineLoop(false, false); // Restart idle check
+    console.log('[DEBUG_GIL_HMSG] FINAL check before return. aiMessagesToPersist contents:', JSON.stringify(aiMessagesToPersist));
+    if (aiMessagesToPersist.length > 0) {
+        console.log('[DEBUG_GIL_HMSG] Returning aiMessagesToPersist. Count:', aiMessagesToPersist.length);
+        console.log("GIL: Returning AI messages for persistence:", aiMessagesToPersist.length);
+        return { aiMessagesToPersist: aiMessagesToPersist }; // <<< RETURN THE MESSAGES
+    } else {
+        console.log('[DEBUG_GIL_HMSG] Returning null as aiMessagesToPersist is empty or not applicable.');
+        console.log("GIL: No AI messages to persist for this user turn.");
+        return null; // Return null if no AI messages were generated (e.g., only memory update occurred)
+    }
+}
+
 
 // ADD THIS ENTIRE NEW FUNCTION
 /**
@@ -1444,103 +1608,167 @@ function setIdleCheckTimerWithLogs(callback: () => void, totalDelayMs: number) {
 }
 
 let isGenerating = false; // This should already be in your module-level state
+// In src/js/core/group_interaction_logic.ts
+// In src/js/core/group_interaction_logic.ts
 
+// Make sure auth is imported if you're using auth.currentUser directly here
+// import { auth } from '../firebase-config'; // Or however you access it
 async function conversationEngineLoop(forceImmediateGeneration: boolean = false, isFirstRunAfterJoin: boolean = false): Promise<void> {
-    if (isGenerating || isRenderingScene || !conversationFlowActive) return;
-
-    isGenerating = true; // Set lock at the beginning
-
-    if (conversationLoopId) clearTimeout(conversationLoopId);
-
-    const { groupDataManager } = getDeps();
-    const currentGroup = groupDataManager.getCurrentGroupData();
-    if (!tutor || !currentGroup) {
-        isGenerating = false; // <-- FIX 1: Unlock on early exit
+    if (isGenerating || isRenderingScene || !conversationFlowActive) {
+        if (isGenerating) console.log("[Engine] Aborting: isGenerating=true");
+        if (isRenderingScene) console.log("[Engine] Aborting: isRenderingScene=true");
+        if (!conversationFlowActive) console.log("[Engine] Aborting: !conversationFlowActive");
         return;
     }
 
-    const timeSinceLastMessage = Date.now() - (lastMessageTimestamp || 0);
+    isGenerating = true;
+    console.log(`%c[Engine] conversationEngineLoop START. forceImmediate: ${forceImmediateGeneration}, isFirstRun: ${isFirstRunAfterJoin}`, "color: #007bff; font-weight:bold;");
 
-    // The new condition: Generate if it's the first run, if the user has been idle, OR if we are forcing it.
+    if (conversationLoopId) clearTimeout(conversationLoopId);
+
+    const { groupDataManager, polyglotHelpers } = getDeps();
+    const currentGroup = groupDataManager.getCurrentGroupData();
+
+    if (!tutor || !currentGroup) {
+        console.error("[Engine] Critical: Tutor or currentGroup is null. Exiting engine loop.");
+        isGenerating = false;
+        return;
+    }
+    const currentGroupId = currentGroup.id;
+
+    const timeSinceLastMessage = Date.now() - (lastMessageTimestamp || 0);
     const shouldGenerate = forceImmediateGeneration || isFirstRunAfterJoin || (timeSinceLastMessage > 10000 && !hasProddedSinceUserSpoke);
-    
+
     if (shouldGenerate) {
         if (forceImmediateGeneration) {
             console.log(`%c[Engine] Force-generating scene on group entry...`, 'color: #fd7e14; font-weight: bold;');
         }
 
-
         const history = groupDataManager.getLoadedChatHistory();
         const isGrandOpening = history.length === 0 && isFirstRunAfterJoin;
+        console.log(`[Engine] Initial check: history.length=${history.length}, isFirstRunAfterJoin=${isFirstRunAfterJoin}, isGrandOpening=${isGrandOpening}`);
+
+
+        let finalAiMessagesToProcess: Array<{
+            speakerId: string;
+            speakerName: string;
+            text: string | null;
+            type: 'text' | 'image';
+            messageId: string;
+        }> = [];
+
+        let rawLinesGenerated: string[] = [];
 
         if (isGrandOpening) {
-            console.log(`%c[Engine] Orchestrating Grand Opening... Member count: ${members.length}`, 'color: #fd7e14; font-weight: bold;');
+            console.log(`%c[Engine] Orchestrating Grand Opening Full Performance... Member count: ${members.length}`, 'color: #fd7e14; font-weight: bold;');
             
-            let combinedOpeningScene: string[] = [];
-        
             if (members.length <= 1) {
-                console.log(`[Engine] Taking 1-on-1 chat path.`);
                 const oneOnOneWelcome = await generateOneOnOneWelcome(currentGroup, tutor);
-                if (oneOnOneWelcome) {
-                    combinedOpeningScene.push(...oneOnOneWelcome);
-                }
+                if (oneOnOneWelcome) rawLinesGenerated.push(...oneOnOneWelcome);
             } else {
-                console.log(`[Engine] Taking multi-member group path.`);
-                const tutorWelcomeLine = await generateTutorWelcome(currentGroup, tutor);
-                if (tutorWelcomeLine) {
-                    combinedOpeningScene.push(...tutorWelcomeLine);
-                }
-                
-                const otherMembersScene = await generateAiTextResponse(false, true, false);
-                if (otherMembersScene?.length > 0) {
-                    combinedOpeningScene.push(...otherMembersScene);
+                const tutorWelcomeLines = await generateTutorWelcome(currentGroup, tutor);
+                if (tutorWelcomeLines) rawLinesGenerated.push(...tutorWelcomeLines);
+
+                const otherMembersRawScene = await generateAiTextResponse(false, true, false);
+                if (otherMembersRawScene?.length > 0) {
+                    rawLinesGenerated.push(...otherMembersRawScene);
                 }
             }
-            
-            if (combinedOpeningScene.length > 0) {
-                await playScene(combinedOpeningScene, true);
-            }
-        
-        } else {
-            console.log(`%c[Engine] Generating standard ongoing conversation block...`, 'color: #007bff;');
+        } else { // Standard Ongoing Conversation / Re-engagement
+            console.log(`%c[Engine] Generating standard ongoing/re-engagement block...`, 'color: #007bff;');
             if (!isFirstRunAfterJoin) hasProddedSinceUserSpoke = true;
             
             const isReEngagement = history.length > 0 && isFirstRunAfterJoin;
-
-            const rawSceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
-            if (!rawSceneLines || rawSceneLines.length === 0) {
-                startCooldownWithLogging(15000 + Math.random() * 5000);
-                isGenerating = false; // <-- FIX 2: Unlock on early exit
-                return; 
-            }
-
-            const { enhancedLines, wasSplit } = enhanceGroupChatSplitting(rawSceneLines, members);
-            
-            if (wasSplit) {
-                console.log(`%c[Parser] Successfully fragmented AI response. Original lines: ${rawSceneLines.length}, Final Bubbles: ${enhancedLines.length}`, 'color: #28a745; font-weight: bold;');
-            }
-
-            await playScene(enhancedLines, false);
+            const standardRawSceneLines = await generateAiTextResponse(!isFirstRunAfterJoin, false, isReEngagement);
+            if (standardRawSceneLines) rawLinesGenerated.push(...standardRawSceneLines);
         }
 
-        groupDataManager.saveCurrentGroupChatHistory(true);
-        hasProddedSinceUserSpoke = false; 
+        // Common processing for all generated raw lines: Split and structure them
+        if (rawLinesGenerated.length > 0) {
+            const { enhancedLines: allSplitLines } = enhanceGroupChatSplitting(rawLinesGenerated, members);
+            
+            allSplitLines.forEach(line => {
+                const match = line.match(/^\[?([^\]:]+)\]?:\s*(.*)/);
+                if (match) {
+                    const speakerName = match[1].trim();
+                    const textContent = match[2].trim();
+                    const speaker = members.find(m => m.profileName === speakerName);
+                    if (speaker && textContent) {
+                        finalAiMessagesToProcess.push({
+                            speakerId: speaker.id,
+                            speakerName: speaker.profileName,
+                            text: textContent,
+                            type: 'text',
+                            messageId: polyglotHelpers.generateUUID()
+                        });
+                    }
+                }
+            });
+        }
+
+        // ***** THE FIX: RENDER FIRST, THEN SAVE *****
+        if (finalAiMessagesToProcess.length > 0) {
+            // STEP 1: RENDER THE SCENE WITH ANIMATIONS
+            // This is now the single source of truth for the UI.
+            console.log(`[Engine] Calling playScene with ${finalAiMessagesToProcess.length} structured AI messages for rendering.`);
+            await playScene(
+                finalAiMessagesToProcess.map(m => ({ 
+                    speakerName: m.speakerName,
+                    text: m.text || "", 
+                    messageId: m.messageId,
+                    speakerId: m.speakerId
+                })), 
+                isGrandOpening
+            );
+            
+            // STEP 2: SAVE THE MESSAGES TO FIRESTORE AFTER RENDERING
+            // This happens after the animation is complete. The listener will still fire,
+            // but the UI is already correct. You should add logic in the listener to
+            // ignore messages that are already in the DOM to prevent duplicates.
+            console.log(`[Engine] Scene finished. Saving ${finalAiMessagesToProcess.length} AI messages to Firestore.`);
+            const currentUserForGILSave = auth.currentUser;
+            if (!currentUserForGILSave) {
+                console.error('[Engine] Auth is NULL in GIL. Aborting save for this batch of AI messages.');
+            } else if (groupDataManager.addMessageToFirestoreGroupChat) {
+                for (const aiMsgToSave of finalAiMessagesToProcess) {
+                    const firestorePayload = {
+                        appMessageId: aiMsgToSave.messageId,
+                        senderId: aiMsgToSave.speakerId,
+                        senderName: aiMsgToSave.speakerName,
+                        text: aiMsgToSave.text,
+                        type: aiMsgToSave.type as 'text' | 'image' | 'voice_memo' | 'system_event',
+                    };
+                    // This can be `await` or not, depending on if you want to wait for saves
+                    // before starting the next idle timer. `await` is safer.
+                    await groupDataManager.addMessageToFirestoreGroupChat(
+                        currentGroupId,
+                        firestorePayload
+                    );
+                }
+            }
+        }
+        // ***** END OF FIX *****
+        
+        if (groupDataManager.saveCurrentGroupChatHistory) {
+            groupDataManager.saveCurrentGroupChatHistory(true); 
+        }
+        hasProddedSinceUserSpoke = false;
 
         const nextCheckDelay = 5000 + Math.random() * 5000; 
         console.log(`%c[Engine] Interaction complete. Next idle check in ${(nextCheckDelay / 1000).toFixed(1)} seconds.`, 'color: #6c757d;');
         conversationLoopId = setTimeout(() => conversationEngineLoop(false, false), nextCheckDelay);
 
-    } else {
+    } else { 
         if (conversationFlowActive) {
-            const IDLE_THRESHOLD = 30000;
-            const timeUntilNextCheck = IDLE_THRESHOLD - timeSinceLastMessage + 1000;
+            const IDLE_THRESHOLD = 30000; 
+            const timeUntilNextCheck = Math.max(0, IDLE_THRESHOLD - timeSinceLastMessage + 1000); 
             setIdleCheckTimerWithLogs(() => conversationEngineLoop(false, false), timeUntilNextCheck);
         }
     }
     
-    isGenerating = false; // <-- FIX 3: Unlock at the very end for all normal paths
+    console.log(`%c[Engine] conversationEngineLoop END. Setting isGenerating=false.`, "color: #007bff; font-weight:bold;");
+    isGenerating = false;
 }
-
 // ===================  END: REPLACE WITH THIS BLOCK  ===================
 // ===================  END: REPLACE THE ENTIRE FUNCTION  ===================
     // --- PUBLIC INTERFACE (ADAPTED TO MATCH OLD `GroupInteractionLogic`) ---
@@ -1592,8 +1820,8 @@ const groupInteractionLogic = {
     }
 },
 
-    // --- THIS IS THE CORRECTED handleUserMessage SIGNATURE ---
-  // REPLACE THE ENTIRE FUNCTION WITH THIS BLOCK
+
+  
   handleUserMessage: async (text: string | undefined, options?: {
     userSentImage?: boolean;
     imageBase64Data?: string;
@@ -1632,7 +1860,9 @@ const groupInteractionLogic = {
         currentSceneCancellationToken.isCancelled = true;
         currentSceneCancellationToken = null;
         // IMPORTANT: Save the partial history that was rendered BEFORE we were interrupted.
-        groupDataManager.saveCurrentGroupChatHistory(true); 
+        if (groupDataManager && typeof groupDataManager.saveCurrentGroupChatHistory === 'function') {
+            groupDataManager.saveCurrentGroupChatHistory(true);
+        }
         console.log("GIL: Saved partial scene history due to user interruption.");
     }
     
@@ -1669,7 +1899,7 @@ const groupInteractionLogic = {
 // 5. Send the user's message to the memory service for targeted fact extraction.
 if (userMessageText && window.memoryService?.processNewUserMessage) {
     const { groupDataManager } = getDeps();
-    const recentHistory = groupDataManager.getLoadedChatHistory().slice(-10); // Look at last 10 messages for context
+    const recentHistory = groupDataManager.getLoadedChatHistory().slice(-15); // Look at last 15 messages for context
     const involvedAiIds = new Set<string>();
 
     // Find AI members who spoke recently
@@ -1720,7 +1950,9 @@ if (userMessageText && window.memoryService?.processNewUserMessage) {
     // 6. Restart the idle check loop now that the interaction is complete.
     console.log("GIL: User interaction complete. Restarting idle check engine.");
     conversationEngineLoop(false, false);
-  },
+  }
+  
+  ,
 
     setAwaitingUserFirstIntroduction: (isAwaiting: boolean): void => { 
         isAwaitingUserFirstIntro = isAwaiting; 

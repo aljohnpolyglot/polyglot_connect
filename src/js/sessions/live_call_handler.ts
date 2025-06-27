@@ -4,6 +4,7 @@ import { openUpgradeModal } from '../ui/modalUtils';
 import type { GeminiLiveApiServiceModule } from '../services/gemini_live_api_service'; // Adjust path if necessary
 import type {
     Connector,
+    ConversationManager,
     YourDomElements,
     UiUpdater,
     PolyglotHelpersOnWindow as PolyglotHelpers,
@@ -49,6 +50,8 @@ interface LiveCallHandlerDeps {
     liveApiMicInput?: LiveApiMicInput;
     liveApiAudioOutput?: LiveApiAudioOutput;
     liveApiTextCoordinator?: LiveApiTextCoordinator;
+    conversationManager?: ConversationManager;
+    
     aiService?: AIService; // <<< ADD THIS LINE
 }
 // --- INTERFACE DEFINITIONS FOR Test 8 ---
@@ -58,25 +61,24 @@ interface LiveApiSpeechConfig {
     voiceConfig: { prebuiltVoiceConfig: { voiceName: string } };
     languageCode: string;
 }
-
 interface LiveApiGenerationConfig { // This is the nested config
     responseModalities: string[];
     speechConfig: LiveApiSpeechConfig;
-    temperature?: number;
+    temperature?: number; // Kept as optional if you decide to add it later
 }
 
 interface LiveApiRealtimeInputConfig {
     activityHandling: string;
+    // proactivity?: { proactive_audio: boolean }; // <<< ADD HERE
 }
-
-// This is the main config object live_call_handler creates
-interface LiveApiSessionSetupConfig { // Object LCH creates
+interface LiveApiSessionSetupConfig {
     systemInstruction: LiveApiSystemInstruction;
-    generationConfig: LiveApiGenerationConfig; // <<< NESTED
+    generationConfig: LiveApiGenerationConfig;
     realtimeInputConfig: LiveApiRealtimeInputConfig;
-    inputAudioTranscription: object;
-    outputAudioTranscription: object;
-    // NO tools property for this test
+    inputAudioTranscription: object; // Keep these if you want transcriptions
+    outputAudioTranscription: object;// Keep these if you want transcriptions
+    // NO proactivity
+    // NO enable_affective_dialog
 }
 
 
@@ -112,7 +114,8 @@ window.liveCallHandler = ((): LiveCallHandlerModule => {
             liveApiMicInput: window.liveApiMicInput,
             liveApiAudioOutput: window.liveApiAudioOutput,
             liveApiTextCoordinator: window.liveApiTextCoordinator,
-            aiService: window.aiService // Add aiService to the dependencies
+            aiService: window.aiService,     // Add aiService to the dependencies
+            conversationManager: window.conversationManager,
         };
         return deps;
     };
@@ -143,7 +146,7 @@ async function startLiveCall(connector: Connector, sessionType: string): Promise
     const requiredDepNames: (keyof LiveCallHandlerDeps)[] = [
         'geminiLiveApiService', 'sessionStateManager', 'liveApiMicInput',
         'liveApiAudioOutput', 'liveApiTextCoordinator', 'uiUpdater',
-        'domElements', 'modalHandler', 'polyglotHelpers'
+        'domElements', 'modalHandler', 'polyglotHelpers', 'aiService', 'conversationManager'
     ];
 
     for (const depName of requiredDepNames) {
@@ -251,41 +254,50 @@ async function startLiveCall(connector: Connector, sessionType: string): Promise
 
     const primaryConnectorLanguage = connector.language || "English";
     const langInfo = connector.languageSpecificCodes?.[primaryConnectorLanguage];
-    const liveApiModelName = connector.liveApiModelName || "gemini-2.0-flash-live-001"; // Or your default
+    // Ensure "models/" prefix if not already in connector.liveApiModelName
+    // Target the native audio model for new features.
+    const rawModelNameFromConnector = connector.liveApiModelName; // Get from persona/connector
+    const defaultModelName ="gemini-live-2.5-flash-preview"; /// <<< REVERT TO THIS (or similar known working one)
 
+    let chosenModelName = connector.liveApiModelName || defaultModelName; // Allow persona to override if they have a compatible live model
+    const liveApiModelName = chosenModelName.startsWith("models/") ? chosenModelName : `models/${chosenModelName}`;
     let speechLanguageCodeForApi: string;
     let voiceNameToUseForApi: string;
 
+
+    
+    // Always try to get the voice intended for the persona's primary speaking language first
+    voiceNameToUseForApi = langInfo?.liveApiVoiceName || "Puck"; // Default voice for the current primary language
+    
     if (langInfo?.liveApiSpeechLanguageCodeOverride) {
         speechLanguageCodeForApi = langInfo.liveApiSpeechLanguageCodeOverride;
-        const overrideLangKey = speechLanguageCodeForApi.startsWith("en") ? "English" : speechLanguageCodeForApi; // Normalize key for lookup
-        const overrideVoiceInfo = connector.languageSpecificCodes?.[overrideLangKey];
-        if (overrideVoiceInfo?.liveApiVoiceName) {
-            voiceNameToUseForApi = overrideVoiceInfo.liveApiVoiceName;
-        } else if (speechLanguageCodeForApi.startsWith("en") && connector.languageSpecificCodes?.["English"]?.liveApiVoiceName) {
-             // Fallback to general English voice if specific override (e.g., en-AU) doesn't have its own API voice
-            voiceNameToUseForApi = connector.languageSpecificCodes["English"].liveApiVoiceName;
-        } else {
-            voiceNameToUseForApi = "Puck"; // Default if no specific voice found after override
-        }
+        // Voice is already set from the primary language's langInfo.
+        // The override is for the *speech recognition input* and *TTS engine*,
+        // but the text generated will be in the primary language,
+        // so the selected voice for that primary language is still relevant.
+        console.log(`LCH Facade (${functionName}): Using speech language override: ${speechLanguageCodeForApi} for original lang ${primaryConnectorLanguage}. Voice: ${voiceNameToUseForApi}`);
     } else {
         speechLanguageCodeForApi = langInfo?.languageCode || connector.languageCode || "en-US";
-        voiceNameToUseForApi = langInfo?.liveApiVoiceName || "Puck"; // Default voice
+        // Voice is already set above from langInfo or defaulted to Puck.
     }
-    console.log(`LCH Facade (${functionName}): API Model: '${liveApiModelName}', Voice: '${voiceNameToUseForApi}', Speech Lang: '${speechLanguageCodeForApi}'`);
-
+    console.log(`LCH Facade (${functionName}): API Model: '${liveApiModelName}', Voice: '${voiceNameToUseForApi}', Speech Lang for API: '${speechLanguageCodeForApi}'`);
     const sessionConfigForService: LiveApiSessionSetupConfig = {
         systemInstruction: systemInstructionObject,
-        generationConfig: {
-            responseModalities: ["AUDIO"], // We want the AI to speak
+        generationConfig: { // generationConfig no longer contains enable_affective_dialog
+            responseModalities: ["AUDIO"],
             speechConfig: {
                 voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceNameToUseForApi } },
                 languageCode: speechLanguageCodeForApi
-            },
+            }
+            // No temperature specified here; API will use its default.
         },
-        realtimeInputConfig: { activityHandling: "START_OF_ACTIVITY_INTERRUPTS" },
-        inputAudioTranscription: {}, // Default empty objects
-        outputAudioTranscription: {}
+        realtimeInputConfig: { activityHandling: "START_OF_ACTIVITY_INTERRUPTS",
+            //  proactivity: { proactive_audio: true } 
+            },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        // proactivity: { proactive_audio: true }, // For native audio models
+        // enable_affective_dialog: true       // <<< ADDED HERE, at the top level of sessionConfigForService
     };
 
     // --- 6. DEFINE API CALLBACKS ---
@@ -574,40 +586,53 @@ function initializeCallUI(connector: Connector | null, sessionType: string | nul
 
 // PASTE STARTS HERE
 // PASTE STARTS HERE
+
+
+// src/js/sessions/live_call_handler.ts (The NEW, correct version)
+
 async function handleLiveApiSessionOpen(): Promise<void> {
     const functionName = "handleLiveApiSessionOpen (TS)";
     console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): Live API connection established. Transitioning UI.`);
-    const deps = getDeps(functionName);
+    // Get dependencies, including the crucial conversationManager
+    const { domElements, modalHandler, sessionStateManager, conversationManager } = getDeps(functionName);
 
-    // 1. Close the "Calling..." screen (virtualCallingScreen)
-    // This screen was opened by sessionStateManager.initializeBaseSession
-    if (deps.domElements?.virtualCallingScreen && deps.modalHandler?.close) {
-        deps.modalHandler.close(deps.domElements.virtualCallingScreen);
+    // 1. Close the "Calling..." screen
+    if (domElements?.virtualCallingScreen && modalHandler?.close) {
+        modalHandler.close(domElements.virtualCallingScreen);
         console.log(`LCH Facade (${functionName}): Virtual calling screen closed.`);
-    } else {
-        console.warn(`LCH Facade (${functionName}): Could not close virtual calling screen (deps missing).`);
     }
 
-    // 2. Mark the session as officially started.
-    // IMPORTANT: sessionStateManager.markSessionAsStarted() also calls stopRingtone().
-    if (!deps.sessionStateManager?.markSessionAsStarted()) {
+    // --- THIS IS THE FIX: The Correct Order of Operations ---
+    // 2A. Ensure the conversation record exists in Firestore FIRST.
+    // We use the `currentConnector` which was set when startLiveCall was called.
+    if (currentConnector && conversationManager?.ensureConversationRecord) {
+        console.log(`LCH: Ensuring conversation record for ${currentConnector.id} before marking session started...`);
+        await conversationManager.ensureConversationRecord(currentConnector);
+    } else {
+        console.error(`LCH: Cannot ensure conversation record, currentConnector or conversationManager is missing!`);
+        await handleLiveApiError(new Error("Critical data missing for session setup."));
+        return;
+    }
+    
+    // 2B. NOW, mark the session as officially started.
+    // This will trigger _logCallEventToChat, which will now succeed because the parent document exists.
+    if (!await sessionStateManager?.markSessionAsStarted()) {
          console.error(`LCH Facade (${functionName}): ABORT! sessionStateManager.markSessionAsStarted FAILED!`);
-         // Ensure handleLiveApiError is awaited if it's async
          await handleLiveApiError(new Error("Failed to mark session as started."));
          return;
     }
     console.log(`LCH Facade (${functionName}): Session marked as started (ringtone stopped).`);
+    // --- END OF FIX ---
 
-    // 3. Show the actual call interface (e.g., directCallInterface)
-    // initializeCallUI uses currentConnector and currentSessionType which are IIFE-scoped
+    // 3. Show the actual call interface
     initializeCallUI(currentConnector, currentSessionType);
     console.log(`LCH Facade (${functionName}): Actual call UI initialized and shown.`);
 
     // 4. Start capturing the user's microphone
-    if (deps.liveApiMicInput?.startCapture) {
+    const { liveApiMicInput } = getDeps(functionName);
+    if (liveApiMicInput?.startCapture) {
         try {
-            // Pass the async error handler correctly if startCapture takes one
-            await deps.liveApiMicInput.startCapture(async (err) => await handleLiveApiError(err));
+            await liveApiMicInput.startCapture(async (err) => await handleLiveApiError(err));
         } catch (captureError: any) {
              console.error(`LCH Facade (${functionName}): Error during liveApiMicInput.startCapture call:`, captureError);
              await handleLiveApiError(new Error(captureError.message || "Mic capture failed to start."));
@@ -619,7 +644,7 @@ async function handleLiveApiSessionOpen(): Promise<void> {
         return;
     }
 
-    // 5. AI is ready. Wait for the user to speak.
+    // 5. AI is ready.
     console.log(`LCH Facade (${functionName} v${LCH_FACADE_VERSION}): FINISHED onOpen tasks. AI ready, waiting for user input.`);
 }
 // PASTE ENDS HERE

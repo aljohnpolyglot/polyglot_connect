@@ -68,8 +68,8 @@ const CORE_MODULES_TO_WAIT_FOR: { eventName: string, windowObjectKey: keyof Wind
     { eventName: 'groupManagerReady', windowObjectKey: 'groupManager', keyFunction: 'initialize' },
     { eventName: 'sessionManagerReady', windowObjectKey: 'sessionManager', keyFunction: 'initialize' },
     { eventName: 'filterControllerReady', windowObjectKey: 'filterController', keyFunction: 'initializeFilters' },
-{ eventName: 'geminiLiveApiServiceReady', windowObjectKey: 'geminiLiveApiService', keyFunction: 'connect' }
-
+{ eventName: 'geminiLiveApiServiceReady', windowObjectKey: 'geminiLiveApiService', keyFunction: 'connect' },
+{ eventName: 'voiceMemoHandlerReady', windowObjectKey: 'voiceMemoHandler', keyFunction: 'handleNewVoiceMemoInteraction' }
 ];
 
 const moduleReadyStatus: { [key: string]: boolean } = {};
@@ -141,7 +141,7 @@ interface CriticalModuleDef { // Ensure this interface is defined if not already
     keyFn?: string;
 }
 
-function initializeAppLogic(): void {
+async function initializeAppLogic(): Promise<void> {
     console.log('APP_DEBUG: ========== initializeAppLogic - ENTERED ==========');
     console.log('APP_DEBUG: initializeAppLogic - ENTERED. Timestamp:', Date.now());
 
@@ -239,7 +239,32 @@ function initializeAppLogic(): void {
         return; // Exit initializeAppLogic if any check failed
     }
     console.log('APP_DEBUG: initializeAppLogic - Critical module checks PASSED.'); // This line was here before, keeping it.
-   
+    console.log('[APP INIT] Initializing Memory Service (Cerebrum)...');
+    const memoryService = window.memoryService as import('./types/global').MemoryServiceModule | undefined;
+    if (memoryService) {
+        await memoryService.initialize();
+        console.log('[APP INIT] Memory Service is ready.');
+    } else {
+        console.error("[APP INIT] CRITICAL: memoryService not found for final initialization.");
+    }
+    
+    
+    console.log('[APP INIT] Initializing real-time services...');
+
+    // Kick off the Firestore listener in the Conversation Manager
+   // PASTE THIS NEW CODE BLOCK in app.ts
+
+try {
+    const conversationManager = window.conversationManager!;
+    // This 'await' is the magic. It pauses the app here until Step 1 is completely finished.
+    await conversationManager.initialize();
+    console.log('[APP INIT] Conversation Manager is ready (user authenticated).');
+
+} catch (error) {
+    console.error("CRITICAL: App initialization failed because Conversation Manager could not start.", error);
+    // The app can't continue if this fails, so we stop.
+    return; 
+}
     const tabManager = window.tabManager as TabManagerModule | undefined;
     const jumpButtonManager = window.jumpButtonManager as JumpButtonManagerModule | undefined;
     const titleNotifier = window.titleNotifier as import('./types/global').TitleNotifierModule | undefined;
@@ -297,13 +322,19 @@ function initializeAppLogic(): void {
         console.log(`Dependency Check: conversationManager is ready? -> ${hasConvoManager}`);
         console.log(`Dependency Check: aiService is ready? -> ${hasAiService}`);
         
-        if (hasConvoManager && hasAiService) {
+        const hasGroupDataManager = !!(window.groupDataManager && window.groupDataManager.initialize); // <<< ADD THIS CHECK
+
+        if (hasConvoManager && hasAiService && hasGroupDataManager) { // <<< ADD hasGroupDataManager
             console.log('%cAll dependencies MET. Initializing aiTranslationService now.', 'color: green;');
-            window.aiTranslationService.initialize({
-                conversationManager: window.conversationManager!,
-                aiService: window.aiService!
-            });
-            // Note: The service will dispatch its own 'Ready' event internally.
+            if (window.aiTranslationService && typeof window.aiTranslationService.initialize === 'function') {
+                window.aiTranslationService.initialize({
+                    conversationManager: window.conversationManager!,
+                    aiService: window.aiService!,
+                    groupDataManager: window.groupDataManager! // <<< PASS IT HERE
+                });
+            } else {
+                console.error('Cannot initialize aiTranslationService. Missing dependencies.');
+            }
         } else {
             console.error('Cannot initialize aiTranslationService. Missing dependencies.');
         }

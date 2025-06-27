@@ -12,6 +12,8 @@ import type {
 } from '../types/global.d.ts';
 // REPLACE THE OLD INTERFACE WITH THIS
 
+import { doc, updateDoc, arrayUnion, arrayRemove, deleteField } from "firebase/firestore"; // <<< ADD FIRESTORE IMPORTS
+import { auth, db } from '../firebase-config'; // <<< ENSURE THIS IS IMPORTED
 
 console.log('reaction_handler.ts: Script loaded.');
 
@@ -73,12 +75,18 @@ window.reactionHandler = {} as ReactionHandlerModule;
             };
 
             // --- Data Update Function (remains crucial) ---
-            const updateReactionInData = (messageWrapper: HTMLElement, newEmoji: string | null) => {
-                const messageId = messageWrapper.dataset.messageId;
-                const userId = 'user_player'; 
+            const updateReactionInData = async (messageWrapper: HTMLElement, newEmoji: string | null) => {
+                const messageIdFromDataset = messageWrapper.dataset.messageId; // This is your app's UUID for the message
+                const user = auth.currentUser;
+
+                if (!user) {
+                    console.error("[RH_SAVE_ERR] No authenticated user to save reaction.");
+                    return;
+                }
+                const userId = user.uid; // Use actual Firebase UID
 
                 const isGroupChat = !!messageWrapper.closest('#group-chat-log');
-                console.log(`[RH_SAVE] updateReactionInData for msgId: ${messageId}. Group: ${isGroupChat}. Emoji: ${newEmoji}`);
+                console.log(`[RH_SAVE] updateReactionInData for appMsgId: ${messageIdFromDataset}. Group: ${isGroupChat}. Emoji: ${newEmoji}. User: ${userId}`);
 
                 if (isGroupChat) {
                     const groupId = groupDataManager.getCurrentGroupId();
@@ -86,58 +94,178 @@ window.reactionHandler = {} as ReactionHandlerModule;
                         console.error("[RH_SAVE_ERR] Group: No current groupId.");
                         return;
                     }
-                    const groupHistory = groupDataManager.getLoadedChatHistory();
-                    const messageToUpdate = groupHistory.find(msg => msg.messageId === messageId);
-                    if (!messageToUpdate) {
-                        console.error(`[RH_SAVE_ERR] Group: Msg ${messageId} not in history for group ${groupId}.`);
-                        return;
-                    }
-                    messageToUpdate.reactions = messageToUpdate.reactions || {};
-                    Object.keys(messageToUpdate.reactions).forEach(key => {
-                        messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter(id => id !== userId);
-                        if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
-                    });
-                    if (newEmoji) {
-                        messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
-                        if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
-                            messageToUpdate.reactions[newEmoji].push(userId);
+        
+                    const firestoreMessageId = messageWrapper.dataset.firestoreMessageId; // Get Firestore ID if available
+        
+                    if (!firestoreMessageId) {
+                        // This could be an optimistically rendered message that hasn't hit Firestore yet,
+                        // OR an AI message from playScene that doesn't have a firestore ID yet.
+                        // Reactions should ideally only be saved to messages that *are* in Firestore.
+                        console.warn(`[RH_SAVE_WARN] Group: Attempting to react to message ${messageIdFromDataset} which does not yet have a Firestore document ID. Reaction will not be saved to DB yet.`);
+                        
+                        // OPTIONAL: Update in-memory GDM cache if you want UI to reflect immediately
+                        // even if DB save fails or is deferred. This is complex if the message isn't even in GDM's cache.
+                        const groupHistory = groupDataManager.getLoadedChatHistory();
+                        const messageToUpdateInMemory = groupHistory.find(msg => msg.messageId === messageIdFromDataset);
+                        if (messageToUpdateInMemory) {
+                            messageToUpdateInMemory.reactions = messageToUpdateInMemory.reactions || {};
+                            // ... (rest of your local reaction update logic on messageToUpdateInMemory) ...
+                            // Make sure to update the UI from here if you do this.
+                            // This path is risky as it might diverge from Firestore.
+                            console.log(`[RH_SAVE_TEMP] Group reaction updated in-memory only for ${messageIdFromDataset}.`);
+                        } else {
+                             console.error(`[RH_SAVE_ERR] Group: Msg ${messageIdFromDataset} not in GDM's loaded history AND no Firestore ID. Cannot save reaction.`);
                         }
+                        return; // For now, prevent DB write if no Firestore ID
                     }
-                    groupDataManager.saveCurrentGroupChatHistory(false); // Don't trigger sidebar list update from here
-                    console.log(`[RH_SAVE_OK] Group reaction saved. Reactions:`, JSON.parse(JSON.stringify(messageToUpdate.reactions)));
-                } else { // 1-on-1 Chat
-                    const chatContainer = messageWrapper.closest<HTMLElement>('[data-current-connector-id]');
-                    const conversationId = chatContainer?.dataset.currentConnectorId;
-                    if (!messageId || !conversationId) {
-                        console.error("[RH_SAVE_ERR] 1-on-1: Missing messageId or conversationId.", { messageId, conversationId });
-                        return;
-                    }
-                    const convoRecord = conversationManager.getConversationById(conversationId);
-                    if (!convoRecord?.messages) {
-                        console.error(`[RH_SAVE_ERR] 1-on-1: No convo record or messages for ${conversationId}.`);
-                        return;
-                    }
-                    const messageToUpdate = convoRecord.messages.find(msg => msg.id === messageId);
-                    if (!messageToUpdate) {
-                        console.error(`[RH_SAVE_ERR] 1-on-1: Msg ${messageId} not found in convo ${conversationId}.`);
-                        return;
-                    }
-                    messageToUpdate.reactions = messageToUpdate.reactions || {};
-                    Object.keys(messageToUpdate.reactions).forEach(key => {
-                        messageToUpdate.reactions![key] = messageToUpdate.reactions![key].filter(id => id !== userId);
-                        if (messageToUpdate.reactions![key].length === 0) delete messageToUpdate.reactions![key];
-                    });
-                    if (newEmoji) {
-                        messageToUpdate.reactions[newEmoji] = messageToUpdate.reactions[newEmoji] || [];
-                        if (!messageToUpdate.reactions[newEmoji].includes(userId)) {
-                            messageToUpdate.reactions[newEmoji].push(userId);
+        
+                    // We have a Firestore ID, proceed to update Firestore directly.
+                    const messageDocRef = doc(db, "groups", groupId, "messages", firestoreMessageId);
+                    const userId = auth.currentUser!.uid;
+                    const updates: any = {};
+        
+                    // To correctly update reactions, we need to know the user's *previous* reaction on this message
+                    // This might require fetching the message document first, or relying on the UI's data-user-reaction
+                    const currentReactionOnWrapper = messageWrapper.dataset.userReaction; // Emoji or undefined
+        
+                    if (newEmoji) { // Adding or changing reaction
+                        if (currentReactionOnWrapper && currentReactionOnWrapper !== newEmoji) {
+                            updates[`reactions.${currentReactionOnWrapper}`] = arrayRemove(userId);
                         }
+                        updates[`reactions.${newEmoji}`] = arrayUnion(userId);
+                    } else if (currentReactionOnWrapper) { // Removing reaction (newEmoji is null)
+                        updates[`reactions.${currentReactionOnWrapper}`] = arrayRemove(userId);
+                        // Optional: If arrayRemove makes the emoji key's array empty, delete the key.
+                        // This requires a read-then-write or a transaction for true atomicity.
+                        // For simplicity, Firestore might leave an empty array, or you can clean up later.
+                        // A more complex approach:
+                        // getDoc(messageDocRef).then(docSnap => {
+                        //   const data = docSnap.data();
+                        //   if (data && data.reactions && data.reactions[currentReactionOnWrapper] && data.reactions[currentReactionOnWrapper].length === 1) {
+                        //     updates[`reactions.${currentReactionOnWrapper}`] = deleteField();
+                        //   }
+                        //   updateDoc(messageDocRef, updates);
+                        // });
+                        // return; // if using async getDoc
                     }
-                    window.convoStore?.updateConversationProperty(conversationId, 'messages', [...convoRecord.messages]);
-                    window.convoStore?.saveAllConversationsToStorage();
-                    console.log(`[RH_SAVE_OK] 1-on-1 reaction saved. Reactions:`, JSON.parse(JSON.stringify(messageToUpdate.reactions)));
+        
+        
+                    if (Object.keys(updates).length > 0) {
+                        try {
+                            await updateDoc(messageDocRef, updates);
+                            console.log(`[RH_SAVE_OK] Group reaction updated in Firestore for msg ${firestoreMessageId}. Updates:`, updates);
+                            // UI update for reaction display will happen via Firestore listener in group_manager.ts
+                            // or if you have a direct UI update method in chat_ui_updater.
+                        } catch (error) {
+                            console.error(`[RH_SAVE_ERR] Group: Failed to update reaction in Firestore for msg ${firestoreMessageId}:`, error);
+                        }
+                    } else {
+                        console.log("[RH_SAVE] No actual change in reaction, no Firestore update needed.");
+                    }
+                } else { // 1-on-1 CHAT
+                    const closestChatContainer = messageWrapper.closest<HTMLElement>('[data-current-conversation-id]');
+                    const conversationIdFromDOM = closestChatContainer?.dataset.currentConversationId;
+                
+                    // Add these logs for your upcoming test:
+                    console.log(`[RH_TEST] updateReactionInData (1v1) - Target messageWrapper:`, messageWrapper);
+                    console.log(`[RH_TEST] updateReactionInData (1v1) - Found closest container with [data-current-conversation-id]:`, closestChatContainer);
+                    console.log(`[RH_TEST] updateReactionInData (1v1) - Value of data-current-conversation-id from DOM: '${conversationIdFromDOM}'`);
+                
+                    if (!messageIdFromDataset || !conversationIdFromDOM) { // messageIdFromDataset is app's UUID
+                        console.error("[RH_SAVE_ERR] 1-on-1: Missing messageIdFromDataset (app UUID) or conversationIdFromDOM (full convo ID).", { messageIdFromDataset, conversationIdFromDOM });
+                        return;
+                    }
+                
+                    // This call now uses the full conversationIdFromDOM
+                    const convoRecord = conversationManager.getConversationById(conversationIdFromDOM);
+                    if (!convoRecord || !convoRecord.messages) { // Check convoRecord itself first
+                        console.error(`[RH_SAVE_ERR] 1-on-1: No convo record found or messages array missing for conversationId: '${conversationIdFromDOM}'. ConvoRecord:`, convoRecord);
+                        return;
+                    }
+                
+                    // Find the message in the cache by your app's messageId (UUID)
+                    const cachedMessage = convoRecord.messages.find(msg => msg.messageId === messageIdFromDataset);
+                    
+                    if (!cachedMessage || !cachedMessage.id) { // cachedMessage.id IS THE FIRESTORE DOCUMENT ID
+                        console.error(`[RH_SAVE_ERR] 1-on-1: Msg with appMessageId ${messageIdFromDataset} not found in cache or missing Firestore doc ID for convo ${conversationIdFromDOM}.`);
+                        console.error("Cached message was:", cachedMessage);
+                        return;
+                    }
+                    const firestoreMessageDocId = cachedMessage.id; // This is the ID needed for the doc path
+
+                    const messageDocRef = doc(db, "conversations", conversationIdFromDOM, "messages", firestoreMessageDocId);
+
+                    try {
+                        // To update reactions atomically:
+                        // 1. Get the current message document to find the old reaction (if any)
+                        // This step is complex for atomicity. A simpler approach for now:
+                        // Overwrite the reactions field. For multiple users, this isn't ideal but works for single user.
+                        // A better way for multi-user is to use FieldValue.arrayUnion/arrayRemove on specific emoji keys.
+
+                        const currentReactions = cachedMessage.reactions || {};
+                        const newReactionsState = { ...currentReactions };
+
+                        // Remove user's old reaction
+                        let oldEmoji: string | null = null;
+                        for (const emojiKey in newReactionsState) {
+                            if (newReactionsState[emojiKey]?.includes(userId)) {
+                                oldEmoji = emojiKey;
+                                newReactionsState[emojiKey] = newReactionsState[emojiKey]?.filter(uid => uid !== userId);
+                                if (newReactionsState[emojiKey]?.length === 0) {
+                                    delete newReactionsState[emojiKey];
+                                }
+                                break; // User can only have one reaction
+                            }
+                        }
+
+                        // Add new reaction
+                        if (newEmoji) {
+                            newReactionsState[newEmoji] = newReactionsState[newEmoji] || [];
+                            if (!newReactionsState[newEmoji].includes(userId)) {
+                                newReactionsState[newEmoji].push(userId);
+                            }
+                        }
+                        
+                        // Firestore update
+                        const updates: any = {};
+                        if (newEmoji && oldEmoji && newEmoji !== oldEmoji) { // Changed reaction
+                            updates[`reactions.${oldEmoji}`] = arrayRemove(userId);
+                            updates[`reactions.${newEmoji}`] = arrayUnion(userId);
+                        } else if (newEmoji && !oldEmoji) { // New reaction
+                            updates[`reactions.${newEmoji}`] = arrayUnion(userId);
+                        } else if (!newEmoji && oldEmoji) { // Removed reaction
+                            updates[`reactions.${oldEmoji}`] = arrayRemove(userId);
+                            // If the array becomes empty after removal, Firestore might keep an empty array.
+                            // To delete the field if the array is empty, it's more complex and might require a transaction or read-then-write.
+                            // For simplicity, we'll let Firestore handle empty arrays or use deleteField later if needed.
+                            // If after arrayRemove the field `reactions.${oldEmoji}` becomes empty, we might want to remove the key.
+                            // This logic can be refined. A simple way is to check the length after arrayRemove in the cache and then
+                            // if it's 0, use `updates[`reactions.${oldEmoji}`] = deleteField();`
+                            // However, arrayRemove won't error if the element isn't there.
+                            // If the array for `oldEmoji` might become empty and you want to remove the key:
+                            if (newReactionsState[oldEmoji]?.length === 0 || !newReactionsState[oldEmoji]) {
+                                updates[`reactions.${oldEmoji}`] = deleteField();
+                            }
+                        }
+
+
+                        if (Object.keys(updates).length > 0) {
+                            await updateDoc(messageDocRef, updates);
+                            console.log(`[RH_SAVE_OK] 1-on-1 reaction updated in Firestore for msg ${firestoreMessageDocId}. Updates:`, updates);
+                            // Update local cache optimistically (Firestore listener will eventually confirm)
+                            cachedMessage.reactions = newReactionsState;
+                            // Notify ChatOrchestrator or UI directly if needed, or rely on Firestore listener.
+                            // For now, we assume the Firestore listener on ConversationManager will pick up the change and update the cache/UI.
+                        } else {
+                            console.log("[RH_SAVE] No actual change in reaction, no Firestore update needed.");
+                        }
+
+                    } catch (error) {
+                        console.error(`[RH_SAVE_ERR] 1-on-1: Failed to update reaction in Firestore for msg ${firestoreMessageDocId}:`, error);
+                    }
                 }
-            };
+            }; // End of updateReactionInData
+
 
             const closeDesktopPopups = () => {
                 if (activeDesktopReactionPicker) {

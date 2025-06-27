@@ -20,7 +20,6 @@ body, html {
     color: var(--text-color-dark);
     scroll-behavior: smooth;
 }
-
 /* --- Hero Section --- */
 .hero-section {
     height: 100vh;
@@ -30,57 +29,142 @@ body, html {
     justify-content: center;
     color: var(--text-color-light);
     text-align: center;
+    
+    /* The new background image setup */
+    background-image: url('/images/connect-background.png'); /* <<< MAKE SURE TO NAME YOUR SORA IMAGE THIS */
+    background-size: cover;
+    background-position: center center;
+    overflow: hidden; /* Important for the animation */
 }
 
-.hero-video-background {
+/* Add a subtle animation to the background */
+@keyframes pan-background {
+    0% { background-position: 45% 50%; }
+    50% { background-position: 55% 50%; }
+    100% { background-position: 45% 50%; }
+}
+
+.hero-section::before {
+    /* This creates an animated effect on the background image itself */
+    content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: inherit; /* Use the same image */
+    background-size: cover;
+    animation: pan-background 40s ease-in-out infinite;
     z-index: 1;
 }
 
+/* This class is no longer needed since we are not using a video */
+.hero-video-background {
+    display: none; 
+}
 .hero-overlay {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
+    /* A gradient is more visually interesting than a solid color */
+    background-image: linear-gradient(45deg, rgba(10, 20, 40, 0.85), rgba(0, 0, 0, 0.75));
     z-index: 2;
 }
-
-.hero-content {
+.hero-content.two-column {
     position: relative;
     z-index: 3;
-    padding: 20px;
+    width: 100%;
+    max-width: 1200px; /* Control the max width of the content area */
+    padding: 20px 5%;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Two equal columns */
+    align-items: center;
+    gap: 4rem;
+}
+
+/* --- Column 1: Text & Branding --- */
+.hero-text-column {
+    text-align: left;
+}
+
+.hero-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 1.5rem;
+}
+
+.hero-text-column h1 {
+    font-family: var(--heading-font);
+    font-size: 3.5rem; /* Make it bigger now that it has space */
+    line-height: 1.1;
+    margin-bottom: 1.5rem;
+}
+
+.hero-text-column p {
+    font-size: 1.2rem;
+    max-width: 500px;
+    opacity: 0.9;
+    margin-bottom: 2rem;
+}
+
+/* --- Column 2: Login Card --- */
+.hero-login-column {
+    display: flex;
+    justify-content: flex-end; /* Align the card to the right */
 }
 
 .login-card {
     background-color: rgba(28, 30, 33, 0.85);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    padding: 2rem 3rem;
+    padding: 2.5rem; /* Uniform padding */
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    max-width: 500px;
-    margin: auto;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
 }
 
-.login-card h1 {
+.login-card h3 {
     font-family: var(--heading-font);
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
-    line-height: 1.2;
+    font-size: 1.5rem;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
 }
 
-.login-card p {
-    font-size: 1.1rem;
-    margin-bottom: 2rem;
-    opacity: 0.9;
+.login-card-footer {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 1.5rem;
+    margin-bottom: 0;
+}
+.login-card-footer a {
+    color: rgba(255, 255, 255, 0.8);
+    text-decoration: underline;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+    .hero-content.two-column {
+        grid-template-columns: 1fr; /* Stack columns on smaller screens */
+        text-align: center;
+        gap: 2rem;
+    }
+    .hero-text-column {
+        text-align: center;
+        order: 2; /* Move text below the login card */
+    }
+    .hero-login-column {
+        justify-content: center;
+        order: 1; /* Move login card to the top */
+    }
+    .hero-text-column h1 {
+        font-size: 2.8rem;
+    }
+    .hero-logo {
+        display: none; /* Hide the big logo on mobile to save space */
+    }
 }
 
 /* Custom FirebaseUI Styles */
@@ -639,7 +723,7 @@ section h2 {
 
 /* --- Final Invitation CTA Section --- */
 .final-cta-section {
-    background: var(--bg-dark-section) url('/images/bg-texture.png'); /* Add a subtle texture image if you have one */
+    background: var(--bg-dark-section) url('/images/.png'); /* Add a subtle texture image if you have one */
     color: var(--text-color-light);
     padding: 8rem 2rem;
 }

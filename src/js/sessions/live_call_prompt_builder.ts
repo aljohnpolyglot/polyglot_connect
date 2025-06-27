@@ -43,11 +43,28 @@ export async function buildLiveApiSystemInstructionForConnector(connector: Conne
     const systemPromptParts: string[] = [];
 
     // --- 2. Get Shared Core & Personality Rules ---
-const convoStore = window.convoStore;
-const userSummary = convoStore?.getGlobalUserProfile();
-systemPromptParts.push(await getCoreIdentityPrompt(connector));
-// Ensure polyglotHelpers exists before passing it
-if (polyglotHelpers) {
+
+    console.log(`%c[Live Call Pre-Flight] 🚀 Running pre-flight checks for ${connector.profileName}...`, 'color: #fd7e14; font-weight: bold;');
+    
+    // <<<--- PRE-FLIGHT CHECK: MEMORY --- START --->>>
+    let memoryPacketContent = "// Pre-flight memory check failed or no service found.";
+    if (window.memoryService && typeof window.memoryService.getMemoryForPrompt === 'function') {
+        console.log(`%c[Live Call Pre-Flight] 🧠 Contacting Cerebrum for long-term memory packet...`, 'color: #17a2b8;');
+        const memoryResponse = await window.memoryService.getMemoryForPrompt(connector.id);
+        memoryPacketContent = memoryResponse.prompt;
+    } else {
+        console.warn(`[Live Call Pre-Flight] ⚠️ memoryService not available. Proceeding without long-term memory.`);
+    }
+    // <<<--- PRE-FLIGHT CHECK: MEMORY ---  END  --->>>
+
+    const convoStore = window.convoStore;
+    const userSummary = convoStore?.getGlobalUserProfile();
+
+    // Now, pass the fetched memory packet directly to the prompt builder.
+    systemPromptParts.push(await getCoreIdentityPrompt(connector, memoryPacketContent));
+    
+    // Ensure polyglotHelpers exists before passing it
+    if (polyglotHelpers) {
     systemPromptParts.push(getPersonalityAndBehaviorPrompt(connector, polyglotHelpers));
 }
     // --- NEW: 3. Unified Context Setting (Replaces Greeting & History) ---
@@ -58,12 +75,12 @@ if (polyglotHelpers) {
         const allMessages = convoRecord?.messages || [];
         if (allMessages.length > 0) {
             lastMessage = allMessages[allMessages.length - 1]; // <<< GET THE WHOLE OBJECT
-            const recentMessages = allMessages.slice(-8); 
+            const recentMessages = allMessages.slice(-15); 
             const transcriptTurns: TranscriptTurn[] = recentMessages.map(msg => {
                 const turnType: TranscriptTurn['type'] = msg.type === 'voice' ? 'audio' : msg.type as TranscriptTurn['type'];
                 return { 
                     sender: msg.sender, 
-                    text: msg.text, 
+                    text: msg.text || '', 
                     type: turnType,
                     timestamp: msg.timestamp 
                 };
@@ -132,7 +149,7 @@ systemPromptParts.push(`
             if (relevantMessages.length > 0) {
                 const transcriptTurns: TranscriptTurn[] = relevantMessages.map(msg => ({
                     sender: msg.sender,
-                    text: msg.text,
+                    text: msg.text || '',
                     timestamp: msg.timestamp,
                     type: msg.type as TranscriptTurn['type'],
                 }));

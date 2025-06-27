@@ -1,0 +1,1 @@
+//: Manages tracking and persisting user-specific counters, flags, and lists relevant to achievements. Interacts heavily with Firestore.

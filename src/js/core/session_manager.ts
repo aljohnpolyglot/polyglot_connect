@@ -128,97 +128,86 @@ function initializeActualSessionManager(): void {
 // const {
 //     sessionStateManager, liveCallHandler, /*...,*/ modalHandler, domElements
 // } = resolvedDeps;
-
 async function startModalSession(connector: Connector, sessionTypeWithContext: string): Promise<void> {
-  
-    if (sessionStateManager.isSessionActive()) {
-        console.warn(`SessionManager: startModalSession called for ${connector.id} (${sessionTypeWithContext}) but a session is ALREADY ACTIVE. Aborting new call attempt.`);
-        // Optionally, provide user feedback if this happens due to user action
-        // alert("A call is already in progress or being connected.");
-        return;
-    }
-  
-    console.log("SessionManager (TS Facade): startModalSession - Type:", sessionTypeWithContext);
+    const smFunctionName = "SessionManager.startModalSession"; // For clearer logs
 
-    // sessionStateManager is already checked by resolvedDeps, so direct usage is fine
+    // PRIMARY AND ONLY INITIAL CHECK for active session at the SM level
     if (sessionStateManager.isSessionActive()) {
-        alert("Another session is already active. Please end it first.");
-        return;
+        console.warn(`${smFunctionName}: Called for ${connector.id} (${sessionTypeWithContext}) but sessionStateManager.isSessionActive() is TRUE. Aborting NEW call attempt.`);
+        // Optionally, provide user feedback if this happens due to user action
+        // alert("A call is already in progress or being connected. Please wait or try refreshing.");
+        return; // EXIT EARLY
     }
+
+    console.log(`${smFunctionName}: Proceeding for ${connector.id} (${sessionTypeWithContext}). No active session reported by SSM initially.`);
 
     if (sessionTypeWithContext === "message_modal") {
-        // chatManager is optional in resolvedDeps, so check it or use optional chaining
         chatManager?.openMessageModal?.(connector);
         return;
     }
 
     if (sessionTypeWithContext === "direct_modal") {
-        // --- CRITICAL FIX AREA ---
-        // 1. Await usage check and potential upgrade modal
-        const { checkAndIncrementUsage } = await import('../core/usageManager'); // Assuming path
-        const { openUpgradeModal } = await import('../ui/modalUtils');       // Only import openUpgradeModal
+        const { checkAndIncrementUsage } = await import('../core/usageManager');
+        const { openUpgradeModal } = await import('../ui/modalUtils');
 
         const usageResult = await checkAndIncrementUsage('voiceCalls');
         if (!usageResult.allowed) {
-            console.log("SessionManager: User has reached voice call limit.");
-
-            // Determine which upgrade modal might be open (based on how openUpgradeModal works)
-            // and close it using the generic modalHandler.
-            // We assume 'call' type was the last one potentially opened if we are here.
-            const potentiallyOpenUpgradeModal = domElements.upgradeCallLimitModal; // From YourDomElements
-
-            if (potentiallyOpenUpgradeModal && modalHandler.close) { // modalHandler is from resolvedDeps
-                // Check if it's actually visible before trying to close (optional, but can prevent noise)
-                // if (modalHandler.isVisible?.(potentiallyOpenUpgradeModal)) {
-                //    modalHandler.close(potentiallyOpenUpgradeModal);
-                //    console.log("SessionManager: Closed existing call upgrade modal before showing new/updated one.");
-                // }
-                // For simplicity, just try to close it if it exists. modalHandler.close should be idempotent.
-                modalHandler.close(potentiallyOpenUpgradeModal);
+            console.log(`${smFunctionName}: User has reached voice call limit.`);
+            // ... (modal closing logic as before) ...
+            if (domElements.upgradeCallLimitModal && modalHandler.close) {
+                modalHandler.close(domElements.upgradeCallLimitModal);
             }
-            // Also consider the text limit modal, though less likely in this flow
-            if (domElements.upgradeLimitModal && modalHandler.close) { // USES domElements & modalHandler
+            if (domElements.upgradeLimitModal && modalHandler.close) {
                 modalHandler.close(domElements.upgradeLimitModal);
             }
-
             openUpgradeModal('call', usageResult.daysUntilReset);
-            return; // EXIT EARLY - DO NOT PROCEED TO CALL
+            return; // EXIT EARLY
         }
-        // If we reach here, user is allowed to make the call.
 
-        // 2. NOW, initialize session state (which shows virtualCallingScreen & starts ringtone)
-        // sessionStateManager is from resolvedDeps
-        const sessionInitialized = sessionStateManager.initializeBaseSession(
+        // Initialize session state (shows virtualCallingScreen & starts ringtone via SSM)
+        // SSM's initializeBaseSession will do its own internal check for an active session.
+        // The `skipModalManagement` is false, so SSM handles the virtual calling screen.
+        const sessionInitializedBySSM = sessionStateManager.initializeBaseSession(
             connector,
-            sessionTypeWithContext
-            // The 4th arg (skipModalManagement) defaults to false, so SSM will try to open virtualCallingScreen
+            sessionTypeWithContext,
+            undefined, // callSessionId (let SSM generate)
+            false      // skipModalManagement (SSM handles UI)
         );
 
-        if (!sessionInitialized) {
-            console.error("SM: Failed to initialize base session state (e.g., virtualCallingScreen failed to open).");
-            // sessionStateManager.initializeBaseSession should handle its own cleanup if it returns false.
-            return;
+        if (!sessionInitializedBySSM) {
+            // This means SSM's internal check `if (currentSession.sessionId)` was true,
+            // or some other critical failure within initializeBaseSession.
+            console.error(`${smFunctionName}: sessionStateManager.initializeBaseSession returned false. Aborting call.`);
+            // SSM's initializeBaseSession (when returning false due to active session) already tries to close UI and stop ringtone.
+            // No need to call LCH.endLiveCall here as LCH hasn't started.
+            // No need to call SSM.resetBaseSessionState here as SSM should manage its state if init fails.
+            return; // EXIT EARLY
         }
 
-        // 3. Then, attempt to start the live call (backend connection)
+        // If we reach here, SSM successfully initialized its state (meaning it didn't think a session was active,
+        // or it was an LCH-driven re-init where LCH requested skipModalManagement=true)
+        // AND it set up the virtual calling screen.
+
+        console.log(`${smFunctionName}: Base session state initialized successfully by SSM. Attempting to start live call via LCH.`);
         try {
-            // liveCallHandler is from resolvedDeps
-            const callStarted = await liveCallHandler.startLiveCall(connector, sessionTypeWithContext);
-            if (!callStarted) {
-                console.error("SM: liveCallHandler.startLiveCall returned false. Call did not connect.");
-                // liveCallHandler.startLiveCall should have cleaned up virtualCallingScreen
-                // and called SSM.resetBaseSessionState in its failure paths.
+            const callStartedByLCH = await liveCallHandler.startLiveCall(connector, sessionTypeWithContext);
+            if (!callStartedByLCH) {
+                console.error(`${smFunctionName}: liveCallHandler.startLiveCall returned false. Call did not connect properly.`);
+                // LCH's startLiveCall should handle its own UI cleanup and SSM reset on failure.
+            } else {
+                console.log(`${smFunctionName}: liveCallHandler.startLiveCall reported success.`);
             }
         } catch (error) {
-            console.error("SM: An error occurred during liveCallHandler.startLiveCall:", error);
-            // sessionStateManager, domElements, modalHandler are from the IIFE's destructured resolvedDeps
+            console.error(`${smFunctionName}: An error occurred DURING liveCallHandler.startLiveCall:`, error);
+            // LCH's startLiveCall should ideally catch its own errors and clean up.
+            // As a fallback, ensure SSM is reset.
             sessionStateManager.resetBaseSessionState();
-            if (domElements.virtualCallingScreen && modalHandler.close) { // Check modalHandler.close
-                try { modalHandler.close(domElements.virtualCallingScreen); } catch(e){ console.warn("SM: Error closing vcs in catch", e); }
+            if (domElements.virtualCallingScreen && modalHandler.close) {
+                try { modalHandler.close(domElements.virtualCallingScreen); } catch (e) { console.warn(`${smFunctionName}: Error closing vCS in LCH startLiveCall catch:`, e); }
             }
         }
     } else {
-        console.error("SessionManager (TS Facade): Unknown session type:", sessionTypeWithContext);
+        console.error(`${smFunctionName}: Unknown session type: ${sessionTypeWithContext}`);
     }
 }
 

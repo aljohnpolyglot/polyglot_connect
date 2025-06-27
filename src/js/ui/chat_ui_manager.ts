@@ -228,11 +228,11 @@ console.log('chat_ui_manager.ts: Core functional dependencies (methods) appear r
                     groupManager?.userIsTyping?.();
                 });
             }
-            if (domElements.leaveGroupBtn) {
-                (domElements.leaveGroupBtn as HTMLButtonElement).addEventListener('click', () => {
-                    groupManager?.leaveCurrentGroup?.();
-                });
-            }
+            // if (domElements.leaveGroupBtn) {
+            //     (domElements.leaveGroupBtn as HTMLButtonElement).addEventListener('click', () => {
+            //         groupManager?.leaveCurrentGroup?.();
+            //     });
+            // }
 
             // --- Header Button Listeners ---
             const setupHeaderAction = (

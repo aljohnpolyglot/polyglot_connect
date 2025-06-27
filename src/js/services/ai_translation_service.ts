@@ -1,8 +1,15 @@
 // /src/js/services/ai_translation_service.ts
 
-// --- VVVVVV FINAL VERSION (WITH SAFETY CHECK) VVVVVV ---
-
-import type { ConversationManager, AIService, AiTranslationServiceModule } from '../types/global.js';
+import type {
+    ConversationManager,
+    AIService,
+    AiTranslationServiceModule,
+    GroupDataManager,
+    MessageInStore,         // For 1-on-1 message type
+    GroupChatHistoryItem,   // For group message type
+    Connector               // For partnerConnectorForPrompt
+} from '../types/global.d.ts';
+import { auth } from '../firebase-config'; // For checking current user
 
 console.log('ai_translation_service.ts: Script loaded.');
 
@@ -11,149 +18,216 @@ const aiTranslationService: AiTranslationServiceModule = (() => {
 
     let conversationManager: ConversationManager | null = null;
     let aiService: AIService | null = null;
+    let groupDataManager: GroupDataManager | null = null; // Added
 
-    function initialize(deps: { 
+    function initialize(deps: {
         conversationManager: ConversationManager,
-        aiService: AIService 
+        aiService: AIService,
+        groupDataManager: GroupDataManager // Added
     }) {
-        console.log("AiTranslationService: Initializing with simplified dependencies (aiService).");
+        console.log("AiTranslationService: Initializing with dependencies (aiService, conversationManager, groupDataManager).");
         conversationManager = deps.conversationManager;
         aiService = deps.aiService;
+        groupDataManager = deps.groupDataManager; // Store it
     }
 
-   // in ai_translation_service.ts
+    async function generateTranslation(
+        messageAppId: string, // This is your application's UUID for the message
+        contextId: string     // This is EITHER a 1-on-1 Conversation ID OR a Group ID
+    ): Promise<string | null> {
 
-// =================== REPLACE THIS ENTIRE FUNCTION ===================
-async function generateTranslation(messageId: string, connectorId: string): Promise<string | null> {
-    
-    console.groupCollapsed(`%c[TRANSLATOR] Starting translation process...`, 'font-weight: bold; color: #9c27b0;');
-    console.log(`[STEP 2 - DETAIL] Service called for messageId: ${messageId}, connectorId: ${connectorId}`);
+        console.groupCollapsed(`%c[TRANSLATOR] Starting translation process...`, 'font-weight: bold; color: #9c27b0;');
+        console.log(`[TRANSLATOR_INPUT] Service called for messageAppId: ${messageAppId}, contextId: ${contextId}`);
 
-    if (!conversationManager || !aiService) {
-        console.error("[TRANSLATOR_FAIL] CRITICAL: Service not initialized. Missing conversationManager or aiService.");
-        console.groupEnd();
-        return "Error: Service not ready.";
-    }
+        if (!aiService) { // Removed conversationManager & groupDataManager check here, will check specific one later
+            console.error("[TRANSLATOR_FAIL] CRITICAL: AiTranslationService not initialized or aiService is missing.");
+            console.groupEnd();
+            return "Error: Translation service not ready.";
+        }
 
-    const conversation = conversationManager.getConversationById(connectorId);
-    console.log('[TRANSLATOR_PREP] Found conversation object:', conversation);
+        let textToTranslate: string | null = null;
+        let originalMessageSpeakerId: string | null = null;
+        let conversationContextForPrompt: string = "No prior context available.";
+        let partnerConnectorForPrompt: Connector | null = null;
+        let isGroupChatContext = false;
 
-    if (!conversation?.connector) {
-        console.error(`[TRANSLATOR_FAIL] Connector data missing for conversation ID: ${connectorId}`);
-        console.groupEnd();
-        return "(Error: Cannot find partner data)";
-    }
+        // Determine if it's a group or 1-on-1 context and fetch message
+        // A common way to distinguish group IDs from 1-on-1 conversation IDs is by format.
+        // For example, 1-on-1 IDs often contain an underscore. Adjust this check if your ID formats differ.
+        // A more robust way would be if reaction_handler could pass a contextType ('group' | 'dm')
+        if (groupDataManager && groupDataManager.getGroupDefinitionById(contextId)) {
+             isGroupChatContext = true;
+        } else if (conversationManager && conversationManager.getConversationById(contextId)) {
+             isGroupChatContext = false;
+        } else {
+            // Could be that the contextId is for a group but groupDataManager isn't ready yet,
+            // or it's a 1-on-1 but conversationManager isn't ready, or the ID is just invalid.
+            // Let's try to infer based on GDM's current group IF contextId matches.
+            if (groupDataManager && groupDataManager.getCurrentGroupId() === contextId) {
+                isGroupChatContext = true;
+            } else {
+                 console.warn(`[TRANSLATOR_CONTEXT] Could not definitively determine context for ID: ${contextId}. Assuming 1-on-1 if no group match.`);
+                 // Default to false, subsequent checks will fail if conversationManager is also null or cant find it
+            }
+        }
 
-    // --- THIS IS THE MOST LIKELY POINT OF FAILURE ---
-    const messageToTranslate = conversation.messages.find(m => m.id === messageId);
 
-    if (!messageToTranslate) {
-        console.error(`[TRANSLATOR_FAIL] Could not find message with ID '${messageId}' in the conversation history.`);
-        console.log('[TRANSLATOR_PREP] Available message IDs are:', conversation.messages.map(m => m.id));
-        console.groupEnd();
-        return `(Error: Message not found)`;
-    }
-    console.log('[TRANSLATOR_PREP] Successfully found message object:', messageToTranslate);
-    
-    // Replace it with this line
-const textToTranslate = messageToTranslate.text || '';
-    if (!textToTranslate) {
-        console.error(`[TRANSLATOR_FAIL] Found the message, but it has no text to translate. It might be an image-only message.`);
-        console.groupEnd();
-        return "(Message has no text)";
-    }
-    console.log(`[TRANSLATOR_PREP] Text to translate: "${textToTranslate}"`);
-// =================== PASTE THIS NEW BLOCK IN ITS PLACE ===================
+        if (isGroupChatContext) {
+            console.log(`[TRANSLATOR_CONTEXT] Group context detected. Group ID: ${contextId}`);
+            if (!groupDataManager) {
+                console.error("[TRANSLATOR_FAIL] GroupDataManager not available for group chat translation.");
+                console.groupEnd(); return "(Error: Group data service missing)";
+            }
 
-    // VVVVVV THIS IS THE NEW LOGIC VVVVVV
-    
-    // 1. Find the index of our target message
-    const messageIndex = conversation.messages.findIndex(m => m.id === messageId);
+            const currentGroupId = groupDataManager.getCurrentGroupId();
+            if (currentGroupId !== contextId) {
+                console.warn(`[TRANSLATOR_CONTEXT] Mismatch: contextId for translation is ${contextId}, but GDM's current group is ${currentGroupId}. Attempting to use history for ${contextId} if possible, but this might be an issue if GDM context isn't set for the target group.`);
+                // This scenario is tricky. For now, we'll proceed assuming getLoadedChatHistory might work if GDM had context previously.
+                // A better solution might involve reaction_handler passing the full group object or ensuring GDM context is set.
+            }
 
-    // 2. Create the "slice" of 5 messages up and 5 down.
-    // Math.max and Math.min prevent errors if we're near the start or end of the chat.
-    const contextWindow = conversation.messages.slice(
-        Math.max(0, messageIndex - 5), 
-        Math.min(conversation.messages.length, messageIndex + 6) // +6 to include the target and 5 after
-    );
+            // Try to get history for the *specific* group ID (contextId)
+            // This requires a way to load history for a specific group ID if it's not the *current* one.
+            // For now, let's assume getLoadedChatHistory reflects the active group, which should be the one with the message.
+            const groupHistory = groupDataManager.getLoadedChatHistory(); // This gets history for GDM's currentGroupIdInternal
+            
+            const messageIndex = groupHistory.findIndex(m => m.messageId === messageAppId || m.firestoreDocId === messageAppId);
 
-    // 3. Format this slice into a readable context for the AI
-    const contextString = contextWindow.map(msg => {
-        // Use the connector's name for clarity, or a default.
-        const speaker = msg.sender === 'user' ? 'User' : (conversation.connector?.profileName || 'Partner');
-        // Mark the specific message we need translated.
-        const prefix = msg.id === messageId ? '[TARGET] ' : '';
-        return `${prefix}${speaker}: ${msg.text}`;
-    }).join('\n');
+            if (messageIndex === -1) {
+                console.error(`[TRANSLATOR_FAIL] Group: Could not find message with App/FS ID '${messageAppId}' in GDM's loaded history for group '${groupDataManager.getCurrentGroupId()}'.`);
+                console.log('[TRANSLATOR_PREP] Available group message app/firestore IDs in current GDM history:', groupHistory.map(m => ({ app: m.messageId, fs: m.firestoreDocId })));
+                console.groupEnd(); return `(Error: Group message not found)`;
+            }
+            const messageData = groupHistory[messageIndex];
+            textToTranslate = messageData?.text || '';
+            originalMessageSpeakerId = messageData?.speakerId || null;
+            console.log('[TRANSLATOR_PREP] Group: Successfully found message object:', messageData);
 
-    // 4. Build the new, smarter prompt
-    const userLanguage = navigator.language || 'en-US';
-    const prompt = `You are an expert translator. A user wants to translate a single message from a conversation.
+            const contextWindow = groupHistory.slice(Math.max(0, messageIndex - 3), Math.min(groupHistory.length, messageIndex + 4));
+            conversationContextForPrompt = contextWindow.map(msg => {
+                const speakerName = msg.speakerName || (msg.speakerId === auth.currentUser?.uid ? "You" : "Member");
+                const prefix = (msg.messageId === messageAppId || msg.firestoreDocId === messageAppId) ? '[TARGET] ' : '';
+                return `${prefix}${speakerName}: ${msg.text || ''}`;
+            }).join('\n');
+
+            const currentGroupDef = groupDataManager.getGroupDefinitionById(contextId); // Use the actual group ID for the definition
+            if (currentGroupDef && window.polyglotConnectors) {
+                partnerConnectorForPrompt = window.polyglotConnectors.find(c => c.id === currentGroupDef.tutorId) || null;
+            }
+        } else { // 1-on-1 Chat Logic
+            console.log(`[TRANSLATOR_CONTEXT] 1-on-1 context assumed. Conversation ID: ${contextId}`);
+            if (!conversationManager) {
+                console.error("[TRANSLATOR_FAIL] ConversationManager not available for 1-on-1 chat translation.");
+                console.groupEnd(); return "(Error: Conversation service missing)";
+            }
+            const conversation = conversationManager.getConversationById(contextId);
+
+            if (!conversation?.messages || !conversation.connector) {
+                console.error(`[TRANSLATOR_FAIL] 1-on-1: Conversation, messages, or connector missing for ID: ${contextId}`);
+                console.groupEnd(); return "(Error: Cannot find conversation data)";
+            }
+            partnerConnectorForPrompt = conversation.connector;
+
+            // messageAppId is the app's UUID for 1-on-1 messages
+            const messageIndex = conversation.messages.findIndex(m => m.messageId === messageAppId);
+
+            if (messageIndex === -1) {
+                console.error(`[TRANSLATOR_FAIL] 1-on-1: Could not find message with App UUID '${messageAppId}' in conversation history for ${contextId}.`);
+                console.log('[TRANSLATOR_PREP] Available 1-on-1 message app UUIDs:', conversation.messages.map(m => m.messageId));
+                console.groupEnd(); return `(Error: 1-on-1 message not found)`;
+            }
+            const messageData = conversation.messages[messageIndex];
+            textToTranslate = messageData?.text || '';
+            originalMessageSpeakerId = messageData?.sender || null;
+            console.log('[TRANSLATOR_PREP] 1-on-1: Successfully found message object:', messageData);
+
+            const contextWindow = conversation.messages.slice(Math.max(0, messageIndex - 5), Math.min(conversation.messages.length, messageIndex + 6));
+            conversationContextForPrompt = contextWindow.map(msg => {
+                const speaker = msg.sender === auth.currentUser?.uid ? 'You' : (conversation.connector?.profileName || 'Partner');
+                const prefix = msg.messageId === messageAppId ? '[TARGET] ' : '';
+                return `${prefix}${speaker}: ${msg.text || ''}`;
+            }).join('\n');
+        }
+
+        if (textToTranslate === null || textToTranslate === undefined) { // Check for null explicitly now
+            console.error(`[TRANSLATOR_FAIL] Could not extract text to translate for messageAppId: ${messageAppId}`);
+            console.groupEnd(); return `(Error: Message text missing)`;
+        }
+        if (textToTranslate.trim() === "") {
+            console.warn(`[TRANSLATOR_WARN] Message text is empty. Nothing to translate. Original Speaker: ${originalMessageSpeakerId}`);
+            console.groupEnd(); return "(Message has no text)";
+        }
+
+        console.log(`[TRANSLATOR_PREP] Text to translate: "${textToTranslate}" (Original Speaker ID: ${originalMessageSpeakerId})`);
+        console.log(`[TRANSLATOR_PREP] Context for prompt:\n${conversationContextForPrompt}`);
+
+        const userLanguage = navigator.language || 'en-US';
+        const prompt = `You are an expert translator. A user wants to translate a single message from a conversation.
 Use the surrounding CONVERSATION CONTEXT to ensure the translation is accurate (especially for pronouns, slang, and context-specific phrases).
 Your task is to translate ONLY the single line marked with '[TARGET]'.
 Your entire response MUST be ONLY the translated text for that single line. Do not include the speaker's name or the '[TARGET]' marker in your response.
 
 ---
 CONVERSATION CONTEXT:
-${contextString}
+${conversationContextForPrompt}
 ---
 
-Translate the [TARGET] message into the language: ${userLanguage}`;
+Translate the [TARGET] message (originally spoken by ${originalMessageSpeakerId === auth.currentUser?.uid ? 'the User (You)' : (partnerConnectorForPrompt?.profileName || 'the other participant')}) into the language: ${userLanguage}`;
 
-// ^^^^^^ END OF NEW LOGIC ^^^^^^
-// ========================================================================
-   // in ai_translation_service.ts, inside generateTranslation
+        const translationProviderSequence = ['together', 'gemini']; // Simplified for now, adjust as needed
+        console.log('%c[TRANSLATOR] Provider Plan:', 'color: #9c27b0; font-weight: bold;', translationProviderSequence.join(' ➔ '));
 
-    // =================== PASTE THIS NEW BLOCK IN ITS PLACE ===================
+        let finalResult: string | null = null;
 
-   // THIS IS THE NEW, FULL-POWER BLOCK TO PASTE IN ITS PLACE
+        for (const provider of translationProviderSequence) {
+            try {
+                console.log(`[TRANSLATOR_ATTEMPT] Trying provider [${provider}] with prompt:\n${prompt.substring(0, 300)}...`);
 
-   const translationProviderSequence = ['together', 'together', 'together', 'gemini', 'gemini', 'gemini'];
-   console.log('%c[TRANSLATOR] Provider Plan:', 'color: #9c27b0; font-weight: bold;', translationProviderSequence.join(' ➔ '));
-   
-   let finalResult: string | null = null;
+                // Define arguments clearly
+                const argPrompt: string = prompt;
+                const argConnector: Connector | null = partnerConnectorForPrompt;
+                const argHistory: null = null; // Explicitly null as context is in prompt for translation
+                const argPreferredProvider: string | undefined = provider;
+                const argExpectJson: boolean = false;
+                const argContext: 'group-chat' | 'one-on-one' = isGroupChatContext ? 'group-chat' : 'one-on-one';
+                const argAbortSignal: AbortSignal | undefined = undefined;
+                const argOptions: { isTranslation?: boolean } = { isTranslation: true };
 
-   for (const provider of translationProviderSequence) {
-       try {
-           // This is the important call to our main AI Service "brain"
-           const result = await aiService.generateTextMessage(
-               prompt,
-               conversation.connector,
-               null, 
-               provider
-           );
+                const result = await aiService.generateTextMessage(
+                    argPrompt,
+                    argConnector,
+                    argHistory,
+                    argPreferredProvider,
+                    argExpectJson,
+                    argContext,
+                    argAbortSignal,
+                    argOptions // 8th argument
+                );
 
-           if (typeof result === 'string' && result.trim()) {
-               // The first successful provider wins, and we exit the loop immediately.
-               finalResult = result.trim();
-               break; 
-           }
-           // If we get here, the result was not a usable string.
-           // The loop will naturally continue to the next provider.
-       } catch (error: any) {
-           // This catches major failures from the AI service itself.
-           console.warn(`[TRANSLATOR] Provider [${provider}] failed with an error. Trying next...`, error.message);
-       }
-   }
+                if (typeof result === 'string' && result.trim()) {
+                    finalResult = result.trim();
+                    console.log(`[TRANSLATOR_SUCCESS] Provider [${provider}] succeeded. Translation: "${finalResult}"`);
+                    break;
+                } else {
+                    console.warn(`[TRANSLATOR_WARN] Provider [${provider}] returned empty or non-string/non-object result:`, result);
+                }
+            } catch (error: any) {
+                console.warn(`[TRANSLATOR_FAIL] Provider [${provider}] failed. Trying next...`, error.message, error);
+            }
+        }
 
-   // After the loop, check if we ever got a successful result.
-   if (!finalResult) {
-       console.error("[TRANSLATOR] All translation providers in the sequence failed.");
-       finalResult = `(Translation Error)`;
-   }
-   
-   // Close the console group and return whatever we ended up with.
-   console.groupEnd();
-   return finalResult;
-    // ========================================================================
-} // <--- This brace ENDS the generateTranslation function
+        if (!finalResult) {
+            console.error("[TRANSLATOR_FAIL] All translation providers in the sequence failed.");
+            finalResult = `(Translation Error)`;
+        }
 
-// ======================================================================
-    return { initialize, generateTranslation }; // This is now correctly outside
+        console.groupEnd();
+        return finalResult;
+    }
+
+    return { initialize, generateTranslation };
 })();
 
 window.aiTranslationService = aiTranslationService;
 document.dispatchEvent(new CustomEvent('aiTranslationServiceReady'));
 console.log('ai_translation_service.ts: "aiTranslationServiceReady" event dispatched.');
-
-// --- ^^^^^^ END OF FINAL VERSION ^^^^^^ ---
