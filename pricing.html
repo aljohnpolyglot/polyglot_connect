@@ -294,16 +294,55 @@
         <a href="/app.html"><i class="fas fa-arrow-left"></i> Back to the App</a>
     </div>
 
-    <script>
-        document.getElementById('subscribe-monthly-btn').addEventListener('click', () => {
-            alert('Monthly Subscription: Stripe integration coming soon!');
-            // Later: This will redirect to a Stripe Checkout session for the monthly plan
-        });
-        document.getElementById('subscribe-yearly-btn').addEventListener('click', () => {
-            alert('Yearly Subscription: Stripe integration coming soon!');
-            // Later: This will redirect to a Stripe Checkout session for the yearly plan
-        });
-    </script>
+   <!-- At the bottom of pricing.html, this is the main logic script -->
+<script type="module">
+    import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    // --- START: Configuration ---
+    // NOTE: For testing, you must use your SANDBOX keys from Paddle
+    // and a Vercel PREVIEW deployment URL.
+   
+
+    async function initiatePayment(planId, priceId, event) {
+        const user = auth.currentUser;
+        if (!user) {
+            alert("Please sign in or create an account first to subscribe.");
+            window.location.href = '/#firebaseui-auth-container';
+            return;
+        }
+
+        const button = event.currentTarget;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing Test...';
+        button.disabled = true;
+
+        try {
+            const idToken = await user.getIdToken(true);
+            const response = await fetch(PAYMENT_FUNCTION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                body: JSON.stringify({ planId, priceId })
+            });
+
+            if (!response.ok) throw new Error(`Server error: ${await response.text()}`);
+            
+            const data = await response.json();
+            if (data.checkoutUrl) {
+                console.log("Redirecting to Paddle Sandbox checkout:", data.checkoutUrl);
+                window.location.href = data.checkoutUrl; // This is the redirect!
+            } else {
+                throw new Error("Could not get checkout URL.");
+            }
+        } catch (error) {
+            console.error("Payment test failed:", error);
+            alert("Could not start test payment. Check console for errors.");
+            button.innerHTML = planId === 'monthly' ? 'Become an Insider' : 'Go Trailblazer';
+            button.disabled = false;
+        }
+    }
+    
+    document.getElementById('subscribe-monthly-btn').addEventListener('click', (e) => initiatePayment('monthly', PADDLE_PRICE_ID_MONTHLY, e));
+    document.getElementById('subscribe-yearly-btn').addEventListener('click', (e) => initiatePayment('yearly', PADDLE_PRICE_ID_YEARLY, e));
+</script>
     <!-- At the bottom of pricing.html -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>

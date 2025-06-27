@@ -1,13 +1,15 @@
 // landing/landing.ts
+// This is the new, complete import block for landing.ts
 
-// Import what we need from Firebase SDKs and our central config file
-import { GoogleAuthProvider, EmailAuthProvider } from 'firebase/auth';
+import { GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, type User } from 'firebase/auth';
 import * as firebaseui from 'firebaseui';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../src/js/firebase-config'; // Use our single source of truth!
-import whitelistedEmails from '../src/data/whitelistEmails'; // <<< No .ts extension needed
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-// --- START: Screenshot mode backdoor (This part is fine) ---
+import { auth, db } from '../src/js/firebase-config'; 
+import whitelistedEmails from '../src/data/whitelistEmails';
+// --- END: Corrected Imports ---
+
+
+// --- START: Screenshot mode backdoor ---
 (window as any).enterScreenshotMode = (secretCode: string) => {
     if (secretCode === "polyglotDev2024") {
         sessionStorage.setItem("dev_override", "true");
@@ -19,36 +21,91 @@ import { getAuth, onAuthStateChanged } from "firebase/auth";
 };
 console.log("%cDev Tip: To bypass login for screenshots, type enterScreenshotMode('your_secret_code') in the console.", "color: orange;");
 // --- END: Screenshot mode backdoor ---
+// Add this entire block to the top of landing.ts
+
+// --- START: Navbar Loading and Interactivity ---
 
 /**
- * Creates a new user document in Firestore if one doesn't already exist.
- * This is the core of our freemium user tracking.
- * @param user The Firebase Auth user object from a successful login.
+ * Fetches the navbar HTML, injects it into the page, and sets up all its interactive elements.
+ * This function is self-contained for the landing page.
  */
+async function initializeLandingPageNavbar() {
+  // 1. Fetch and inject the navbar
+  try {
+      const response = await fetch('/landing/landing-navbar.html');
+      if (!response.ok) throw new Error('Navbar HTML not found');
+      const navbarHtml = await response.text();
+      document.body.insertAdjacentHTML('afterbegin', navbarHtml);
+  } catch (error) {
+      console.error('Failed to load navbar:', error);
+      return;
+  }
+
+  // 2. Find all the navbar elements now that they are in the DOM
+  const navbar = document.getElementById('landing-navbar');
+  const hamburgerBtn = document.getElementById('hamburger-btn');
+  const mobileMenu = document.getElementById('mobile-nav-menu');
+  const desktopActionsDiv = document.getElementById('landing-navbar-actions');
+  const mobileActionsDiv = document.getElementById('mobile-nav-actions');
+
+  if (!navbar || !hamburgerBtn || !mobileMenu || !desktopActionsDiv || !mobileActionsDiv) {
+      console.error("One or more navbar elements are missing from landing-navbar.html.");
+      return;
+  }
+
+  // 3. Set up event listeners
+  hamburgerBtn.addEventListener('click', () => mobileMenu.classList.toggle('active'));
+  window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 50));
+
+  // 4. Set up Auth-dependent buttons
+  // This uses the 'auth' instance that should already be initialized in your landing.ts
+  onAuthStateChanged(auth, (user: User | null) => {
+    // These are the parent containers for the buttons
+    const desktopActionsDiv = document.getElementById('landing-navbar-actions');
+    const mobileActionsDiv = document.getElementById('mobile-nav-actions');
+
+    // Make sure the containers exist before trying to use them
+    if (!desktopActionsDiv || !mobileActionsDiv) return;
+
+    // Force the desktop container to be visible
+    desktopActionsDiv.style.display = 'block';
+
+    if (user) {
+        // User is LOGGED IN
+        const enterAppHtml = `<a href="/app.html">Enter App</a>`;
+        desktopActionsDiv.innerHTML = enterAppHtml;
+        mobileActionsDiv.innerHTML = enterAppHtml;
+    } else {
+        // User is LOGGED OUT
+        const signInHtml = `<a href="/">Sign In / Sign Up</a>`;
+        desktopActionsDiv.innerHTML = signInHtml;
+        mobileActionsDiv.innerHTML = signInHtml;
+    }
+});
+}
+
+// --- END: Navbar Loading and Interactivity ---
 
 /**
  * Creates a new user document in Firestore, checking the client-side
  * whitelist to determine their plan.
  * @param user The Firebase Auth user object from a successful login.
  */
-async function createUserProfileWithWhitelistCheck(user) {
+// THE FIX: We explicitly tell TypeScript that 'user' is of type 'User'.
+async function createUserProfileWithWhitelistCheck(user: User) {
   const userRef = doc(db, "users", user.uid);
   const docSnap = await getDoc(userRef);
 
   if (!docSnap.exists()) {
     console.log(`Creating NEW user profile in Firestore for ${user.uid}`);
     
-    // ==========================================================
-    // === START: WHITELIST CHECK LOGIC                       ===
-    // ==========================================================
-    let userPlan = "free"; // Default to free
+    let userPlan = "free";
     if (user.email && whitelistedEmails.includes(user.email.toLowerCase())) {
         userPlan = "premium";
         console.log(`Email ${user.email} FOUND in client-side whitelist. Assigning 'premium' plan.`);
     } else {
         console.log(`Email ${user.email} not in client-side whitelist. Assigning 'free' plan.`);
     }
-    // ==========================================================
 
     try {
       await setDoc(userRef, {
@@ -56,7 +113,7 @@ async function createUserProfileWithWhitelistCheck(user) {
         displayName: user.displayName || 'New User',
         photoURL: user.photoURL || null,
         createdAt: serverTimestamp(),
-        plan: userPlan, // The plan is now set based on the whitelist
+        plan: userPlan,
         monthlyTextCount: 0,
         monthlyCallCount: 0,
         usageResetTimestamp: serverTimestamp() 
@@ -67,8 +124,6 @@ async function createUserProfileWithWhitelistCheck(user) {
     }
   } else {
     console.log(`User profile for ${user.uid} already exists.`);
-    // Optional: If they exist, check if their plan should be upgraded
-    // if they were added to the whitelist AFTER signing up.
     const existingData = docSnap.data();
     if (user.email && whitelistedEmails.includes(user.email.toLowerCase()) && existingData.plan !== 'premium') {
         console.log(`User ${user.email} found in whitelist and current plan is not premium. Upgrading.`);
@@ -87,14 +142,14 @@ const uiConfig: firebaseui.auth.Config = {
   callbacks: {
     signInSuccessWithAuthResult: function(authResult, redirectUrl) {
       console.log('%c LOGIN SUCCESS (Client-Side)!', 'color: lime; font-weight: bold; font-size: 16px;');
-      const user = authResult.user;
       
-      // Call our new function that includes the whitelist check
-      createUserProfileWithWhitelistCheck(user).then(() => {
+      // This is now correctly typed because the function it calls is typed.
+      createUserProfileWithWhitelistCheck(authResult.user).then(() => {
         console.log('Profile creation/check complete. Redirecting to /app.html...');
         window.location.assign('/app.html');
       }).catch(error => {
         console.error('CRITICAL ERROR: Failed to create/check profile or redirect:', error);
+        alert('There was a problem setting up your account. Please try signing in again.');
       });
 
       return false; // We handle the redirect
@@ -109,23 +164,17 @@ const uiConfig: firebaseui.auth.Config = {
   ],
   signInFlow: 'popup',
 };
-// ==========================================================
-// === END OF FIX ===
-// ==========================================================
 
 // This part runs when the page is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize the FirebaseUI Widget and render it
+  initializeLandingPageNavbar(); // <<< ADD THIS LINE FIRST // Initialize the FirebaseUI Widget and render it
     const ui = new firebaseui.auth.AuthUI(auth);
     
-    // Check if the container exists before trying to start the UI
     const authContainer = document.getElementById('firebaseui-auth-container');
     if (authContainer) {
         ui.start('#firebaseui-auth-container', uiConfig);
     }
 
-    // Your other landing page logic for carousels, smooth scroll etc. can go here
-    // For example, the final CTA button smooth scroll:
     const finalCtaButton = document.getElementById('final-cta-btn');
     const heroSection = document.querySelector('.hero-section');
 
@@ -137,4 +186,5 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Add this code to the end of D:\polyglot_connect\landing\landing.ts
+// NOTE: The separate navbar logic is no longer needed here because
+// your reusable `navbar-loader.ts` handles it.

@@ -33,6 +33,9 @@
     "public/js/**/*.ts",
     "public/data/**/*.js",
     "vite.config.js",
+    "src",
+    "api",
+    "landing",
     "js/types/global.d.ts" // Make sure this specific file is listed or covered by a wildcard
   ],
   "exclude": [
