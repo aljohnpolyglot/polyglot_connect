@@ -1,9 +1,11 @@
 // landing/persona_modal_renderer.ts
-import type { Connector, LanguageEntry } from '../src/js/types/global.d.ts';
-import { personasData } from '../src/data/personas.ts'; 
-import { polyglotHelpers } from '../src/js/utils/helpers.ts';
-import { flagLoader } from '../src/js/utils/flagcdn.ts';
-document.addEventListener('DOMContentLoaded', () => {
+
+import type { Connector, LanguageEntry } from '../src/js/types/global';
+import { personasData } from '../src/data/personas'; 
+import { polyglotHelpers } from '../src/js/utils/helpers';
+import { flagLoader } from '../src/js/utils/flagcdn';
+
+export function initializePersonaModal() {
     
     // --- Get DOM Elements ---
     const modal = document.getElementById('persona-browser-modal') as HTMLElement | null;
@@ -17,11 +19,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // --- Process the Imported Data into Connectors ---
+    // --- Process Personas into Connectors ---
     const allConnectors: Connector[] = personasData.map(persona => {
         if (!persona || !persona.id) return null;
-        // This is a simplified mapping. Your original app has more complex logic here.
-        // We are casting it to Connector, assuming the base data matches enough for display.
         return {
             ...persona,
             age: polyglotHelpers.calculateAge(persona.birthday) || "N/A",
@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).filter((c): c is Connector => c !== null); // Type guard to filter out nulls
 
     if (allConnectors.length === 0) {
-        console.error("No connector data was processed.");
+        console.error("No connector data was processed for the modal.");
         return;
     }
 
@@ -37,7 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderPersonaCards = (connectorsToRender: Connector[]) => {
         grid.innerHTML = ''; 
         const fragment = document.createDocumentFragment();
-
         connectorsToRender.forEach(connector => {
             const card = document.createElement('div');
             card.className = 'modal-persona-card';
@@ -59,11 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             fragment.appendChild(card);
         });
-
         grid.appendChild(fragment);
     };
 
-    // --- Setup and Event Listeners ---
+    // --- Populate Language Filter ---
     const languages = new Set<string>();
     allConnectors.forEach(c => {
         (c.nativeLanguages || []).forEach(l => languages.add(l.lang));
@@ -78,17 +76,15 @@ document.addEventListener('DOMContentLoaded', () => {
         langFilter.appendChild(option);
     });
 
+    // --- Event Listeners ---
     openBtn.addEventListener('click', () => {
         modal.classList.add('visible');
-        renderPersonaCards(allConnectors);
+        renderPersonaCards(allConnectors); // Render all cards on open
     });
-
     closeBtn.addEventListener('click', () => modal.classList.remove('visible'));
-
     modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.classList.remove('visible');
     });
-
     langFilter.addEventListener('change', () => {
         const selectedLang = langFilter.value;
         const filteredConnectors = selectedLang === 'all'
@@ -101,4 +97,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     console.log("Persona Browser Modal is now fully functional.");
-});
+}

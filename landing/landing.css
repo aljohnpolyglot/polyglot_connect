@@ -29,12 +29,15 @@ body, html {
     justify-content: center;
     color: var(--text-color-light);
     text-align: center;
-    
+    height: auto;
     /* The new background image setup */
     background-image: url('/images/connect-background.png'); /* <<< MAKE SURE TO NAME YOUR SORA IMAGE THIS */
     background-size: cover;
     background-position: center center;
     overflow: hidden; /* Important for the animation */
+    padding-top: 200px;
+    padding-bottom: 200px;
+
 }
 
 /* Add a subtle animation to the background */
@@ -146,10 +149,15 @@ body, html {
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
+    .hero-section {
+        padding-top: 100px;
+        padding-bottom: 100px;
+    }
     .hero-content.two-column {
         grid-template-columns: 1fr; /* Stack columns on smaller screens */
         text-align: center;
         gap: 2rem;
+        
     }
     .hero-text-column {
         text-align: center;

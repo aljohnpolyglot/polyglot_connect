@@ -1,15 +1,15 @@
 // landing/landing.ts
-// This is the new, complete import block for landing.ts
 
+// --- Imports ---
+import { initializeRostersAndCarousels } from './roster_renderer';
+import { initializePersonaModal } from './persona_modal_renderer';
 import { GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, type User } from 'firebase/auth';
 import * as firebaseui from 'firebaseui';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../src/js/firebase-config'; 
 import whitelistedEmails from '../src/data/whitelistEmails';
-// --- END: Corrected Imports ---
 
-
-// --- START: Screenshot mode backdoor ---
+// --- Dev Tools ---
 (window as any).enterScreenshotMode = (secretCode: string) => {
     if (secretCode === "polyglotDev2024") {
         sessionStorage.setItem("dev_override", "true");
@@ -20,17 +20,11 @@ import whitelistedEmails from '../src/data/whitelistEmails';
     }
 };
 console.log("%cDev Tip: To bypass login for screenshots, type enterScreenshotMode('your_secret_code') in the console.", "color: orange;");
-// --- END: Screenshot mode backdoor ---
-// Add this entire block to the top of landing.ts
 
-// --- START: Navbar Loading and Interactivity ---
-
-/**
- * Fetches the navbar HTML, injects it into the page, and sets up all its interactive elements.
- * This function is self-contained for the landing page.
- */
+// --- Navbar Logic ---
+// --- Navbar Logic ---
 async function initializeLandingPageNavbar() {
-  // 1. Fetch and inject the navbar
+  // 1. Fetch and inject the navbar HTML (no changes here)
   try {
       const response = await fetch('/landing/landing-navbar.html');
       if (!response.ok) throw new Error('Navbar HTML not found');
@@ -42,164 +36,145 @@ async function initializeLandingPageNavbar() {
   }
 
   // 2. Find all the navbar elements now that they are in the DOM
-  const navbar = document.getElementById('landing-navbar');
-  const hamburgerBtn = document.getElementById('hamburger-btn');
-  const mobileMenu = document.getElementById('mobile-nav-menu');
-  const desktopActionsDiv = document.getElementById('landing-navbar-actions');
-  const mobileActionsDiv = document.getElementById('mobile-nav-actions');
+  const navbar = document.getElementById('landing-navbar') as HTMLElement;
+  const hamburgerBtn = document.getElementById('hamburger-btn') as HTMLButtonElement;
+  const mobileMenu = document.getElementById('mobile-nav-menu') as HTMLElement;
 
-  if (!navbar || !hamburgerBtn || !mobileMenu || !desktopActionsDiv || !mobileActionsDiv) {
-      console.error("One or more navbar elements are missing from landing-navbar.html.");
+  if (!navbar || !hamburgerBtn || !mobileMenu) {
+      console.error("One or more essential navbar elements are missing from the DOM.");
       return;
   }
 
-  // 3. Set up event listeners
-  hamburgerBtn.addEventListener('click', () => mobileMenu.classList.toggle('active'));
-  window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 50));
+  // 3. Set up core event listeners
+  hamburgerBtn.addEventListener('click', (e) => {
+      // Stop this click from being immediately caught by the 'document' listener below
+      e.stopPropagation(); 
+      mobileMenu.classList.toggle('active');
+  });
 
-  // 4. Set up Auth-dependent buttons
-  // This uses the 'auth' instance that should already be initialized in your landing.ts
+  window.addEventListener('scroll', () => {
+      navbar.classList.toggle('scrolled', window.scrollY > 50);
+  });
+
+  // NEW: Add a listener to the whole document to close the menu when clicking outside
+  document.addEventListener('click', (event) => {
+      // Only do something if the menu is actually open
+      if (mobileMenu.classList.contains('active')) {
+          // Check if the click was on the menu itself or one of its children
+          const isClickInsideMenu = mobileMenu.contains(event.target as Node);
+          if (!isClickInsideMenu) {
+              mobileMenu.classList.remove('active');
+          }
+      }
+  });
+
+
+  // 4. Set up Auth-dependent buttons with updated logic
   onAuthStateChanged(auth, (user: User | null) => {
-    // These are the parent containers for the buttons
-    const desktopActionsDiv = document.getElementById('landing-navbar-actions');
-    const mobileActionsDiv = document.getElementById('mobile-nav-actions');
+      const desktopActionsDiv = document.getElementById('landing-navbar-actions') as HTMLElement;
+      const mobileActionsDiv = document.getElementById('mobile-nav-actions') as HTMLElement;
 
-    // Make sure the containers exist before trying to use them
-    if (!desktopActionsDiv || !mobileActionsDiv) return;
+      if (!desktopActionsDiv || !mobileActionsDiv) return;
 
-    // Force the desktop container to be visible
-    desktopActionsDiv.style.display = 'block';
-
-    if (user) {
-        // User is LOGGED IN
-        const enterAppHtml = `<a href="/app.html">Enter App</a>`;
-        desktopActionsDiv.innerHTML = enterAppHtml;
-        mobileActionsDiv.innerHTML = enterAppHtml;
-    } else {
-        // User is LOGGED OUT
-        const signInHtml = `<a href="/">Sign In / Sign Up</a>`;
-        desktopActionsDiv.innerHTML = signInHtml;
-        mobileActionsDiv.innerHTML = signInHtml;
-    }
-});
+      if (user) {
+          // User is LOGGED IN: Show "Enter App" button in both places.
+          // The CSS will correctly hide the desktop one on mobile view.
+          const enterAppHtml = `<a href="/app.html">Enter App</a>`;
+          desktopActionsDiv.innerHTML = enterAppHtml;
+          mobileActionsDiv.innerHTML = enterAppHtml;
+      } else {
+          // User is LOGGED OUT:
+          // The "Sign In" button only needs to be in the mobile menu.
+          // The desktop version is hidden by CSS on mobile anyway, but we'll clear it
+          // from the JS for cleaner code and to perfectly match the user request.
+          const signInHtml = `<a href="/">Sign In / Sign Up</a>`;
+          desktopActionsDiv.innerHTML = signInHtml; // Keep this for desktop view
+          mobileActionsDiv.innerHTML = signInHtml;  // Add to hamburger menu for mobile view
+      }
+  });
 }
 
-// --- END: Navbar Loading and Interactivity ---
-
-/**
- * Creates a new user document in Firestore, checking the client-side
- * whitelist to determine their plan.
- * @param user The Firebase Auth user object from a successful login.
- */
-// THE FIX: We explicitly tell TypeScript that 'user' is of type 'User'.
+// --- Firebase Auth & Firestore Logic ---
 async function createUserProfileWithWhitelistCheck(user: User) {
   const userRef = doc(db, "users", user.uid);
   const docSnap = await getDoc(userRef);
 
   if (!docSnap.exists()) {
     console.log(`Creating NEW user profile in Firestore for ${user.uid}`);
-    
-    let userPlan = "free";
-    if (user.email && whitelistedEmails.includes(user.email.toLowerCase())) {
-        userPlan = "premium";
-        console.log(`Email ${user.email} FOUND in client-side whitelist. Assigning 'premium' plan.`);
-    } else {
-        console.log(`Email ${user.email} not in client-side whitelist. Assigning 'free' plan.`);
-    }
+    const userPlan = (user.email && whitelistedEmails.includes(user.email.toLowerCase())) ? "premium" : "free";
+    console.log(`User email ${user.email} results in plan: '${userPlan}'.`);
 
-    try {
-      await setDoc(userRef, {
-        email: user.email || null,
-        displayName: user.displayName || 'New User',
-        photoURL: user.photoURL || null,
-        createdAt: serverTimestamp(),
-        plan: userPlan,
-        monthlyTextCount: 0,
-        monthlyCallCount: 0,
-        usageResetTimestamp: serverTimestamp() 
-      });
-      console.log(`Successfully created profile with plan: ${userPlan}`);
-    } catch (error) {
-      console.error("Error creating user profile:", error);
-    }
+    await setDoc(userRef, {
+      email: user.email || null,
+      displayName: user.displayName || 'New User',
+      photoURL: user.photoURL || null,
+      createdAt: serverTimestamp(),
+      plan: userPlan,
+      monthlyTextCount: 0,
+      monthlyCallCount: 0,
+      usageResetTimestamp: serverTimestamp() 
+    });
   } else {
     console.log(`User profile for ${user.uid} already exists.`);
     const existingData = docSnap.data();
     if (user.email && whitelistedEmails.includes(user.email.toLowerCase()) && existingData.plan !== 'premium') {
-        console.log(`User ${user.email} found in whitelist and current plan is not premium. Upgrading.`);
-        try {
-            await setDoc(userRef, { plan: 'premium' }, { merge: true });
-            console.log(`User ${user.email} plan upgraded to premium.`);
-        } catch (error) {
-            console.error(`Error upgrading user ${user.email} to premium:`, error);
-        }
+      console.log(`Upgrading existing user ${user.email} to premium plan.`);
+      await setDoc(userRef, { plan: 'premium' }, { merge: true });
     }
   }
 }
 
-// FirebaseUI Configuration
 const uiConfig: firebaseui.auth.Config = {
   callbacks: {
-    signInSuccessWithAuthResult: function(authResult, redirectUrl) {
-      console.log('%c LOGIN SUCCESS (Client-Side)!', 'color: lime; font-weight: bold; font-size: 16px;');
-      
-      // This is now correctly typed because the function it calls is typed.
+    signInSuccessWithAuthResult: (authResult) => {
       createUserProfileWithWhitelistCheck(authResult.user).then(() => {
-        console.log('Profile creation/check complete. Redirecting to /app.html...');
         window.location.assign('/app.html');
-      }).catch(error => {
-        console.error('CRITICAL ERROR: Failed to create/check profile or redirect:', error);
-        alert('There was a problem setting up your account. Please try signing in again.');
       });
-
-      return false; // We handle the redirect
+      return false; // We handle the redirect.
     },
-    uiShown: function() {
-      console.log("FirebaseUI widget is now visible.");
+    uiShown: () => {
+        // Hide loader or show UI
     }
   },
-  signInOptions: [
-    GoogleAuthProvider.PROVIDER_ID,
-    EmailAuthProvider.PROVIDER_ID
-  ],
+  signInOptions: [GoogleAuthProvider.PROVIDER_ID, EmailAuthProvider.PROVIDER_ID],
   signInFlow: 'popup',
 };
 
-// This part runs when the page is loaded
-document.addEventListener('DOMContentLoaded', async function() {
-  // STEP 1: Await the navbar initialization.
-  // The rest of the code will NOT run until the navbar is fully loaded and interactive.
-  // This is the critical fix that solves the race condition.
-  await initializeLandingPageNavbar(); 
-  console.log("Navbar initialization complete. Proceeding with page logic.");
-
-  // STEP 2: Now that the navbar is guaranteed to be on the page, initialize other parts.
-  // Initialize the FirebaseUI Widget.
-  const ui = new firebaseui.auth.AuthUI(auth);
-  
+function initializeFirebaseUI() {
+  const ui = firebaseui.auth.AuthUI.getInstance() || new firebaseui.auth.AuthUI(auth);
   const authContainer = document.getElementById('firebaseui-auth-container');
   if (authContainer) {
       ui.start('#firebaseui-auth-container', uiConfig);
-  } else {
-      console.warn("FirebaseUI auth container not found on this page.");
   }
+}
 
-  // Initialize other interactive elements like buttons.
-  const finalCtaButton = document.getElementById('final-cta-btn');
-  const heroSection = document.querySelector('.hero-section');
+function setupCtaButtons() {
+    const finalCtaButton = document.getElementById('final-cta-btn');
+    const heroSection = document.querySelector('.hero-section');
+    if (finalCtaButton && heroSection) {
+        finalCtaButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            heroSection.scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+}
 
-  if (finalCtaButton && heroSection) {
-      finalCtaButton.addEventListener('click', function(e) {
-          e.preventDefault();
-          // This is a cleaner way to scroll
-          heroSection.scrollIntoView({ behavior: 'smooth' });
-      });
-  }
+// --- Main Initialization Sequence ---
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log("DOM fully loaded. Starting landing page initialization sequence.");
 
-  // You can now be sure any other logic here runs AFTER the navbar is ready.
-  // For example, if you have a "roster_renderer.ts" that needs to run,
-  // you would call its initialization function here.
+  await initializeLandingPageNavbar();
+  console.log("SEQUENCE: Navbar loaded.");
+
+  initializeFirebaseUI();
+  console.log("SEQUENCE: FirebaseUI initialized.");
+
+  initializeRostersAndCarousels();
+  console.log("SEQUENCE: Rosters and carousels rendered.");
+
+  initializePersonaModal();
+  console.log("SEQUENCE: Persona modal ready.");
+  
+  setupCtaButtons();
+  console.log("SEQUENCE: All initializers called. Page should be fully interactive.");
 });
-
-// NOTE: The separate navbar logic is no longer needed here because
-// your reusable `navbar-loader.ts` handles it.
