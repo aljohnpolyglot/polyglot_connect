@@ -272,7 +272,22 @@
     </main>
     
     <!-- Load the universal navbar -->
- 
+    <script type="module">
+        // --- START: Firebase Initialization ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY", // Make sure this is your actual config
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+    
+        initializeApp(firebaseConfig);
+        // --- END: Firebase Initialization ---
+    </script>
     
     <!-- Load the script to fetch and display the patch notes -->
     <script type="module" src="/src/js/updates-loader.ts"></script>
