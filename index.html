@@ -18,28 +18,36 @@
     <!-- FirebaseUI -->
     <script src="https://www.gstatic.com/firebasejs/ui/6.0.1/firebase-ui-auth.js"></script>
     <link type="text/css" rel="stylesheet" href="https://www.gstatic.com/firebasejs/ui/6.0.1/firebase-ui-auth.css" />
-  <script type="module" crossorigin src="/assets/main-Cp76FB64.js"></script>
+  <script type="module" crossorigin src="/assets/main-DZ0FyxLO.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
-  <link rel="modulepreload" crossorigin href="/assets/groups-CJkJlMbi.js">
-  <link rel="stylesheet" crossorigin href="/assets/main-CSsYnxRS.css">
+  <link rel="modulepreload" crossorigin href="/assets/index.esm-D1DTObcl.js">
+  <link rel="modulepreload" crossorigin href="/assets/groups-DPKcWyg7.js">
+  <link rel="modulepreload" crossorigin href="/assets/navbar-loader-Dgms1r9_.js">
+  <link rel="stylesheet" crossorigin href="/assets/main-CYAyW-HW.css">
 </head>
 <body>
 
     <!-- Section 1: Hero Video & Login -->
     <header class="hero-section">
-        <video autoplay muted loop playsinline class="hero-video-background">
-            <!-- You will need to find a suitable stock video -->
-            <source src="httpss://videos.pexels.com/video-files/3254013/3254013-sd_640_360_30fps.mp4" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
+        
         <div class="hero-overlay"></div>
-        <div class="hero-content">
-            <div class="login-card">
+        <div class="hero-content two-column">
+            <!-- Column 1: Branding & Welcome Text -->
+            <div class="hero-text-column">
+                <!-- <img src="/images/polyglot_connect_logo.png" alt="Polyglot Connect Logo" class="hero-logo"> -->
                 <h1>Find Your People.<br>Find Your Voice.</h1>
-                <p>Step into a new kind of social club. Form genuine connections with unique personalities from across the globe, available 24/7.</p>
-                <div id="firebaseui-auth-container"></div>
+                <p>Step into a new kind of social club. Form genuine connections with a diverse cast of characters from across the globe, available 24/7 for you to talk to.</p>
                 <div class="scroll-down-prompt">
                     <a href="#section-roster">Learn More <span class="arrow">↓</span></a>
+                </div>
+            </div>
+        
+            <!-- Column 2: Login Card -->
+            <div class="hero-login-column">
+                <div class="login-card">
+                    <h3>Join the Club</h3>
+                    <div id="firebaseui-auth-container"></div>
+                    <p class="login-card-footer">By signing up, you agree to our <a href="/terms.html">Terms of Service</a>.</p>
                 </div>
             </div>
         </div>
@@ -61,7 +69,7 @@
 
 <section id="section-languages" class="language-section">
     <h2>Speak the World</h2>
-    <p class="section-subtitle">From French to Finnish, Tagalog to Turkish, your next conversation is ready in over 15 languages.</p>
+    <p class="section-subtitle">Your next conversation is ready in over 15 languages.</p>
     <div class="language-grid" id="language-grid">
         <!-- Language flags will be dynamically inserted here -->
     </div>
@@ -187,7 +195,6 @@
 
 <!-- Firebase SDKs (already there) -->
 <!-- ... --> <!-- ADD THIS LINE -->
-
 
 </body>
 </html>

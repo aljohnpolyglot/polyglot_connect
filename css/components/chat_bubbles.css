@@ -1240,20 +1240,7 @@ body.dark-mode .action-btn-item:disabled i {
     transform: scale(1.2);
     background-color: var(--bg-subtle-hover-light, #e9ecef);
 }
-/* Example CSS for the loading button state */
-.action-btn-item-in-menu.action-in-progress {
-    /* Optional: slightly different background or opacity */
-    opacity: 0.7;
-    cursor: wait; /* Indicate a waiting state */
-}
 
-.action-btn-item-in-menu.action-in-progress i.fa-spinner {
-    /* If you need specific styling for the spinner within the button */
-    /* By default, fa-spin should provide the animation */
-}
-
-/* Ensure Font Awesome is loaded and fa-spin animation works */
-/* Usually, Font Awesome's CSS takes care of the @keyframes for fa-spin */
 .reaction-btn-in-menu.selected-reaction {
     background-color: var(--primary-color-x-light, #cfe2ff); /* Highlight for selected reaction */
     transform: scale(1.1);
@@ -1344,4 +1331,56 @@ body.dark-mode .action-btn-item-in-menu:disabled {
 }
 body.dark-mode .action-btn-item-in-menu:disabled i {
     color: var(--text-color-disabled-dark, #55595e);
+}/* IN: css/components/chat_bubbles.css */
+/* ADD THIS ENTIRE BLOCK */
+
+/* ==================================================
+   ||   Placeholder for Non-Saved (Free User) Image  ||
+   ================================================== */
+
+.chat-message-expired-image {
+    /* --- Layout & Sizing --- */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm, 10px);
+    padding: var(--spacing-sm, 10px) var(--spacing-md, 14px);
+    width: fit-content;
+    min-width: 220px; /* Give it some substance */
+    margin: 0 auto; /* Center within the parent bubble */
+
+    /* --- Appearance --- */
+    background-color: var(--bg-alt-color, #e9ecef);
+    color: var(--text-color-muted, #6c757d);
+    border: 1px dashed var(--border-color, #ced4da);
+    border-radius: var(--border-radius-lg, 10px);
+    font-size: 0.85em;
+    font-style: italic;
+    text-align: center;
+    cursor: pointer; /* To indicate it's clickable */
+    transition: background-color 0.2s, border-color 0.2s;
 }
+
+.chat-message-expired-image:hover {
+    background-color: var(--bg-subtle-hover-light, #e0e7ff);
+    border-color: var(--primary-color-light, #a0bffa);
+}
+
+.chat-message-expired-image i {
+    font-size: 1.2em; /* Make the icon a bit bigger */
+    opacity: 0.8;
+}
+
+/* --- Dark Mode Styles --- */
+body.dark-mode .chat-message-expired-image {
+    background-color: var(--bg-dark-tertiary, #3a3b3c);
+    color: var(--text-color-muted-dark, #adb5bd);
+    border-color: var(--border-color-dark, #495057);
+}
+
+body.dark-mode .chat-message-expired-image:hover {
+    background-color: var(--primary-color-darker, #1e4258);
+    border-color: var(--primary-color-dark, #0d6efd);
+}
+
+
